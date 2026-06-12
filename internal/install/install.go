@@ -5,6 +5,7 @@ package install
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"inference/internal/catalogue"
@@ -21,6 +22,42 @@ var driverAdvice = map[string]struct{ comp, hint string }{
 	"npu":       {"intel-npu", "sudo apt install intel-npu-driver"},
 }
 
+// accelHardware names the silicon each accelerator needs, for clear errors.
+var accelHardware = map[string]string{
+	"cuda":      "NVIDIA GPU",
+	"rocm":      "AMD GPU",
+	"intel-gpu": "Intel GPU",
+	"npu":       "NPU",
+	"vulkan":    "Vulkan-capable GPU",
+	"metal":     "Apple GPU",
+}
+
+// addonSnaps maps a `+addon` token to the snap that provides it and a one-line
+// note on how it's wired to the proxy.
+var addonSnaps = map[string]struct{ snap, note string }{
+	"webui": {"open-webui", "point Open WebUI at the proxy (OPENAI_API_BASE_URL=http://localhost:8080/v1)"},
+}
+
+// AddonSnap returns the snap that provides an addon (e.g. "webui" -> "open-webui").
+func AddonSnap(addon string) (string, bool) {
+	reg, ok := addonSnaps[addon]
+	return reg.snap, ok
+}
+
+// defaultQuant tunes weight precision by machine profile (tighter on small boxes).
+func defaultQuant(profile string) string {
+	switch profile {
+	case "edge":
+		return "q4"
+	case "laptop":
+		return "q4"
+	case "server":
+		return "fp16"
+	default: // workstation
+		return "q8"
+	}
+}
+
 // Step is one unit of the plan.
 type Step struct {
 	Kind   string // snap-install | driver | addon | engine | register
@@ -29,16 +66,20 @@ type Step struct {
 	Manual bool   // advisory only — not auto-executed
 }
 
-// Plan is the resolved set of steps plus warnings.
+// Plan is the resolved set of steps plus warnings and hard errors. A plan with
+// errors is not auto-executed — the caller surfaces them and stops.
 type Plan struct {
 	Steps    []Step
 	Warnings []string
+	Errors   []string
 }
 
-// Resolve turns specs into a plan for this host.
+// Resolve turns specs into a plan for this host. The host profile
+// (hw.Profile, possibly overridden by --profile) tunes accelerator preference
+// and default quant.
 func Resolve(specs []spec.Spec, hw *hardware.Info) *Plan {
 	p := &Plan{}
-	hwAccels := hw.Accelerators()
+	hwAccels := preferredAccels(hw)
 	for _, sp := range specs {
 		if sp.ComponentOnly() {
 			for _, c := range sp.Components {
@@ -54,15 +95,42 @@ func Resolve(specs []spec.Spec, hw *hardware.Info) *Plan {
 			continue
 		}
 		supported, known := catalogue.Accels(sp.Base)
-		accel, ok := chooseAccel(sp.Accel, supported, hwAccels)
+
+		// A requested accelerator that the base doesn't build for is a hard error
+		// (naming the alternatives), not a silent fallback.
+		if known && sp.Accel != "" && !contains(supported, sp.Accel) {
+			p.Errors = append(p.Errors, fmt.Sprintf(
+				"%s has no %s build — available: %s; try %s",
+				sp.Base, sp.Accel, strings.Join(supported, ", "),
+				suggest(sp.Base, supported, hwAccels)))
+			continue
+		}
+		// A requested accelerator the base supports but this machine lacks is also
+		// a hard error (e.g. +cuda on a box with no NVIDIA GPU): the build exists,
+		// the silicon to run it doesn't, and we won't silently fall back to CPU.
+		if sp.Accel != "" && sp.Accel != "cpu" && !contains(hwAccels, sp.Accel) {
+			need := accelHardware[sp.Accel]
+			if need == "" {
+				need = sp.Accel + " accelerator"
+			}
+			lead := fmt.Sprintf("%s requested", sp.Accel)
+			if known && contains(supported, sp.Accel) {
+				lead = fmt.Sprintf("%s has a %s build", sp.Base, sp.Accel)
+			}
+			p.Errors = append(p.Errors, fmt.Sprintf(
+				"%s, but this machine has no %s — detected: %s; try %s",
+				lead, need, strings.Join(hw.Accelerators(), ", "),
+				suggest(sp.Base, supported, hwAccels)))
+			continue
+		}
+
+		accel, _ := chooseAccel(sp.Accel, supported, hwAccels)
+		quant := sp.Quant
+		if quant == "" {
+			quant = defaultQuant(hw.Profile)
+		}
 
 		if known {
-			if sp.Accel != "" && !ok {
-				p.Warnings = append(p.Warnings, fmt.Sprintf(
-					"%s has no %s build; supported: %s — falling back to %s",
-					sp.Base, sp.Accel, strings.Join(supported, ", "), accel))
-				accel, _ = chooseAccel("", supported, hwAccels)
-			}
 			// Driver advice if the accelerator needs a runtime we likely lack.
 			if needsDriver(accel, hw) {
 				if adv, has := driverAdvice[accel]; has {
@@ -76,7 +144,7 @@ func Resolve(specs []spec.Spec, hw *hardware.Info) *Plan {
 			}
 			p.Steps = append(p.Steps, Step{
 				Kind:   "snap-install",
-				Detail: fmt.Sprintf("%s  (%s build)", sp.Base, accel),
+				Detail: fmt.Sprintf("%s  (%s, %s)", sp.Base, accel, quant),
 				Cmd:    "snap install " + sp.Base,
 			})
 			p.Steps = append(p.Steps, Step{
@@ -92,28 +160,80 @@ func Resolve(specs []spec.Spec, hw *hardware.Info) *Plan {
 				"%s is not a packaged inference snap", sp.Base))
 			p.Steps = append(p.Steps, Step{
 				Kind: "engine", Manual: true,
-				Detail: fmt.Sprintf("hybrid path: install %s (%s) + pull %s weights  [Milestone 2]",
-					engine, accel, sp.Base),
+				Detail: fmt.Sprintf("hybrid path: install %s (%s, %s) + pull %s weights  [Milestone 2]",
+					engine, accel, quant, sp.Base),
 			})
 		}
 
+		// Addons: resolve known ones to a real snap-install step + a wiring note.
 		for _, a := range sp.Addons {
-			p.Steps = append(p.Steps, Step{
-				Kind: "addon", Manual: true,
-				Detail: "addon " + a + "  [Milestone 2]",
-			})
+			if reg, ok := addonSnaps[a]; ok {
+				p.Steps = append(p.Steps, Step{
+					Kind: "snap-install", Detail: a + " addon: " + reg.snap,
+					Cmd: "snap install " + reg.snap,
+				})
+				p.Steps = append(p.Steps, Step{
+					Kind: "addon", Manual: true, Detail: reg.note,
+				})
+			} else {
+				p.Steps = append(p.Steps, Step{
+					Kind: "addon", Manual: true, Detail: "addon " + a + "  [not yet available]",
+				})
+			}
 		}
 	}
 	return p
 }
 
+// suggest returns a friendly "base+accel" alternative: the first accelerator the
+// base supports that this machine actually has, else base+cpu.
+func suggest(base string, supported, hwAccels []string) string {
+	for _, a := range hwAccels {
+		if contains(supported, a) {
+			return base + "+" + a
+		}
+	}
+	return base + "+cpu"
+}
+
+// preferredAccels orders the machine's accelerators by profile: edge/laptop
+// prefer the low-power path (npu/cpu) before a discrete/integrated GPU.
+func preferredAccels(hw *hardware.Info) []string {
+	accels := hw.Accelerators()
+	if hw.Profile != "edge" {
+		return accels
+	}
+	rank := map[string]int{"npu": 0, "cpu": 1}
+	out := append([]string(nil), accels...)
+	sort.SliceStable(out, func(i, j int) bool {
+		ri, oki := rank[out[i]]
+		rj, okj := rank[out[j]]
+		if !oki {
+			ri = 9
+		}
+		if !okj {
+			rj = 9
+		}
+		return ri < rj
+	})
+	return out
+}
+
+// HasErrors reports whether the plan has hard errors and must not be executed.
+func (p *Plan) HasErrors() bool { return len(p.Errors) > 0 }
+
 // Print renders the plan.
 func (p *Plan) Print() {
+	for _, e := range p.Errors {
+		ui.Printf("  %s %s\n", ui.Red(ui.SymErr), e)
+	}
 	for _, w := range p.Warnings {
 		ui.Printf("  %s %s\n", ui.Yellow(ui.SymWarn), w)
 	}
 	if len(p.Steps) == 0 {
-		ui.Println(ui.Dim("  (nothing to do)"))
+		if len(p.Errors) == 0 {
+			ui.Println(ui.Dim("  (nothing to do)"))
+		}
 		return
 	}
 	ui.Printf("\n  %s\n", ui.Bold("Plan"))

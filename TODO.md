@@ -47,13 +47,22 @@ Derived from [DESIGN.md](DESIGN.md). Checked items are delivered in the first pa
       root-side, redacted (`***`) on read — never echoed. Daemon re-discovers on
       change so new providers/aliases route immediately.
       (Future: also mirror into `snap set inference` for ecosystem consistency.)
-- [ ] `snap connect` advice surfaced by `doctor --fix`; publish to a store channel
+- [x] **`doctor --fix`**: adds a "Snap interfaces" section (reads real connection state
+      via `snapd.Connections()`), flags unconnected privileged plugs + missing drivers,
+      and `--fix` prints one ordered copy-paste remediation block (sudo steps the confined
+      CLI can't run itself)
+- [ ] Publish to a store channel (external release step — not a code task)
 
 ## Milestone 2 — `+` grammar & resolver depth
-- [ ] Full variant matrix per base (real coverage from snaps reference page)
+- [x] **`--profile <p>` global flag**: overrides auto-detected profile and drives resolver
+      defaults (edge → aggressive quant + cpu/npu preference)
+- [x] **Resolver depth**: real per-base accelerator coverage; impossible requests
+      (e.g. `nemotron-3-nano+rocm`, `+cuda` with no NVIDIA GPU) error with the valid
+      alternatives instead of silently falling back
+- [x] **`+webui` addon**: resolves to a real plan step (install Open WebUI, point it at the
+      proxy); `remove <+spec>` addon symmetry
 - [ ] Hybrid engine path: install standalone engine (llama.cpp/vllm) + pull weights when no snap exists
-- [ ] Addons: `+webui` (Open WebUI), `+api` (Anthropic-format shim), `+bench`
-- [ ] `--profile edge` aggressive quant + memory caps; `remove <+spec>` symmetry
+- [ ] Addons: `+api` (Anthropic-format shim), `+bench`
 - [ ] Driver advisor `--fix` actually runs apt/driver installs after confirmation
 
 ## Milestone 3 — Router features

@@ -48,7 +48,7 @@ func Main(args []string) int {
 	case "hardware", "hw":
 		cmdErr = hardwareReport()
 	case "doctor":
-		cmdErr = doctor(cfg)
+		cmdErr = doctor(cfg, rest)
 	case "models", "list", "ls":
 		cmdErr = models(cfg)
 	case "catalogue", "catalog", "search", "store":
@@ -83,19 +83,30 @@ func Main(args []string) int {
 	return 0
 }
 
+// profileOverride is set by the global --profile flag; "" means auto-detect.
+var profileOverride string
+
 func parseGlobals(args []string) ([]string, opts) {
 	var rest []string
 	var o opts
-	for _, a := range args {
-		switch a {
-		case "--json":
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--json":
 			ui.JSON = true
-		case "--quiet", "-q":
+		case a == "--quiet", a == "-q":
 			ui.Quiet = true
-		case "--yes", "-y":
+		case a == "--yes", a == "-y":
 			o.yes = true
-		case "--dry-run":
+		case a == "--dry-run":
 			o.dryRun = true
+		case a == "--profile":
+			if i+1 < len(args) {
+				profileOverride = args[i+1]
+				i++
+			}
+		case strings.HasPrefix(a, "--profile="):
+			profileOverride = strings.TrimPrefix(a, "--profile=")
 		default:
 			rest = append(rest, a)
 		}
@@ -103,10 +114,19 @@ func parseGlobals(args []string) ([]string, opts) {
 	return rest, o
 }
 
+// detect returns the host hardware info, applying the --profile override.
+func detect() *hardware.Info {
+	hw := hardware.Detect()
+	if profileOverride != "" {
+		hw.Profile = profileOverride
+	}
+	return hw
+}
+
 // ---- wizard / status ----
 
 func wizard(cfg *config.Config) error {
-	hw := hardware.Detect()
+	hw := detect()
 	ui.Printf("%s  Let's get your machine ready for local AI.\n\n", ui.Bold("Welcome to Inference."))
 	printHardware(hw)
 
@@ -139,7 +159,7 @@ func wizard(cfg *config.Config) error {
 // ---- hardware ----
 
 func hardwareReport() error {
-	hw := hardware.Detect()
+	hw := detect()
 	if ui.JSON {
 		return printJSON(hw)
 	}
@@ -175,14 +195,25 @@ func printHardware(hw *hardware.Info) {
 
 // ---- doctor ----
 
-func doctor(cfg *config.Config) error {
-	hw := hardware.Detect()
+// privilegedPlugs are the interfaces inference needs connected to do its job.
+var privilegedPlugs = []string{"snapd-control", "hardware-observe", "system-observe"}
+
+func doctor(cfg *config.Config, args []string) error {
+	fix := false
+	for _, a := range args {
+		if a == "--fix" {
+			fix = true
+		}
+	}
+	hw := detect()
+	var fixes []string // consolidated remediation commands
 
 	ui.Printf("  %s\n", ui.Bold("Hardware"))
 	ht := ui.NewTable().Indent("    ")
 	for _, g := range hw.GPUs {
 		if g.Vendor == "nvidia" && g.Driver == "" {
 			ht.Row(g.Name, ui.Yellow("no driver"), ui.Dim(ui.SymArrow+" sudo ubuntu-drivers install"))
+			fixes = append(fixes, "sudo ubuntu-drivers install")
 		} else {
 			ht.Row(g.Name, ui.Green("ok"), "")
 		}
@@ -193,6 +224,23 @@ func doctor(cfg *config.Config) error {
 	ht.Row("Accelerators", ui.Dim(strings.Join(hw.Accelerators(), ", ")), "")
 	ht.Render()
 
+	// Snap interfaces — the privileged plugs must be connected for management
+	// and detection to work (esp. on a --dangerous sideload, nothing auto-connects).
+	if conns, ok := snapd.Connections(); ok {
+		ui.Printf("\n  %s\n", ui.Bold("Snap interfaces"))
+		it := ui.NewTable().Indent("    ")
+		for _, plug := range privilegedPlugs {
+			if conns[plug] {
+				it.Row("inference:"+plug, ui.Green("connected"), "")
+			} else {
+				cmd := "sudo snap connect inference:" + plug
+				it.Row("inference:"+plug, ui.Yellow("not connected"), ui.Dim(ui.SymArrow+" "+cmd))
+				fixes = append(fixes, cmd)
+			}
+		}
+		it.Render()
+	}
+
 	ui.Printf("\n  %s\n", ui.Bold("Proxy"))
 	up := proxy.IsUp(cfg)
 	addr := fmt.Sprintf("%s:%d", cfg.Proxy.Bind, cfg.Proxy.Port)
@@ -200,7 +248,9 @@ func doctor(cfg *config.Config) error {
 	if up {
 		pt.Row(addr, ui.Green("listening"), "")
 	} else {
-		pt.Row(addr, ui.Yellow("not running"), ui.Dim(ui.SymArrow+" sudo snap start --enable inference.proxy"))
+		cmd := "sudo snap start --enable inference.proxy"
+		pt.Row(addr, ui.Yellow("not running"), ui.Dim(ui.SymArrow+" "+cmd))
+		fixes = append(fixes, cmd)
 	}
 	pt.Render()
 
@@ -235,6 +285,26 @@ func doctor(cfg *config.Config) error {
 	}
 	dt.Row("/", fmt.Sprintf("%.0f GB free", hw.DiskGB), dstat)
 	dt.Render()
+
+	// Remediation summary.
+	if len(fixes) == 0 {
+		ui.Printf("\n  %s everything looks healthy\n", ui.Green(ui.SymOK))
+		return nil
+	}
+	plural := "issue"
+	if len(fixes) > 1 {
+		plural = "issues"
+	}
+	if !fix {
+		ui.Printf("\n  %d %s can be fixed — run:  %s\n", len(fixes), plural, ui.Bold("inference doctor --fix"))
+		return nil
+	}
+	// These steps need root (snap connect / driver install), which the confined
+	// CLI can't do itself, so present one ordered, copy-paste block.
+	ui.Printf("\n  %s\n", ui.Bold(fmt.Sprintf("Run these %d command(s) to fix:", len(fixes))))
+	for _, c := range fixes {
+		ui.Printf("    %s\n", c)
+	}
 	return nil
 }
 
@@ -287,7 +357,7 @@ func models(cfg *config.Config) error {
 // ---- catalogue ----
 
 func catalogueCmd(cfg *config.Config, args []string) error {
-	hw := hardware.Detect()
+	hw := detect()
 	hwAccels := map[string]bool{}
 	for _, a := range hw.Accelerators() {
 		hwAccels[a] = true
@@ -358,35 +428,53 @@ func removeCmd(cfg *config.Config, args []string, o opts) error {
 		names = append(names, b.Name)
 	}
 	for _, a := range args {
-		name := spec.Parse(a).Base
-		if name == "" {
-			name = a
-		}
-		switch {
-		case installed[name]:
-			if !o.yes && !confirm(fmt.Sprintf("  Remove %s?", ui.Bold(name))) {
-				ui.Println(ui.Dim("  skipped"))
-				continue
+		// Compute the snap targets for this arg. `base+addon` removes just the
+		// addon snap(s) (symmetric with install); a bare base removes the base.
+		sp := spec.Parse(a)
+		var targets []string
+		if len(sp.Addons) > 0 {
+			for _, ad := range sp.Addons {
+				if snap, ok := install.AddonSnap(ad); ok {
+					targets = append(targets, snap)
+				} else {
+					ui.Printf("  %s no removable snap for addon %q\n", ui.Yellow(ui.SymWarn), ad)
+				}
 			}
-		default:
-			// Not installed — offer the nearest installed model (typo tolerance).
-			near, d := catalogue.Nearest(name, names)
-			if len(names) == 0 || d > 3 {
-				ui.Printf("  %s %q isn't installed\n", ui.Yellow(ui.SymWarn), name)
-				continue
+		} else {
+			name := sp.Base
+			if name == "" {
+				name = a
 			}
-			if !o.yes && !confirm(fmt.Sprintf("  %q isn't installed — remove %s?", name, ui.Bold(near))) {
-				ui.Println(ui.Dim("  skipped"))
-				continue
+			targets = []string{name}
+		}
+
+		for _, name := range targets {
+			switch {
+			case installed[name]:
+				if !o.yes && !confirm(fmt.Sprintf("  Remove %s?", ui.Bold(name))) {
+					ui.Println(ui.Dim("  skipped"))
+					continue
+				}
+			default:
+				// Not installed — offer the nearest installed model (typo tolerance).
+				near, d := catalogue.Nearest(name, names)
+				if len(names) == 0 || d > 3 {
+					ui.Printf("  %s %q isn't installed\n", ui.Yellow(ui.SymWarn), name)
+					continue
+				}
+				if !o.yes && !confirm(fmt.Sprintf("  %q isn't installed — remove %s?", name, ui.Bold(near))) {
+					ui.Println(ui.Dim("  skipped"))
+					continue
+				}
+				name = near
 			}
-			name = near
+			err := doRemove(cfg, name)
+			fmt.Println() // finish progress line
+			if err != nil {
+				return fmt.Errorf("remove %s: %w", name, err)
+			}
+			ui.Printf("  %s %s removed\n", ui.Green(ui.SymOK), name)
 		}
-		err := doRemove(cfg, name)
-		fmt.Println() // finish progress line
-		if err != nil {
-			return fmt.Errorf("remove %s: %w", name, err)
-		}
-		ui.Printf("  %s %s removed\n", ui.Green(ui.SymOK), name)
 	}
 	return nil
 }
@@ -480,7 +568,7 @@ func installCmd(cfg *config.Config, args []string, o opts) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: inference install <model>[+engine][+accel][+addon] ...")
 	}
-	hw := hardware.Detect()
+	hw := detect()
 	bs, _ := discoverBackends(cfg)
 	installed := map[string]bool{}
 	for _, b := range bs {
@@ -495,6 +583,9 @@ func installCmd(cfg *config.Config, args []string, o opts) error {
 	ui.Printf("  Resolving %s for your %s…\n", ui.Bold(strings.Join(args, " ")), hw.Profile)
 	plan.Print()
 
+	if plan.HasErrors() {
+		return fmt.Errorf("can't resolve that combination on this machine")
+	}
 	if o.dryRun || !plan.HasInstallSteps() {
 		return nil
 	}
@@ -616,7 +707,7 @@ Commands:
   run <model> [text]  one-shot completion (reads stdin if no text)
   chat [model]        interactive REPL
   hardware            hardware detection report
-  doctor              diagnose drivers, backends, proxy
+  doctor [--fix]      diagnose drivers, interfaces, backends, proxy
   proxy add <name>    register an external provider (--key ...)
   config get|set      view/change configuration
 
@@ -624,8 +715,9 @@ The federated proxy runs automatically as the 'inference.proxy' service
 (manage with: sudo snap start|stop|restart inference.proxy).
 
 Flags:
-  --json   machine-readable output      --yes    skip confirmations
-  --quiet  suppress non-error output    --dry-run  plan only, don't execute`)
+  --json   machine-readable output      --yes        skip confirmations
+  --quiet  suppress non-error output    --dry-run    plan only, don't execute
+  --profile <edge|laptop|workstation|server>  override detected machine profile`)
 }
 
 func confirm(prompt string) bool {

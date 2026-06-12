@@ -85,6 +85,16 @@ another snap's config or install/remove snaps over either snapd socket
   `--dangerous` reinstalls of the same snap (connections persist), no manual
   restart is needed at all.
 
+- **Resolver depth (M2)**: the `+` resolver uses real per-base accelerator
+  coverage — an impossible request (`gemma4+rocm`, or `+cuda` on a box with no
+  NVIDIA GPU) is a hard error that names the valid alternative
+  (`try gemma4+cpu`) instead of silently falling back. `--profile <p>` overrides
+  the detected profile and tunes accelerator preference (edge → npu/cpu first)
+  and default quant. `+webui` resolves to a real `open-webui` install step wired
+  to the proxy; `remove base+webui` drops just the addon (install/remove
+  symmetry). `doctor --fix` reads live interface state and emits one ordered
+  remediation block.
+
 Component packages: `hardware` (detect+profile), `snapd` (REST/CLI broker),
 `backend` (discovery), `catalogue` (curated models + fuzzy match), `spec` (`+`
 grammar), `install` (resolve→plan), `proxy` (router + management API + client),

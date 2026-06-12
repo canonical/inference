@@ -120,6 +120,55 @@ func Installed() []string {
 	return nil
 }
 
+// Connections reports which of the inference snap's plugs are connected,
+// keyed by plug name (e.g. "snapd-control" -> true). ok=false if it can't be
+// determined (e.g. the snap isn't installed / snapd is unreachable).
+func Connections() (map[string]bool, bool) {
+	if !inSnap() {
+		out, err := exec.Command("snap", "connections", "inference").Output()
+		if err != nil {
+			return nil, false
+		}
+		conns := map[string]bool{}
+		for i, line := range strings.Split(string(out), "\n") {
+			if i == 0 || strings.TrimSpace(line) == "" {
+				continue // header / blank
+			}
+			f := strings.Fields(line)
+			if len(f) < 3 {
+				continue
+			}
+			// columns: Interface  Plug  Slot  [Notes]
+			plug := strings.TrimPrefix(f[1], "inference:")
+			conns[plug] = f[2] != "-" // connected when a slot is bound
+		}
+		return conns, true
+	}
+	for _, sock := range candidateSockets() {
+		body, status, err := socketGet(sock, "/v2/connections?snap=inference")
+		if err != nil || status != 200 {
+			continue
+		}
+		var env struct {
+			Result struct {
+				Plugs []struct {
+					Plug        string `json:"plug"`
+					Connections []any  `json:"connections"`
+				} `json:"plugs"`
+			} `json:"result"`
+		}
+		if json.Unmarshal(body, &env) != nil {
+			continue
+		}
+		conns := map[string]bool{}
+		for _, p := range env.Result.Plugs {
+			conns[p.Plug] = len(p.Connections) > 0
+		}
+		return conns, true
+	}
+	return nil, false
+}
+
 // Install installs a snap, blocking until done. onProgress (may be nil) is
 // called repeatedly with the change status while it runs.
 func Install(name string, onProgress func(Progress)) error {
