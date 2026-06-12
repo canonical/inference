@@ -32,18 +32,6 @@ var accelHardware = map[string]string{
 	"metal":     "Apple GPU",
 }
 
-// addonSnaps maps a `+addon` token to the snap that provides it and a one-line
-// note on how it's wired to the proxy.
-var addonSnaps = map[string]struct{ snap, note string }{
-	"webui": {"open-webui", "point Open WebUI at the proxy (OPENAI_API_BASE_URL=http://localhost:8080/v1)"},
-}
-
-// AddonSnap returns the snap that provides an addon (e.g. "webui" -> "open-webui").
-func AddonSnap(addon string) (string, bool) {
-	reg, ok := addonSnaps[addon]
-	return reg.snap, ok
-}
-
 // defaultQuant tunes weight precision by machine profile (tighter on small boxes).
 func defaultQuant(profile string) string {
 	switch profile {
@@ -165,21 +153,12 @@ func Resolve(specs []spec.Spec, hw *hardware.Info) *Plan {
 			})
 		}
 
-		// Addons: resolve known ones to a real snap-install step + a wiring note.
+		// Addons are advisory for now — not auto-installed (see Milestone 2).
 		for _, a := range sp.Addons {
-			if reg, ok := addonSnaps[a]; ok {
-				p.Steps = append(p.Steps, Step{
-					Kind: "snap-install", Detail: a + " addon: " + reg.snap,
-					Cmd: "snap install " + reg.snap,
-				})
-				p.Steps = append(p.Steps, Step{
-					Kind: "addon", Manual: true, Detail: reg.note,
-				})
-			} else {
-				p.Steps = append(p.Steps, Step{
-					Kind: "addon", Manual: true, Detail: "addon " + a + "  [not yet available]",
-				})
-			}
+			p.Steps = append(p.Steps, Step{
+				Kind: "addon", Manual: true,
+				Detail: "addon " + a + "  [not yet supported]",
+			})
 		}
 	}
 	return p

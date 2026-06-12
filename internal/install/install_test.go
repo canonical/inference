@@ -47,14 +47,18 @@ func TestResolve_AccelMissingOnHostIsError(t *testing.T) {
 	}
 }
 
-func TestResolve_WebuiAddonInstallsSnap(t *testing.T) {
+func TestResolve_AddonIsAdvisoryNotInstalled(t *testing.T) {
+	// Addons aren't auto-installed yet: the base installs, the addon does not.
 	p := resolve(t, hwIntel("laptop"), "gemma4+webui")
 	if p.HasErrors() {
 		t.Fatalf("unexpected errors: %v", p.Errors)
 	}
 	names := p.SnapNames()
-	if !contains(names, "gemma4") || !contains(names, "open-webui") {
-		t.Errorf("expected gemma4 + open-webui in install set, got %v", names)
+	if !contains(names, "gemma4") {
+		t.Errorf("expected gemma4 in install set, got %v", names)
+	}
+	if contains(names, "open-webui") {
+		t.Errorf("addon must not be auto-installed, got %v", names)
 	}
 }
 

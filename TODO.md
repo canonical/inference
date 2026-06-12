@@ -59,10 +59,9 @@ Derived from [DESIGN.md](DESIGN.md). Checked items are delivered in the first pa
 - [x] **Resolver depth**: real per-base accelerator coverage; impossible requests
       (e.g. `nemotron-3-nano+rocm`, `+cuda` with no NVIDIA GPU) error with the valid
       alternatives instead of silently falling back
-- [x] **`+webui` addon**: resolves to a real plan step (install Open WebUI, point it at the
-      proxy); `remove <+spec>` addon symmetry
 - [ ] Hybrid engine path: install standalone engine (llama.cpp/vllm) + pull weights when no snap exists
-- [ ] Addons: `+api` (Anthropic-format shim), `+bench`
+- [ ] Addons: `+webui` (Open WebUI), `+api` (Anthropic-format shim), `+bench` — currently
+      advisory-only in the plan; auto-install + proxy wiring not yet implemented
 - [ ] Driver advisor `--fix` actually runs apt/driver installs after confirmation
 
 ## Milestone 3 — Router features

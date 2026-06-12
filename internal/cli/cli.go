@@ -428,53 +428,35 @@ func removeCmd(cfg *config.Config, args []string, o opts) error {
 		names = append(names, b.Name)
 	}
 	for _, a := range args {
-		// Compute the snap targets for this arg. `base+addon` removes just the
-		// addon snap(s) (symmetric with install); a bare base removes the base.
-		sp := spec.Parse(a)
-		var targets []string
-		if len(sp.Addons) > 0 {
-			for _, ad := range sp.Addons {
-				if snap, ok := install.AddonSnap(ad); ok {
-					targets = append(targets, snap)
-				} else {
-					ui.Printf("  %s no removable snap for addon %q\n", ui.Yellow(ui.SymWarn), ad)
-				}
-			}
-		} else {
-			name := sp.Base
-			if name == "" {
-				name = a
-			}
-			targets = []string{name}
+		name := spec.Parse(a).Base
+		if name == "" {
+			name = a
 		}
-
-		for _, name := range targets {
-			switch {
-			case installed[name]:
-				if !o.yes && !confirm(fmt.Sprintf("  Remove %s?", ui.Bold(name))) {
-					ui.Println(ui.Dim("  skipped"))
-					continue
-				}
-			default:
-				// Not installed — offer the nearest installed model (typo tolerance).
-				near, d := catalogue.Nearest(name, names)
-				if len(names) == 0 || d > 3 {
-					ui.Printf("  %s %q isn't installed\n", ui.Yellow(ui.SymWarn), name)
-					continue
-				}
-				if !o.yes && !confirm(fmt.Sprintf("  %q isn't installed — remove %s?", name, ui.Bold(near))) {
-					ui.Println(ui.Dim("  skipped"))
-					continue
-				}
-				name = near
+		switch {
+		case installed[name]:
+			if !o.yes && !confirm(fmt.Sprintf("  Remove %s?", ui.Bold(name))) {
+				ui.Println(ui.Dim("  skipped"))
+				continue
 			}
-			err := doRemove(cfg, name)
-			fmt.Println() // finish progress line
-			if err != nil {
-				return fmt.Errorf("remove %s: %w", name, err)
+		default:
+			// Not installed — offer the nearest installed model (typo tolerance).
+			near, d := catalogue.Nearest(name, names)
+			if len(names) == 0 || d > 3 {
+				ui.Printf("  %s %q isn't installed\n", ui.Yellow(ui.SymWarn), name)
+				continue
 			}
-			ui.Printf("  %s %s removed\n", ui.Green(ui.SymOK), name)
+			if !o.yes && !confirm(fmt.Sprintf("  %q isn't installed — remove %s?", name, ui.Bold(near))) {
+				ui.Println(ui.Dim("  skipped"))
+				continue
+			}
+			name = near
 		}
+		err := doRemove(cfg, name)
+		fmt.Println() // finish progress line
+		if err != nil {
+			return fmt.Errorf("remove %s: %w", name, err)
+		}
+		ui.Printf("  %s %s removed\n", ui.Green(ui.SymOK), name)
 	}
 	return nil
 }

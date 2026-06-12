@@ -90,10 +90,9 @@ another snap's config or install/remove snaps over either snapd socket
   NVIDIA GPU) is a hard error that names the valid alternative
   (`try gemma4+cpu`) instead of silently falling back. `--profile <p>` overrides
   the detected profile and tunes accelerator preference (edge → npu/cpu first)
-  and default quant. `+webui` resolves to a real `open-webui` install step wired
-  to the proxy; `remove base+webui` drops just the addon (install/remove
-  symmetry). `doctor --fix` reads live interface state and emits one ordered
-  remediation block.
+  and default quant. `doctor --fix` reads live interface state and emits one
+  ordered remediation block. (Addons like `+webui` are still advisory-only in
+  the plan — auto-install + proxy wiring is not yet implemented.)
 
 Component packages: `hardware` (detect+profile), `snapd` (REST/CLI broker),
 `backend` (discovery), `catalogue` (curated models + fuzzy match), `spec` (`+`
