@@ -37,8 +37,16 @@ Derived from [DESIGN.md](DESIGN.md). Checked items are delivered in the first pa
       root `inference.proxy` does discovery + installs; the unprivileged CLI delegates
       via `/v1/backends` and `/v1/install`
 - [x] Bundle `pciutils` + fix disk detection; GPU/NPU detection verified inside sandbox
-- [ ] Config source-of-truth via `snap set inference` (so user CLI + root daemon agree);
-      secrets (API keys) in snap-managed store, never echoed
+- [x] **No restart per install**: daemon refreshes discovery immediately after a brokered
+      install + re-scans every 20 s, so model installs never need a proxy restart. The only
+      restart is one-time on a `--dangerous` sideload after manual `snap connect snapd-control`
+      (store installs auto-connect; repeat sideloads keep connections)
+- [x] **Config source-of-truth**: single store owned by the root daemon
+      (`$SNAP_DATA/config.json`); the unprivileged CLI delegates reads/writes via
+      `GET`/`POST /v1/config` (`config get/set`, `proxy add`). API keys stored
+      root-side, redacted (`***`) on read — never echoed. Daemon re-discovers on
+      change so new providers/aliases route immediately.
+      (Future: also mirror into `snap set inference` for ecosystem consistency.)
 - [ ] `snap connect` advice surfaced by `doctor --fix`; publish to a store channel
 
 ## Milestone 2 — `+` grammar & resolver depth

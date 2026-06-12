@@ -86,6 +86,7 @@ func (s *Server) ListenAndServe() error {
 	mux.HandleFunc("/v1/remove", func(w http.ResponseWriter, r *http.Request) {
 		s.handleChange(w, r, snapd.Remove)
 	})
+	mux.HandleFunc("/v1/config", s.handleConfig)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"status":"ok"}`)
@@ -167,6 +168,39 @@ func (s *Server) handleChange(w http.ResponseWriter, r *http.Request, op func(st
 	}
 	s.refresh()
 	emit(map[string]any{"status": "ok"})
+}
+
+// handleConfig is the brokered config store. Only this daemon runs as root and
+// can write $SNAP_DATA/config.json, so the unprivileged CLI reads (GET) and
+// mutates (POST) configuration here. Responses redact provider API keys.
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodGet {
+		json.NewEncoder(w).Encode(s.conf().Redacted())
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var m config.Mutation
+	if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	err := s.cfg.Apply(m)
+	if err == nil {
+		err = s.cfg.Save()
+	}
+	s.mu.Unlock()
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		return
+	}
+	// Re-discover so a new provider/alias becomes routable immediately.
+	s.refresh()
+	json.NewEncoder(w).Encode(s.conf().Redacted())
 }
 
 // handleProxy routes a chat/completion/embedding request to its backend.
@@ -275,6 +309,49 @@ func Backends(cfg *config.Config) ([]backend.Backend, bool) {
 		return nil, false
 	}
 	return bs, true
+}
+
+// GetConfig fetches the daemon's authoritative config (API keys redacted).
+func GetConfig(cfg *config.Config) (*config.Config, bool) {
+	url := fmt.Sprintf("http://%s:%d/v1/config", cfg.Proxy.Bind, cfg.Proxy.Port)
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, false
+	}
+	var c config.Config
+	if json.NewDecoder(resp.Body).Decode(&c) != nil {
+		return nil, false
+	}
+	return &c, true
+}
+
+// ApplyConfig asks the daemon (which owns the writable store) to apply a config
+// mutation, returning any validation error it reports.
+func ApplyConfig(cfg *config.Config, m config.Mutation) error {
+	url := fmt.Sprintf("http://%s:%d/v1/config", cfg.Proxy.Bind, cfg.Proxy.Port)
+	body, _ := json.Marshal(m)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		var e struct {
+			Error string `json:"error"`
+		}
+		json.NewDecoder(resp.Body).Decode(&e)
+		if e.Error != "" {
+			return fmt.Errorf("%s", e.Error)
+		}
+		return fmt.Errorf("config update failed (%d)", resp.StatusCode)
+	}
+	return nil
 }
 
 // RequestInstall asks the daemon to install a snap (it runs as root).

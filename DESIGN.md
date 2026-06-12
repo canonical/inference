@@ -63,7 +63,10 @@ another snap's config or install/remove snaps over either snapd socket
   and uid 0 satisfies snapd) and installs/removes them.
 - **The CLI is unprivileged and delegates** to the daemon over `localhost`:
   `inference models/doctor/catalogue` read `GET /v1/backends`; `install`/`remove`
-  stream progress from `POST /v1/install` · `/v1/remove`.
+  stream progress from `POST /v1/install` · `/v1/remove`; `config get/set` and
+  `proxy add` read/write `GET` · `POST /v1/config`. The daemon owns the only
+  writable config store (`$SNAP_DATA`, root-only), so the CLI never writes it
+  directly; provider API keys are stored root-side and redacted on read.
 - **Discovery is dynamic**: every installed snap that serves an OpenAI endpoint
   (`/v3` for OpenVINO Model Server, `/v1` for llama.cpp/standard — probed) is
   federated, so a plain `snap install <model>` is picked up automatically; the
@@ -71,6 +74,16 @@ another snap's config or install/remove snaps over either snapd socket
 - **The proxy** federates all backends behind one OpenAI-compatible endpoint
   (`:8080/v1`), routing by model id / alias / backend name, translating each
   backend's base path, and streaming responses through.
+- **Daemon lifecycle — no restart per install.** Installing a model
+  (`inference install <model>`, or a plain `snap install`) never requires
+  restarting the proxy: the daemon refreshes discovery immediately after a
+  brokered install and re-scans every 20 s, so new backends federate on their
+  own. The **only** restart is a one-time step on a sideloaded (`--dangerous`)
+  build, where nothing auto-connects: after the manual
+  `snap connect inference:snapd-control` the daemon is restarted once so it comes
+  up privileged. On a store install (auto-connections) and on repeat
+  `--dangerous` reinstalls of the same snap (connections persist), no manual
+  restart is needed at all.
 
 Component packages: `hardware` (detect+profile), `snapd` (REST/CLI broker),
 `backend` (discovery), `catalogue` (curated models + fuzzy match), `spec` (`+`
@@ -350,10 +363,15 @@ Global flags everywhere: `--dry-run`, `--yes`, `--json`, `--quiet`, `--profile <
 
 ## 9. Config model
 
-User-facing `inference config …` wraps snap config for consistency with the ecosystem
-(`snap set/get inference proxy.port=8080`, `proxy.bind`, `defaults.quant`,
-`model.<name>.lifecycle`). Provider API keys live in snap-managed secrets, never echoed.
-`inference config export/import` produces a declarative file for reproducible/edge builds.
+`inference config get/set` (and `proxy add`) edit a single source of truth held
+by the **root daemon** in `$SNAP_DATA/config.json`. Because snapd authorizes
+writes by uid, the unprivileged CLI cannot write that file directly; instead it
+delegates to the daemon over `GET`/`POST /v1/config`, which validates the key,
+persists it, and re-discovers backends so a new provider/alias routes
+immediately. Valid keys today: `proxy.port`, `proxy.bind`, `alias.<name>`.
+Provider API keys are stored root-side and **redacted (`***`) on every read** —
+`config get` never echoes a secret. (Future: mirror into `snap set inference`
+for ecosystem consistency; `config export/import` for reproducible/edge builds.)
 
 ---
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"inference/internal/backend"
@@ -547,15 +546,9 @@ func proxyCmd(cfg *config.Config, args []string) error {
 			p.BaseURL = "https://api.openai.com/v1"
 		}
 	}
-	// Replace any existing provider with the same name.
-	out := cfg.Providers[:0]
-	for _, ex := range cfg.Providers {
-		if ex.Name != p.Name {
-			out = append(out, ex)
-		}
-	}
-	cfg.Providers = append(out, p)
-	if err := cfg.Save(); err != nil {
+	// Persist via the broker (daemon owns the writable store); AddProvider
+	// replaces any existing provider with the same name.
+	if err := applyConfig(cfg, config.Mutation{Provider: &p}); err != nil {
 		return err
 	}
 	ui.Printf("  %s added provider %s (%s)\n", ui.Green(ui.SymOK), ui.Bold(p.Name), p.Type)
@@ -566,55 +559,45 @@ func proxyCmd(cfg *config.Config, args []string) error {
 
 func configCmd(cfg *config.Config, args []string) error {
 	if len(args) == 0 || args[0] == "get" {
+		conf := effectiveConfig(cfg)
 		if len(args) >= 2 {
-			ui.Println(getKey(cfg, args[1]))
+			ui.Println(conf.Get(args[1]))
 			return nil
 		}
-		return printJSON(cfg)
+		return printJSON(conf.Redacted())
 	}
 	if args[0] == "set" && len(args) >= 3 {
-		if err := setKey(cfg, args[1], args[2]); err != nil {
+		if err := applyConfig(cfg, config.Mutation{Set: map[string]string{args[1]: args[2]}}); err != nil {
 			return err
 		}
-		return cfg.Save()
+		ui.Printf("  %s %s = %s\n", ui.Green(ui.SymOK), args[1], args[2])
+		return nil
 	}
 	return fmt.Errorf("usage: inference config get [key] | set <key> <value>")
 }
 
-func getKey(cfg *config.Config, key string) string {
-	switch key {
-	case "proxy.port":
-		return strconv.Itoa(cfg.Proxy.Port)
-	case "proxy.bind":
-		return cfg.Proxy.Bind
+// effectiveConfig returns the daemon's authoritative config when the proxy is
+// up (it owns the single writable store), else the locally loaded config.
+func effectiveConfig(cfg *config.Config) *config.Config {
+	if proxy.IsUp(cfg) {
+		if c, ok := proxy.GetConfig(cfg); ok {
+			return c
+		}
 	}
-	if a, ok := strings.CutPrefix(key, "alias."); ok {
-		return cfg.Aliases[a]
-	}
-	return ""
+	return cfg
 }
 
-func setKey(cfg *config.Config, key, val string) error {
-	switch key {
-	case "proxy.port":
-		n, err := strconv.Atoi(val)
-		if err != nil {
-			return fmt.Errorf("proxy.port must be a number")
-		}
-		cfg.Proxy.Port = n
-		return nil
-	case "proxy.bind":
-		cfg.Proxy.Bind = val
-		return nil
+// applyConfig persists a config change. When the proxy is up the unprivileged
+// CLI delegates to the root daemon — the only process that can write
+// $SNAP_DATA — otherwise (development / no daemon) it writes the local file.
+func applyConfig(cfg *config.Config, m config.Mutation) error {
+	if proxy.IsUp(cfg) {
+		return proxy.ApplyConfig(cfg, m)
 	}
-	if a, ok := strings.CutPrefix(key, "alias."); ok {
-		if cfg.Aliases == nil {
-			cfg.Aliases = map[string]string{}
-		}
-		cfg.Aliases[a] = val
-		return nil
+	if err := cfg.Apply(m); err != nil {
+		return err
 	}
-	return fmt.Errorf("unknown key %q (try proxy.port, proxy.bind, alias.<name>)", key)
+	return cfg.Save()
 }
 
 // ---- helpers ----

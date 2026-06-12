@@ -5,8 +5,11 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 // ProxyCfg controls the federated OpenAI-compatible gateway.
@@ -30,6 +33,89 @@ type Config struct {
 	Proxy     ProxyCfg          `json:"proxy"`
 	Providers []Provider        `json:"providers,omitempty"`
 	Aliases   map[string]string `json:"aliases,omitempty"`
+}
+
+// Mutation is a declarative change to the config, brokered from the unprivileged
+// CLI to the root daemon (which owns the writable store) over /v1/config.
+type Mutation struct {
+	Set      map[string]string `json:"set,omitempty"`      // dotted key -> value
+	Provider *Provider         `json:"provider,omitempty"` // add or replace by name
+}
+
+// Apply mutates the config in place. It is the single place that knows valid
+// keys, so the CLI and the daemon stay in agreement.
+func (c *Config) Apply(m Mutation) error {
+	for k, v := range m.Set {
+		if err := c.Set(k, v); err != nil {
+			return err
+		}
+	}
+	if m.Provider != nil {
+		c.AddProvider(*m.Provider)
+	}
+	return nil
+}
+
+// Set applies a single dotted key=value (proxy.port, proxy.bind, alias.<name>).
+func (c *Config) Set(key, val string) error {
+	switch key {
+	case "proxy.port":
+		n, err := strconv.Atoi(val)
+		if err != nil {
+			return fmt.Errorf("proxy.port must be a number")
+		}
+		c.Proxy.Port = n
+		return nil
+	case "proxy.bind":
+		c.Proxy.Bind = val
+		return nil
+	}
+	if a, ok := strings.CutPrefix(key, "alias."); ok {
+		if c.Aliases == nil {
+			c.Aliases = map[string]string{}
+		}
+		c.Aliases[a] = val
+		return nil
+	}
+	return fmt.Errorf("unknown key %q (try proxy.port, proxy.bind, alias.<name>)", key)
+}
+
+// Get reads a single dotted key. Provider API keys are deliberately not exposed.
+func (c *Config) Get(key string) string {
+	switch key {
+	case "proxy.port":
+		return strconv.Itoa(c.Proxy.Port)
+	case "proxy.bind":
+		return c.Proxy.Bind
+	}
+	if a, ok := strings.CutPrefix(key, "alias."); ok {
+		return c.Aliases[a]
+	}
+	return ""
+}
+
+// AddProvider adds p, replacing any existing provider with the same name.
+func (c *Config) AddProvider(p Provider) {
+	out := c.Providers[:0]
+	for _, ex := range c.Providers {
+		if ex.Name != p.Name {
+			out = append(out, ex)
+		}
+	}
+	c.Providers = append(out, p)
+}
+
+// Redacted returns a shallow copy with provider API keys masked, for display.
+func (c *Config) Redacted() *Config {
+	cp := *c
+	cp.Providers = make([]Provider, len(c.Providers))
+	for i, p := range c.Providers {
+		if p.APIKey != "" {
+			p.APIKey = "***"
+		}
+		cp.Providers[i] = p
+	}
+	return &cp
 }
 
 // Dir returns the directory holding config.json.
