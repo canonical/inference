@@ -269,6 +269,133 @@ Routing features:
 Default endpoint is OpenAI-compatible (`/v1/chat/completions`, `/v1/models`,
 `/v1/embeddings`); an optional `+api` addon can expose an Anthropic-format shim.
 
+### 4.1 Remote providers & aggregators (OpenAI · Anthropic · Google · OpenRouter · Together.ai)
+
+Remote, hosted models federate behind the same `:8080/v1` endpoint as local
+snaps, so a user routes to `gpt-5`, `claude-opus-4-8`, `gemini-2.5-pro`, or a
+model behind an aggregator with byte-identical OpenAI client code.
+
+**Current state & the gap.** `inference proxy add <name> --key …` already
+persists a `config.Provider{Name, Type, BaseURL, APIKey, Models}` through the
+root-daemon config broker (keys stored root-side, redacted on read), and
+`backend.Discover` turns each provider into a `remote` backend. But
+`proxy.handleProxy` forwards with a single `Authorization: Bearer` header to
+`{base}/chat/completions` and streams the body through unchanged — i.e. it
+assumes the **OpenAI** wire format. That's true for OpenAI, Google (via its
+OpenAI-compat endpoint), and every aggregator, but **false for Anthropic**
+(different path, auth header, schema, and SSE shape), so `proxy add anthropic`
+currently stores a provider that won't actually answer.
+
+**Two integration modes, selected by `Type`.** This is the whole extensibility
+story:
+
+1. **Passthrough (OpenAI-compatible).** Forward the body unchanged; only set
+   auth (+ any extra headers). Covers:
+   - **OpenAI** — `https://api.openai.com/v1`, Bearer.
+   - **Google (Gemini)** — its OpenAI-compatible endpoint
+     `https://generativelanguage.googleapis.com/v1beta/openai/`, Bearer.
+   - **Aggregators** — **OpenRouter** (`https://openrouter.ai/api/v1`),
+     **Together.ai** (`https://api.together.xyz/v1`), and the same shape for
+     Groq/Fireworks/Anyscale/Azure-OpenAI/self-hosted vLLM. Bearer, plus optional
+     headers (e.g. OpenRouter's `HTTP-Referer`/`X-Title`) carried in `Extra`.
+2. **Native adapter (translated).** The provider has its own wire format; the
+   proxy translates request + response (incl. streaming) to/from OpenAI shape.
+   - **Anthropic** — `POST {base}/messages`, headers `x-api-key` +
+     `anthropic-version`, content blocks, required `max_tokens`, SSE events.
+   - **Google native** (`generateContent`) — optional/later; only if the
+     OpenAI-compat endpoint proves limiting.
+
+> **Extensibility guarantee:** adding any OpenAI-compatible vendor or aggregator
+> is **one preset row, zero code**. Only a genuinely non-compatible API (today:
+> Anthropic) costs **one `Adapter` implementation**. Aggregators add neither a
+> new mode nor new code — they are passthrough providers with big, namespaced
+> model catalogs.
+
+**Adapter architecture.** A new `internal/provider` package defines one
+interface; `handleProxy` selects an implementation by `Type` and defaults to
+passthrough, so OpenAI/Google/aggregators stay on the existing fast path and all
+Anthropic logic lives in one tested file.
+
+```go
+type Adapter interface {
+    Name() string
+    // OpenAI chat/completions body -> provider HTTP request (URL, headers, body).
+    BuildRequest(ctx context.Context, b backend.Backend, oaiBody []byte, stream bool) (*http.Request, error)
+    // Provider response -> OpenAI shape (stream=true re-emits chat.completion.chunk SSE + [DONE]).
+    WriteResponse(w http.ResponseWriter, resp *http.Response, stream bool) error
+}
+// provider.For(type): "anthropic" -> Anthropic{}; openai|google|openrouter|together|"" -> Passthrough{}.
+```
+
+**Anthropic adapter specifics.** Endpoint `POST {base}/messages`; headers
+`x-api-key`, `anthropic-version: 2023-06-01`. Request map: system messages
+hoisted to top-level `system`; user/assistant → `messages[]` content blocks;
+`max_tokens` injected if absent (Anthropic requires it); `stop`→`stop_sequences`.
+Response map: `content[].text` → `choices[0].message.content`; `stop_reason`
+→ `finish_reason` (`end_turn`→`stop`, `max_tokens`→`length`);
+`input/output_tokens` → `prompt/completion_tokens`. Streaming: Anthropic SSE
+(`message_start`/`content_block_delta`/`message_delta`/`message_stop`) →
+OpenAI `chat.completion.chunk` frames + `data: [DONE]`. Tools/vision later.
+
+**CLI presets.** A preset table fills base URL, auth scheme, version, optional
+headers, and model defaults from the provider name — users don't hand-type them:
+
+```bash
+inference proxy add openai     --key sk-…
+inference proxy add anthropic  --key sk-ant-…
+inference proxy add google     --key …
+inference proxy add openrouter --key sk-or-…
+inference proxy add together   --key …
+# escape hatch for any OpenAI-compatible vendor/gateway/self-host:
+inference proxy add my-vllm --type openai --base http://gpu-box:8000/v1 --key …
+```
+
+```go
+type preset struct {
+    Type       string            // adapter key: openai | anthropic | google | openrouter | together
+    BaseURL    string
+    AuthHeader string            // "Authorization: Bearer" | "x-api-key"
+    Extra      map[string]string // versions / ranking headers (e.g. anthropic-version, HTTP-Referer)
+    Models     []string          // curated highlights; aggregators prefer --discover (see below)
+    Discover   bool              // default to live /models for big catalogs
+}
+```
+
+`config.Provider` gains only an optional `Extra map[string]string` (version/header
+overrides). No new write path — `proxy add` still brokers via `POST /v1/config`,
+and auth/version come from the preset at request time unless `Extra` overrides.
+
+**Model discovery (matters most for aggregators).** Cheapest first:
+(1) preset highlight set, no network; (2) `--models a,b,c` explicit pin;
+(3) `--discover` opt-in live fetch — OpenAI `GET /models`, Anthropic
+`GET /v1/models`, aggregators `GET /models` (which return *hundreds* of
+vendor-prefixed ids like `anthropic/claude-3.5-sonnet`, `meta-llama/…`). Cache in
+the backend. Aggregators default `Discover=true`; direct providers ship a small
+curated list so they federate instantly.
+
+**Addressing & collisions (aggregator-aware).** A model id may be served by
+several backends (e.g. `anthropic/claude-…` via both OpenRouter and Together, and
+`claude-…` direct). Because aggregator ids already contain `/`, disambiguate with
+a `backend:model` selector (colon, not slash): `openrouter:anthropic/claude-3.5-sonnet`.
+Aliases hide the verbosity (`config set alias.claude openrouter:anthropic/claude-3.5-sonnet`).
+`inference models` lists direct providers' models inline but **summarizes**
+aggregator catalogs (`openrouter — 312 models, use --all`) to avoid a wall of text.
+
+**Usage & cost.** After translation every response is OpenAI-shaped, so the proxy
+sees `usage.*` tokens uniformly across direct and aggregated providers — feeding
+`inference usage` (tokens/latency/$) via a static, overridable price table.
+
+**Failure modes (honest):** no key → backend `offline`; bad key → provider
+401/403 surfaced verbatim with a `→ inference proxy add <name> --key …` hint;
+unknown model → provider 404 + "did you mean"; provider/network down → 502 named,
+eligible for a fallback route.
+
+**Phased delivery.** (1) Passthrough presets: OpenAI + Google + OpenRouter +
+Together (wiring on what exists). (2) `internal/provider` package + Anthropic
+adapter with fixture-based request/response/SSE tests. (3) `--discover` +
+`inference usage`. Phases 1–2 extend Milestone 1's provider support; phase 3
+lands with Milestone 3 router features.
+
 ---
 
 ## 5. Interactive chat REPL

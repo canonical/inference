@@ -25,7 +25,8 @@ Derived from [DESIGN.md](DESIGN.md). Checked items are delivered in the first pa
 - [x] **Dynamic discovery** — any installed snap serving an OpenAI endpoint is federated,
       not just the hardcoded catalogue
 - [x] **Typo tolerance** — fuzzy `catalogue <query>` + did-you-mean on install/remove
-- [x] **`inference proxy add <provider> --key`** — register external OpenAI/Anthropic provider
+- [x] **`inference proxy add <provider> --key`** — register an external provider
+      (OpenAI-compatible works today; Anthropic registers but doesn't route until Milestone R Phase 2)
 - [x] **`inference config get/set`**, **`inference` wizard/status**, global flags `--json/--quiet/--yes/--dry-run`
 
 ## Milestone 1 — Make it a real installed snap
@@ -63,6 +64,59 @@ Derived from [DESIGN.md](DESIGN.md). Checked items are delivered in the first pa
 - [ ] Addons: `+webui` (Open WebUI), `+api` (Anthropic-format shim), `+bench` — currently
       advisory-only in the plan; auto-install + proxy wiring not yet implemented
 - [ ] Driver advisor `--fix` actually runs apt/driver installs after confirmation
+
+## Milestone R — Remote providers & aggregators ([DESIGN](DESIGN.md) §4.1)
+
+Federate hosted models (OpenAI, Anthropic, Google) and OpenAI-compatible
+aggregators (OpenRouter, Together.ai, Groq, Fireworks, Azure-OpenAI, self-hosted
+vLLM) behind the same `:8080/v1`. Foundations exist from M0/M1 — `proxy add`, the
+config broker, and remote-backend discovery — but `handleProxy` only speaks
+OpenAI Bearer passthrough, so `proxy add anthropic` currently **stores** a
+provider it can't actually route to. Architecture rule: a new OpenAI-compatible
+vendor/aggregator = **one preset row, zero code**; a non-compatible API = **one
+`Adapter`**.
+
+### Phase 1 — Passthrough presets (OpenAI · Google · OpenRouter · Together)
+- [ ] **Preset table** (name → `Type`, `BaseURL`, `AuthHeader`, `Extra`, `Models`,
+      `Discover`) for `openai`, `google`, `openrouter`, `together`
+- [ ] `proxy add <preset> --key …` fills base/auth/version/models from the table;
+      `--base`/`--type openai` override for any generic OpenAI-compatible vendor/gateway/self-host
+- [ ] **`config.Provider.Extra map[string]string`** (version/ranking-header overrides);
+      brokered via `POST /v1/config`, redacted on read like the API key
+- [ ] Per-request header injection from preset+`Extra` (Bearer vs `x-api-key`;
+      OpenRouter `HTTP-Referer`/`X-Title`)
+- [ ] **Google** via its OpenAI-compat base (`…/v1beta/openai/`), Bearer
+- [ ] Verify each with a real key: `curl :8080/v1/chat/completions` returns an
+      OpenAI-shaped result; `stream:true` yields chunks
+
+### Phase 2 — Native adapter layer (Anthropic)
+- [ ] **`internal/provider` package** + `Adapter` interface
+      (`BuildRequest`/`WriteResponse`); `provider.For(type)` registry defaulting to passthrough
+- [ ] Refactor **`handleProxy`** to route via `provider.For(b.Type)`
+      (passthrough = the current byte-copy, extracted into `Passthrough{}`)
+- [ ] **`Anthropic{}` request map**: `POST {base}/messages`; `x-api-key` +
+      `anthropic-version`; hoist system → top-level `system`; inject `max_tokens`
+      default; `stop`→`stop_sequences`; carry `temperature`/`top_p`
+- [ ] **Anthropic response map**: `content[].text`→`message.content`;
+      `stop_reason`→`finish_reason`; `input`/`output_tokens`→`prompt`/`completion_tokens`;
+      synthesize `id`/`object`/`created`
+- [ ] **Anthropic streaming**: SSE (`message_start`/`content_block_delta`/
+      `message_delta`/`message_stop`) → OpenAI `chat.completion.chunk` + `data: [DONE]`
+- [ ] **Fixture-based unit tests** (recorded request/response + a multi-event stream), no network
+- [ ] (later) tools/function-calling + vision/image content-block mapping
+
+### Phase 3 — Discovery, addressing & telemetry
+- [ ] **`--discover`** opt-in live model fetch (OpenAI `GET /models`, Anthropic
+      `GET /v1/models`, aggregator `GET /models`), cached per backend; aggregators
+      default `Discover=true`, direct providers ship a small curated highlight list
+- [ ] **`backend:model` selector** (colon, since aggregator ids contain `/`) for
+      collisions + slashed ids; alias support; update `backend.FindForModel`
+- [ ] **`inference models` summarizes** large aggregator catalogs
+      (`openrouter — 312 models, use --all`) + filter
+- [ ] **`inference usage`** (tokens/latency/$) via a static, overridable price
+      table — uniform `usage.*` after translation (also a Milestone 3 item)
+- [ ] **Failure-mode polish**: surface provider 401/403 verbatim + `→ proxy add … --key`
+      hint; missing key → backend `offline`; named 502 on provider down
 
 ## Milestone 3 — Router features
 - [ ] Fallback chains (`route set X --fallback Y`), load-balancing across identical backends
