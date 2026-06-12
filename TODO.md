@@ -129,3 +129,50 @@ vendor/aggregator = **one preset row, zero code**; a non-compatible API = **one
 - [ ] `inference benchmark <model>` (tok/s), first-token-latency estimates in plans
 - [ ] cloud-init / Juju / MicroK8s integration notes
 - [ ] Cold-start transcript tests per profile; `+` grammar coverage matrix tests; off-TTY contract tests
+
+## Milestone V2 — Shared local runtime & unified backends ([DESIGN](DESIGN.md) §11)
+
+Forward-looking and **purely additive**: model snaps stay packaged-everything and
+usable standalone. Every model becomes a proxied backend in one of three kinds —
+`remote` (§4.1), `local-proxied` (the snap's own server), `local-hosted`
+(`inference`'s shared runtime). `local-hosted` only kicks in when a snap shares
+weights and a matching engine component is present; otherwise we fall back to
+`local-proxied`, so the system is useful at every step.
+
+### Phase A — Unify local snaps as "local providers" (mostly exists)
+- [ ] Reframe `backend.Discover` snap backends as `local-proxied` providers sharing
+      the §4.1 provider/adapter path (OVMS `/v3` = a passthrough provider with base-path)
+- [ ] Add a `Kind` column to `inference models`: `remote` / `local-proxied` / `local-hosted`
+- [ ] De-risk spike: **content-interface fan-in** prototype (many model-snap slots →
+      one `inference` consumer) — the #1 unknown; `local-proxied` needs none of it
+
+### Phase B — Shared runtime foundation (engines)
+- [ ] Engines as snap **components** (`llamacpp-{cpu,cuda,rocm,sycl}`, `openvino`,
+      `vllm-cuda`); root daemon installs the silicon-matched component on demand
+- [ ] `+engine`/`+accel` resolve to a component (extend `internal/install` resolver +
+      `spec` grammar); reuse hard-error-with-alternatives
+- [ ] **Engine supervisor** in the daemon: launch/reuse an engine process on a private
+      loopback port, proxy `/v1/*` to it (router base-path translation already exists)
+- [ ] GPU userspace via Canonical content snaps (`graphics-core22` / `gpu-2404`);
+      device access plugs (`/dev/dri`, `/dev/kfd`, `/dev/nvidia*`, `/dev/accel*`)
+
+### Phase C — Weight sharing → `local-hosted`
+- [ ] **Model `manifest.json`** schema (formats[], params, context, modalities, RAM floor)
+- [ ] Model snaps expose a read-only `content: inference-model` weights slot (additive,
+      non-breaking); `inference` plugs + mounts it
+- [ ] **format → engine → accelerator** resolver (gguf→llama.cpp, openvino-ir→OpenVINO,
+      safetensors→vLLM) over manifest × hardware × installed components × `+` override
+- [ ] Discovery yields hostable models from manifests; prefer `local-hosted` when weights
+      + engine component available, else `local-proxied` (graceful fallback)
+
+### Phase D — Hosting policy, lifecycle, telemetry
+- [ ] Per-model **hosting policy**: prefer shared-runtime vs the snap's own tuned server
+- [ ] Lifecycle on hosted models: `lazy` (idle-unload) / `keep-warm` / `pinned`,
+      VRAM-aware admission, `--on-oom spill-to-remote` (ties to Milestone 3)
+- [ ] Reference: publish one weights-slot model snap (gguf `gemma4`) + verify a model
+      runs on the shared runtime end-to-end on real silicon
+
+### Open decisions (DESIGN §11.11)
+- [ ] Engine packaging: components (recommended) vs separate engine snaps vs fat bundle
+- [ ] Weight sharing: content interface (preferred) vs shared on-disk cache vs proxied-only
+- [ ] vLLM scope: first cut vs deferred behind llama.cpp + OpenVINO

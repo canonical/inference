@@ -523,6 +523,199 @@ for ecosystem consistency; `config export/import` for reproducible/edge builds.)
 
 ---
 
+## 11. Architecture v2 — a shared local runtime + one unified backend model
+
+> A forward-looking evolution that **keeps the existing model snaps exactly as
+> they are** — packaged-everything (engine + weights + server), independently
+> installable, usable with no `inference` at all — and adds a **shared runtime
+> inside `inference`**. Rather than every model running its own engine,
+> `inference` can host many models on one pooled runtime, and it presents *every*
+> backend (remote API, a model snap's own server, or a model it hosts itself)
+> through the **same proxied-API abstraction**.
+
+### 11.1 What does NOT change
+
+The individual inference snaps (`gemma3`, `gemma4`, `qwen-vl`, …) are untouched.
+Want just one model? `snap install gemma4` and use it standalone — its own engine,
+its own OpenAI endpoint, no `inference` required. `inference` never modifies or
+replaces them; it **layers on top** for orchestration, and degrades gracefully to
+"just proxy the snap" when it can't do more.
+
+### 11.2 One abstraction: every model is a proxied backend
+
+The simplifying idea: **local and remote models are the same kind of thing** — a
+backend the router fronts at `:8080/v1`. A local model snap is just a **local
+provider**, conceptually identical to the remote providers in §4.1
+(OpenAI/Anthropic/aggregators) but on `localhost`. So §4.1's provider/adapter
+machinery powers local snaps too: a snap serving OVMS at `:8326/v3` is a
+passthrough provider with base-path `/v3` — exactly how `backend.Discover` already
+treats it. Three backend flavors, one router:
+
+| Backend kind     | Who runs the engine               | Example                              |
+|------------------|-----------------------------------|--------------------------------------|
+| `remote`         | the provider                      | OpenAI, Anthropic, OpenRouter        |
+| `local-proxied`  | the model snap itself              | `gemma4` snap serving its own port   |
+| `local-hosted`   | **`inference`'s shared runtime**  | `gemma4`'s weights on shared llama.cpp |
+
+`local-proxied` works **today** — it is the v0.1 federation, reframed. `local-hosted`
+is the new capability below.
+
+### 11.3 The new bit: a shared runtime that hosts many models
+
+`inference` ships engines (llama.cpp, vLLM, OpenVINO across cpu/cuda/rocm/oneAPI)
+and can **pull a model's weights from its installed snap** and load them into that
+shared engine pool — so N models share one runtime instead of N separate engine
+processes. That is the orchestration/management win:
+
+- **Less memory / VRAM** — one engine, many models (load/unload on demand) instead
+  of every snap keeping a full runtime resident.
+- **Unified lifecycle** — lazy-load, idle-unload, keep-warm, pinning, VRAM-aware
+  admission, centrally, because `inference` owns the processes (§11.6).
+- **Silicon-optimal centrally** — one place builds and tunes each engine ×
+  accelerator combination, smoothing today's uneven coverage.
+
+The model snap stays packaged-everything; it is simply *also* a **weight source**.
+Its own server can stay stopped while `inference` hosts it (no duplicate runtime),
+or keep running for standalone use — the user's choice.
+
+```
+        ┌──────────────────────────── inference snap (shared runtime + router) ───────────────────────────┐
+        │  proxy/router :8080/v1   engine supervisor   format+hardware resolver   component manager        │
+        │  engines (snap components, pulled per silicon):                                                  │
+        │     llama.cpp [cpu|cuda|rocm|sycl]   vLLM [cpu|cuda|rocm]   OpenVINO [cpu|intel-gpu|npu]          │
+        └──▲ weights (content / local cache) ───────────────────────────────────── proxy (localhost) ▲────┘
+        ┌──┴───────────────────────────────────────────┐                        ┌────────────────────┴──┐
+        │ gemma4 snap   qwen-vl snap   deepseek snap    │  (UNCHANGED — engine + │ each can also just run │
+        │ each: engine + weights + its own OpenAI server│   weights + server)    │ standalone, proxied    │
+        └───────────────────────────────────────────────┘                        └───────────────────────┘
+```
+
+### 11.4 Getting the weights under strict confinement
+
+A strictly-confined `inference` can't read another snap's files arbitrarily, so
+`local-hosted` needs a sanctioned channel. Options, honestly ranked:
+
+1. **Content interface (preferred).** The model snap *additionally* exposes its
+   weights directory via a read-only `content` slot (`content: inference-model`).
+   This is **additive and non-breaking** — the snap keeps its engine, server, and
+   standalone behavior; it merely also offers its weights. `inference` plugs it.
+2. **No slot → fall back to `local-proxied`.** If a snap doesn't expose weights,
+   `inference` just proxies its endpoint (zero changes to that snap). Hosted when
+   weights are shared; proxied otherwise — graceful degradation.
+
+A small **manifest** beside the weights lets `inference` pick an engine without
+model-specific knowledge:
+
+```json
+{ "name":"gemma4", "params":"4B", "context":8192, "modalities":["text","vision"],
+  "formats":[ {"format":"openvino-ir","path":"ov/","precision":"int4"},
+              {"format":"gguf","path":"gguf/gemma4-q4_k_m.gguf","quant":"q4_k_m"} ] }
+```
+
+Shipping **multiple formats** is the silicon-optimal payoff: the *same* snap runs
+on OpenVINO/NPU on a laptop and llama.cpp/CUDA on a workstation — `inference`
+chooses per host.
+
+### 11.5 format → engine → accelerator routing
+
+| Weight format  | Engine     | Accelerators (engine component)                  |
+|----------------|------------|---------------------------------------------------|
+| `gguf`         | llama.cpp  | cpu · cuda · rocm · sycl (Intel oneAPI) · vulkan   |
+| `openvino-ir`  | OpenVINO   | cpu · intel-gpu · npu                              |
+| `safetensors`  | vLLM       | cuda · rocm · cpu                                  |
+
+The resolver picks `(format, engine, accel)` from the intersection of: the
+manifest's formats, host accelerators (§6), installed/available engine components,
+and any `+engine`/`+accel` override — reusing the hard-error-with-alternatives
+logic already in `internal/install`.
+
+### 11.6 Shared engines as snap **components** + supervisor
+
+Bundling llama.cpp×4 + vLLM×3 + OpenVINO into one snap would be enormous and
+mostly unused. snapd **components** ship optional, on-demand parts:
+
+```yaml
+# snapcraft.yaml (sketch)
+name: inference
+components:
+  llamacpp-cpu:  { type: standard, summary: llama.cpp CPU }
+  llamacpp-cuda: { type: standard, summary: llama.cpp CUDA }
+  llamacpp-rocm: { type: standard, summary: llama.cpp ROCm }
+  llamacpp-sycl: { type: standard, summary: llama.cpp Intel oneAPI/SYCL }
+  vllm-cuda:     { type: standard, summary: vLLM CUDA }
+  openvino:      { type: standard, summary: OpenVINO (cpu/intel-gpu/npu) }
+plugs:
+  graphics: { interface: content, content: graphics-core22, target: $SNAP/graphics }
+```
+
+`inference` detects the silicon and pulls **only** the matching component
+(`snap install inference+llamacpp-cuda`, brokered by the root daemon exactly like
+model installs today) — the natural home for `+`: `gemma4+cuda` ⇒ ensure the
+`llamacpp-cuda` component, then load `gemma4`'s gguf into it. Base snap stays
+small; heavy bits are silicon-gated.
+
+The daemon becomes an **engine supervisor**: on a request for hosted model *M* it
+ensures the engine component, launches (or reuses) a process with *M*'s weights on
+a private loopback port, and the router proxies `/v1/*` to it. This is what makes
+`lazy`/`keep-warm`/`pinned` and `--on-oom spill-to-remote` (§4) enforceable.
+
+### 11.7 Discovery & the `models` view
+
+`inference` enumerates: (a) connected `inference-model` content slots → manifests →
+**hostable** models; (b) installed model snaps still serving their own port →
+**local-proxied** backends; (c) configured **remote** providers (§4.1). The same
+`local-proxied` model may also be hostable — `inference` prefers `local-hosted`
+(shared runtime) when weights + a suitable engine component are available, else
+proxies. `inference models` shows all three under one list with a kind column.
+
+### 11.8 Confinement & GPU userspace (the hard part)
+
+- **Weights:** `content` (read-only). **Compute:** `opengl`, `hardware-observe`,
+  device access to `/dev/dri` (Intel/AMD), `/dev/kfd` (ROCm), `/dev/nvidia*`
+  (CUDA), `/dev/accel*` (NPU). **Component install:** `snapd-control` (existing
+  root-daemon broker).
+- **GPU userspace** (CUDA / ROCm / oneAPI Level-Zero / Mesa) is large and
+  kernel-coupled. Prefer Canonical's GPU **content snaps** (`graphics-core22`, the
+  `gpu-2404` provider, NVIDIA userspace via content) over bundling multi-GB
+  runtimes per component; ROCm/oneAPI may still need bundling until content snaps
+  exist.
+- Heavier confinement + store-review posture than v0.1 (device access +
+  `snapd-control`); expect manual review and explicit connections.
+
+### 11.9 Constraints to prototype first
+
+1. **Content-interface fan-in.** A content *plug* binds one *slot*, but we need
+   many model snaps → one consumer. Validate the pattern (shared `inference-model`
+   label with a pool of pre-declared plugs the daemon binds, or per-snap targets).
+   **#1 to de-risk** — and note `local-proxied` needs none of this, so the
+   architecture is useful even if fan-in proves awkward.
+2. **vLLM in a snap.** Heavy Python/CUDA (and ROCm) stack; may start with
+   llama.cpp + OpenVINO and add vLLM later.
+3. **Model snaps opting in** to a weights content slot (additive); without it they
+   remain `local-proxied`.
+4. **Component install UX** while a model is mid-load (first-run latency).
+
+### 11.10 Why this is lower-risk than it looks
+
+Nothing here breaks the current product: model snaps are unchanged and standalone
+use is untouched; `local-proxied` is just today's federation; `local-hosted` is a
+*pure addition* that only kicks in when a snap shares weights and a matching engine
+component is present. The shared runtime is an optimization layered onto a working
+system, not a rewrite of it.
+
+### 11.11 Open decisions
+
+- **Engine packaging:** components of `inference` (recommended — small base,
+  silicon-gated, maps to `+`) vs separate engine snaps vs one fat bundle.
+- **Weight sharing:** content interface (preferred) vs a shared on-disk model
+  cache both can read vs proxied-only (no hosting).
+- **Hosting policy:** when both are possible, prefer `local-hosted` (shared
+  runtime) or `local-proxied` (the snap's own tuned server)? Per-model override.
+- **GPU userspace:** content snaps vs bundled per component.
+- **vLLM scope:** first cut or deferred behind llama.cpp + OpenVINO.
+
+---
+
 ## How to validate this design before building
 
 This is a design spec, so "tests" are usability and coverage walkthroughs:
