@@ -1,0 +1,60 @@
+name: inference
+title: Inference
+version: "0.1.0"
+summary: Silicon-optimized local AI orchestration for Ubuntu
+description: |
+  inference is the front door to local AI on Ubuntu. It detects your hardware,
+  advises on drivers, installs silicon-optimal builds of inference engines and
+  models, and federates every endpoint behind one litellm-style
+  OpenAI-compatible proxy — across edge, laptops, workstations, and clusters.
+
+  Use it interactively (`inference chat`), compose installs with the `+` syntax
+  (`inference install gemma4+cuda+webui`), or point any OpenAI client at the
+  federated proxy.
+
+license: GPL-3.0
+base: core24
+confinement: strict
+grade: devel
+
+# Interfaces:
+#   network / network-bind  — the federated proxy + outbound to providers
+#   hardware-observe        — GPU/NPU/PCI detection
+#   system-observe          — process/system inspection for `doctor`
+#   snapd-control           — install & read config of the model snaps it manages
+#                             (super-privileged: manual store review + connect)
+plugs:
+  snapd-control:
+    interface: snapd-control
+
+apps:
+  inference:
+    command: bin/inference
+    plugs:
+      - network
+      - network-bind
+      - hardware-observe
+      - system-observe
+      - snapd-control
+
+  proxy:
+    command: bin/inference serve
+    daemon: simple
+    restart-condition: on-failure
+    # Runs as root: the privileged broker that discovers & installs model snaps
+    # for the unprivileged CLI, and serves the federated OpenAI proxy.
+    plugs:
+      - network
+      - network-bind
+      - hardware-observe
+      - system-observe
+      - snapd-control
+
+parts:
+  inference:
+    plugin: go
+    source: .
+    build-snaps:
+      - go/1.26/stable
+    stage-packages:
+      - pciutils   # lspci for GPU detection inside the sandbox
