@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Inference Indicator
+Comment=Top-bar status and controls for local AI
+Exec=inference tray
+Icon=${SNAP}/meta/gui/icon.png
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true

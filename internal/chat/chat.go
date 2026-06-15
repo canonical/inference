@@ -35,6 +35,9 @@ type endpoint struct {
 
 // resolve picks where to send requests for the given model.
 func resolve(cfg *config.Config, model string) (*endpoint, error) {
+	if model == "" {
+		model = cfg.Aliases["default"] // user-chosen default (e.g. via the tray)
+	}
 	if proxy.IsUp(cfg) {
 		base := fmt.Sprintf("http://%s:%d/v1", cfg.Proxy.Bind, cfg.Proxy.Port)
 		if model == "" {

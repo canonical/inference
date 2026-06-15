@@ -30,12 +30,21 @@ plugs:
 apps:
   inference:
     command: bin/inference
+    # The `tray` subcommand draws a top-bar indicator, so this app also needs
+    # desktop/session-bus access. `autostart` installs the indicator's .desktop
+    # into the user session so it launches on login.
+    autostart: inference-tray.desktop
     plugs:
       - network
       - network-bind
       - hardware-observe
       - system-observe
       - snapd-control
+      - desktop
+      - desktop-legacy
+      - wayland
+      - x11
+      - unity7           # session-bus access for the AppIndicator / SNI host
 
   proxy:
     command: bin/inference serve
@@ -57,4 +66,14 @@ parts:
     build-snaps:
       - go/1.26/stable
     stage-packages:
-      - pciutils   # lspci for GPU detection inside the sandbox
+      - pciutils       # lspci for GPU detection inside the sandbox
+      - xclip          # tray "copy command" (bridged to Wayland via Xwayland)
+      - wl-clipboard   # tray "copy command" on pure-Wayland sessions
+
+  tray-assets:
+    # The autostart .desktop and app icon for the indicator.
+    plugin: dump
+    source: snap/local
+    organize:
+      inference-tray.desktop: inference-tray.desktop
+      inference.png: meta/gui/icon.png

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
+	"syscall"
 
 	"inference/internal/backend"
 	"inference/internal/catalogue"
@@ -16,6 +18,7 @@ import (
 	"inference/internal/proxy"
 	"inference/internal/snapd"
 	"inference/internal/spec"
+	"inference/internal/tray"
 	"inference/internal/ui"
 )
 
@@ -63,6 +66,8 @@ func Main(args []string) int {
 		cmdErr = chatCmd(cfg, rest)
 	case "install", "add":
 		cmdErr = installCmd(cfg, rest, o)
+	case "tray":
+		cmdErr = trayCmd(cfg, rest)
 	case "proxy":
 		cmdErr = proxyCmd(cfg, rest)
 	case "config":
@@ -628,6 +633,54 @@ func proxyCmd(cfg *config.Config, args []string) error {
 	return nil
 }
 
+// ---- tray ----
+
+func trayCmd(cfg *config.Config, args []string) error {
+	background := false
+	for _, a := range args {
+		switch a {
+		case "--enable", "enable":
+			if err := tray.SetAutostart(true); err != nil {
+				return err
+			}
+			ui.Printf("  %s tray will start on login\n", ui.Green(ui.SymOK))
+			return nil
+		case "--disable", "disable":
+			if err := tray.SetAutostart(false); err != nil {
+				return err
+			}
+			ui.Printf("  %s tray will not start on login\n", ui.Green(ui.SymOK))
+			return nil
+		case "--background", "-b":
+			background = true
+		default:
+			return fmt.Errorf("usage: inference tray [--enable|--disable|--background]")
+		}
+	}
+	if background {
+		return launchTrayDetached()
+	}
+	return tray.Run(cfg)
+}
+
+// launchTrayDetached re-execs the indicator in its own session (detached from
+// the controlling terminal) and returns immediately, so the shell is freed and
+// the icon survives closing the terminal.
+func launchTrayDetached() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(exe, "tray")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	// nil std streams are wired to /dev/null by os/exec.
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	ui.Printf("  %s indicator running in the background (pid %d)\n", ui.Green(ui.SymOK), cmd.Process.Pid)
+	return nil
+}
+
 // ---- config ----
 
 func configCmd(cfg *config.Config, args []string) error {
@@ -691,6 +744,8 @@ Commands:
   hardware            hardware detection report
   doctor [--fix]      diagnose drivers, interfaces, backends, proxy
   proxy add <name>    register an external provider (--key ...)
+  tray [--background|--enable|--disable]  top-bar status indicator
+                      (--background detaches; --enable/--disable login autostart)
   config get|set      view/change configuration
 
 The federated proxy runs automatically as the 'inference.proxy' service
