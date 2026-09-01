@@ -2,13 +2,13 @@ package snapd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -73,8 +73,15 @@ func TestStatuses_APIErrorEnvelope(t *testing.T) {
 	})
 
 	client := &Client{Sockets: []string{socket}}
-	if _, err := client.Statuses(context.Background()); err == nil {
+	_, err := client.Statuses(context.Background())
+	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+	if strings.Contains(err.Error(), "cannot unmarshal") {
+		t.Fatalf("API error was masked by result decoding: %v", err)
+	}
+	if !strings.Contains(err.Error(), "HTTP 500") || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected contextual snapd API error, got %v", err)
 	}
 }
 
@@ -87,6 +94,25 @@ func TestStatuses_NonOKStatus(t *testing.T) {
 	client := &Client{Sockets: []string{socket}}
 	if _, err := client.Statuses(context.Background()); err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestStatuses_ForbiddenErrorObjectIsNotDecodedAsSnapList(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"type":"error","status":"Forbidden","result":{"message":"access denied"}}`)
+	})
+
+	client := &Client{Sockets: []string{socket}}
+	_, err := client.Statuses(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if strings.Contains(err.Error(), "cannot unmarshal") {
+		t.Fatalf("API error was masked by result decoding: %v", err)
+	}
+	if !strings.Contains(err.Error(), "HTTP 403") || !strings.Contains(err.Error(), "access denied") {
+		t.Fatalf("expected contextual permission error, got %v", err)
 	}
 }
 
@@ -107,12 +133,8 @@ func TestStatuses_MissingResult(t *testing.T) {
 	})
 
 	client := &Client{Sockets: []string{socket}}
-	statuses, err := client.Statuses(context.Background())
-	if err != nil {
-		t.Fatalf("Statuses: %v", err)
-	}
-	if len(statuses) != 0 {
-		t.Fatalf("got %+v, want empty map", statuses)
+	if _, err := client.Statuses(context.Background()); err == nil {
+		t.Fatal("expected error for missing result, got nil")
 	}
 }
 
@@ -174,7 +196,7 @@ func TestStatuses_Timeout(t *testing.T) {
 
 func TestCandidateSockets_Host(t *testing.T) {
 	t.Setenv("SNAP", "")
-	os.Unsetenv("SNAP")
+	t.Setenv("SNAP_NAME", "")
 	got := CandidateSockets()
 	want := []string{"/run/snapd.socket"}
 	if len(got) != 1 || got[0] != want[0] {
@@ -184,6 +206,7 @@ func TestCandidateSockets_Host(t *testing.T) {
 
 func TestCandidateSockets_Confined(t *testing.T) {
 	t.Setenv("SNAP", "/snap/inference/current")
+	t.Setenv("SNAP_NAME", "inference")
 	got := CandidateSockets()
 	want := []string{"/run/snapd-snap.socket", "/run/snapd.socket"}
 	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
@@ -191,14 +214,13 @@ func TestCandidateSockets_Confined(t *testing.T) {
 	}
 }
 
-// jsonRoundTrip is a sanity check that the envelope decodes as expected from
-// raw JSON, guarding against accidental field-tag typos.
-func TestSnapsEnvelope_Decode(t *testing.T) {
-	var env snapsEnvelope
-	if err := json.Unmarshal([]byte(`{"type":"sync","status":"OK","result":[{"name":"a","status":"active"}]}`), &env); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(env.Result) != 1 || env.Result[0].Name != "a" {
-		t.Fatalf("got %+v", env)
+func TestCandidateSockets_SnappedGoToolchainUsesHostSocket(t *testing.T) {
+	t.Setenv("SNAP", "/snap/go/current")
+	t.Setenv("SNAP_NAME", "go")
+
+	got := CandidateSockets()
+	want := []string{"/run/snapd.socket"}
+	if len(got) != 1 || got[0] != want[0] {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }

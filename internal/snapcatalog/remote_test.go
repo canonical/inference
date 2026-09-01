@@ -1,4 +1,4 @@
-package catalog
+package snapcatalog
 
 import (
 	"context"
@@ -9,54 +9,54 @@ import (
 	"time"
 )
 
-func TestHTTPCatalogFetcher_Success(t *testing.T) {
+func TestHTTPFetcher_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"repositories":{}}`))
 	}))
 	t.Cleanup(server.Close)
 
-	fetcher := &HTTPCatalogFetcher{URL: server.URL, HTTPClient: server.Client()}
-	data, err := fetcher.FetchCatalog(context.Background())
+	fetcher := &HTTPFetcher{URL: server.URL, HTTPClient: server.Client()}
+	data, err := fetcher.Fetch(context.Background())
 	if err != nil {
-		t.Fatalf("FetchCatalog: %v", err)
+		t.Fatalf("Fetch: %v", err)
 	}
 	if string(data) != `{"repositories":{}}` {
 		t.Fatalf("got %q", data)
 	}
 }
 
-func TestHTTPCatalogFetcher_NonOK(t *testing.T) {
+func TestHTTPFetcher_NonOK(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	t.Cleanup(server.Close)
 
-	fetcher := &HTTPCatalogFetcher{URL: server.URL, HTTPClient: server.Client()}
-	if _, err := fetcher.FetchCatalog(context.Background()); err == nil {
+	fetcher := &HTTPFetcher{URL: server.URL, HTTPClient: server.Client()}
+	if _, err := fetcher.Fetch(context.Background()); err == nil {
 		t.Fatal("expected error for 404, got nil")
 	}
 }
 
-func TestHTTPCatalogFetcher_Oversized(t *testing.T) {
+func TestHTTPFetcher_Oversized(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(strings.Repeat("a", maxCatalogBytes+10)))
+		w.Write([]byte(strings.Repeat("a", maxResponseBytes+10)))
 	}))
 	t.Cleanup(server.Close)
 
-	fetcher := &HTTPCatalogFetcher{URL: server.URL, HTTPClient: server.Client()}
-	if _, err := fetcher.FetchCatalog(context.Background()); err == nil {
+	fetcher := &HTTPFetcher{URL: server.URL, HTTPClient: server.Client()}
+	if _, err := fetcher.Fetch(context.Background()); err == nil {
 		t.Fatal("expected error for oversized response, got nil")
 	}
 }
 
-func TestHTTPCatalogFetcher_Timeout(t *testing.T) {
+func TestHTTPFetcher_Timeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond)
 	}))
 	t.Cleanup(server.Close)
 
-	fetcher := &HTTPCatalogFetcher{URL: server.URL, HTTPClient: &http.Client{Timeout: 10 * time.Millisecond}}
-	if _, err := fetcher.FetchCatalog(context.Background()); err == nil {
+	fetcher := &HTTPFetcher{URL: server.URL, HTTPClient: &http.Client{Timeout: 10 * time.Millisecond}}
+	if _, err := fetcher.Fetch(context.Background()); err == nil {
 		t.Fatal("expected timeout error, got nil")
 	}
 }

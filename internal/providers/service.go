@@ -6,73 +6,86 @@ import (
 	"sort"
 )
 
-// CatalogSource resolves the public provider catalog to an ordered set of
-// authoritative provider names. Implementations own caching, refresh, and
-// fallback policy; this package only consumes the resolved names.
-type CatalogSource interface {
-	// Resolve returns the current provider names along with any non-fatal
-	// warnings describing degraded catalog sources (stale cache, embedded
-	// seed, and similar). A non-nil error means no usable catalog exists.
-	Resolve(ctx context.Context) (names []string, warnings []string, err error)
+type Registry interface {
+	List(context.Context) ([]Definition, []string, error)
 }
 
-// SnapStatusSource reports installed-snap statuses from snapd, keyed by snap
-// name. A name absent from the map means "no matching installed snap". A
-// name present with an empty status string is treated as untrustworthy data.
-type SnapStatusSource interface {
-	Statuses(ctx context.Context) (map[string]string, error)
+type StatusSource interface {
+	Statuses(context.Context) (map[string]string, error)
 }
 
-// ListOptions controls provider filtering.
-type ListOptions struct {
-	// InstalledOnly excludes providers whose status is StatusNotInstalled.
-	InstalledOnly bool
-}
-
-// Service joins the provider catalog with snapd's installed-snap state.
 type Service struct {
-	Catalog CatalogSource
-	Snaps   SnapStatusSource
+	Registry      Registry
+	StatusSources map[Type]StatusSource
 }
 
-// NewService constructs a Service from its dependencies.
-func NewService(catalog CatalogSource, snaps SnapStatusSource) *Service {
-	return &Service{Catalog: catalog, Snaps: snaps}
+func NewService(registry Registry, statusSources map[Type]StatusSource) *Service {
+	return &Service{Registry: registry, StatusSources: statusSources}
 }
 
-// List returns providers sorted lexically by name, optionally filtered to
-// only installed providers. The returned warnings should be surfaced on
-// stderr; they never accompany a nil error.
-func (s *Service) List(ctx context.Context, opts ListOptions) ([]Provider, []string, error) {
-	names, warnings, err := s.Catalog.Resolve(ctx)
+func (s *Service) List(ctx context.Context, installedOnly bool) ([]Provider, []string, error) {
+	definitions, warnings, err := s.Registry.List(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("resolving provider catalog: %w", err)
+		return nil, nil, fmt.Errorf("listing provider registry: %w", err)
 	}
 
-	statuses, err := s.Snaps.Statuses(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("reading installed snaps: %w", err)
-	}
-
-	providers := make([]Provider, 0, len(names))
-	for _, name := range names {
-		status, present := statuses[name]
-		if present {
-			if status == "" {
-				return nil, nil, fmt.Errorf("snapd reported an empty status for installed provider %q", name)
-			}
-		} else {
-			status = StatusNotInstalled
+	statusesByType := make(map[Type]map[string]string)
+	seenNames := make(map[string]bool, len(definitions))
+	for _, definition := range definitions {
+		if definition.Name == "" {
+			return nil, nil, fmt.Errorf("provider registry returned a provider with no name")
 		}
+		if definition.Type == "" {
+			return nil, nil, fmt.Errorf("provider registry returned provider %q with no type", definition.Name)
+		}
+		if seenNames[definition.Name] {
+			return nil, nil, fmt.Errorf("provider registry returned duplicate provider %q", definition.Name)
+		}
+		seenNames[definition.Name] = true
+	}
 
-		provider := Provider{Name: name, Type: InferenceSnap, Status: status}
-		if opts.InstalledOnly && !provider.Installed() {
+	for _, definition := range definitions {
+		if _, resolved := statusesByType[definition.Type]; resolved {
 			continue
 		}
-		providers = append(providers, provider)
+		source, ok := s.StatusSources[definition.Type]
+		if !ok {
+			return nil, nil, fmt.Errorf("no status source configured for provider type %q", definition.Type)
+		}
+		statuses, err := source.Statuses(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("reading statuses for provider type %q: %w", definition.Type, err)
+		}
+		statusesByType[definition.Type] = statuses
 	}
 
-	sort.Slice(providers, func(i, j int) bool { return providers[i].Name < providers[j].Name })
-
-	return providers, warnings, nil
+	list := make([]Provider, 0, len(definitions))
+	for _, definition := range definitions {
+		status, installed := statusesByType[definition.Type][definition.Name]
+		if installed && status == "" {
+			return nil, nil, fmt.Errorf(
+				"status source for provider type %q returned an empty status for %q",
+				definition.Type,
+				definition.Name,
+			)
+		}
+		if !installed {
+			status = StatusNotInstalled
+		}
+		if installedOnly && !installed {
+			continue
+		}
+		list = append(list, Provider{
+			Name:   definition.Name,
+			Type:   definition.Type,
+			Status: status,
+		})
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].Name == list[j].Name {
+			return list[i].Type < list[j].Type
+		}
+		return list[i].Name < list[j].Name
+	})
+	return list, warnings, nil
 }

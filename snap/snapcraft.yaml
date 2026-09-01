@@ -11,6 +11,8 @@ confinement: strict
 apps:
   inference:
     command: bin/inference
+    environment:
+      INFERENCE_SNAP_CATALOG_SEED: $SNAP/share/inference/snap-catalog-seed.json
     plugs:
       - network
       - snapd-control
@@ -22,3 +24,7 @@ parts:
       - go/1.26/stable
     source: .
     source-type: local
+    override-build: |
+      mkdir -p "$CRAFT_PART_INSTALL/share/inference"
+      go run ./cmd/inference generate-snap-catalog-seed "$CRAFT_PART_INSTALL/share/inference/snap-catalog-seed.json"
+      craftctl default
