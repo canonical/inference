@@ -13,6 +13,7 @@ import (
 )
 
 var errUnreachable = errors.New("snapd socket unreachable")
+var errAccessDenied = errors.New("snapd socket denied access")
 
 const maxResponseBytes = 4 << 20
 
@@ -35,12 +36,12 @@ func (c *Client) Statuses(ctx context.Context) (map[string]string, error) {
 		newClient = newHTTPClient
 	}
 
-	var unreachable []error
+	var failures []error
 	for _, socket := range sockets {
 		snaps, err := getSnaps(ctx, newClient(socket))
 		if err != nil {
-			if errors.Is(err, errUnreachable) {
-				unreachable = append(unreachable, err)
+			if errors.Is(err, errUnreachable) || errors.Is(err, errAccessDenied) {
+				failures = append(failures, err)
 				continue
 			}
 			return nil, err
@@ -57,7 +58,7 @@ func (c *Client) Statuses(ctx context.Context) (map[string]string, error) {
 		}
 		return statuses, nil
 	}
-	return nil, fmt.Errorf("no snapd socket was reachable: %w", errors.Join(unreachable...))
+	return nil, fmt.Errorf("no snapd socket granted access: %w", errors.Join(failures...))
 }
 
 func getSnaps(ctx context.Context, client *http.Client) ([]snapInfo, error) {
@@ -91,6 +92,12 @@ func getSnaps(ctx context.Context, client *http.Client) ([]snapInfo, error) {
 			if err := json.Unmarshal(env.Result, &result); err != nil {
 				return nil, fmt.Errorf("decoding snapd error: %w", err)
 			}
+		}
+		if resp.StatusCode == http.StatusForbidden {
+			if result.Message != "" {
+				return nil, fmt.Errorf("%w: snapd returned HTTP 403: %s", errAccessDenied, result.Message)
+			}
+			return nil, fmt.Errorf("%w: snapd returned HTTP 403 (%s)", errAccessDenied, env.Status)
 		}
 		if result.Message != "" {
 			return nil, fmt.Errorf("snapd returned HTTP %d: %s", resp.StatusCode, result.Message)

@@ -6,7 +6,6 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/net v0.58.0
 )
 
 require (

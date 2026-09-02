@@ -1,30 +1,49 @@
 name: inference
 base: core24
-summary: Discover and manage local inference providers
+summary: Manage inference snaps
 description: |
-  inference discovers inference-snap providers and reports which are
-  installed. Later slices add install, remove, and proxy management.
+  This application acts as an entrypoint to the world of Inference Snaps.
+  It provides a CLI to discover, install and manage inference snaps.
 
-grade: devel
+grade: stable
 confinement: strict
-
-apps:
-  inference:
-    command: bin/inference
-    environment:
-      INFERENCE_SNAP_CATALOG_SEED: $SNAP/share/inference/snap-catalog-seed.json
-    plugs:
-      - network
-      - snapd-control
+adopt-info: version
 
 parts:
+  version:
+    plugin: dump
+    source: .
+    override-pull: |
+      craftctl set version="$(git -C $SNAPCRAFT_PROJECT_DIR describe --always --dirty)"
+
   cli:
     plugin: go
     build-snaps:
       - go/1.26/stable
     source: .
     source-type: local
-    override-build: |
-      mkdir -p "$CRAFT_PART_INSTALL/share/inference"
-      go run ./cmd/inference generate-snap-catalog-seed "$CRAFT_PART_INSTALL/share/inference/snap-catalog-seed.json"
-      craftctl default
+
+  snap-catalog:
+    plugin: dump
+    source: https://canonical.github.io/inference-snaps-admin/onboarded-snaps.json
+
+  scripts:
+    plugin: dump
+    source: snap/local
+    organize:
+      refresh-snap-catalog.sh: bin/refresh-snap-catalog.sh
+
+apps:
+  inference:
+    command: bin/inference
+    plugs:
+      - network
+      - snapd-control
+
+  snap-catalog-refresh:
+    command: bin/refresh-snap-catalog.sh
+    daemon: oneshot
+    install-mode: enable
+    timer: 00:00-24:00/2
+    plugs:
+      - network

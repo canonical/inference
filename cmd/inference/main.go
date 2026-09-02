@@ -4,28 +4,18 @@ import (
 	"io"
 	"os"
 
-	"github.com/canonical/inference/internal/providers"
-	"github.com/canonical/inference/internal/snapcatalog"
-	"github.com/canonical/inference/internal/snapd"
 	"github.com/spf13/cobra"
 )
 
 type Context struct {
-	Stdout    io.Writer
-	Stderr    io.Writer
-	Providers *providers.Service
+	Stdout io.Writer
+	Stderr io.Writer
 }
 
 func main() {
 	ctx := &Context{
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
-		Providers: providers.NewService(
-			snapcatalog.NewResolver(),
-			map[providers.Type]providers.StatusSource{
-				providers.TypeInferenceSnap: snapd.NewClient(),
-			},
-		),
 	}
 
 	if err := root(ctx).Execute(); err != nil {
@@ -36,8 +26,8 @@ func main() {
 func root(ctx *Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "inference",
-		Short:             "Manage inference providers",
-		Long:              "inference discovers and manages inference-snap providers for local inference.",
+		Short:             "Manage inference snaps",
+		Long:              "inference provides a CLI to discover, install and manage inference snaps.",
 		SilenceUsage:      true,
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
@@ -45,6 +35,8 @@ func root(ctx *Context) *cobra.Command {
 	cmd.CompletionOptions.HiddenDefaultCmd = true
 	cmd.SetOut(ctx.Stdout)
 	cmd.SetErr(ctx.Stderr)
-	cmd.AddCommand(Providers(ctx), SnapCatalogSeed())
+	cmd.AddCommand(
+		Providers(ctx),
+	)
 	return cmd
 }

@@ -20,6 +20,16 @@ type providersCommand struct {
 	installed bool
 }
 
+type providerJSON struct {
+	Name   string `json:"provider"`
+	Type   string `json:"type"`
+	Status string `json:"status"`
+}
+
+type providersJSONOutput struct {
+	Providers []providerJSON `json:"providers"`
+}
+
 func Providers(ctx *Context) *cobra.Command {
 	cmd := providersCommand{Context: ctx}
 	cobraCmd := &cobra.Command{
@@ -31,8 +41,8 @@ func Providers(ctx *Context) *cobra.Command {
 		SilenceUsage:      true,
 		RunE:              cmd.run,
 	}
-	cobraCmd.Flags().StringVar(&cmd.format, "format", "table", "output format (table, json)")
-	cobraCmd.Flags().BoolVar(&cmd.installed, "installed", false, "exclude providers that are not installed")
+	cobraCmd.Flags().StringVar(&cmd.format, "format", "table", "output format [table|json]")
+	cobraCmd.Flags().BoolVar(&cmd.installed, "installed", false, "only show providers that are installed")
 	return cobraCmd
 }
 
@@ -41,14 +51,9 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	list, warnings, err := cmd.Providers.List(cobraCmd.Context(), cmd.installed)
+	list, err := providers.List(cobraCmd.Context(), cmd.installed)
 	if err != nil {
 		return err
-	}
-	for _, warning := range warnings {
-		if _, err := fmt.Fprintf(cmd.Stderr, "Warning: %s\n", warning); err != nil {
-			return err
-		}
 	}
 
 	var output string
@@ -71,9 +76,15 @@ func renderProvidersJSON(list []providers.Provider) (string, error) {
 	var output bytes.Buffer
 	encoder := json.NewEncoder(&output)
 	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(struct {
-		Providers []providers.Provider `json:"providers"`
-	}{list}); err != nil {
+	result := providersJSONOutput{Providers: make([]providerJSON, len(list))}
+	for i, p := range list {
+		result.Providers[i] = providerJSON{
+			Name:   p.Name,
+			Type:   string(p.Type),
+			Status: p.Status,
+		}
+	}
+	if err := encoder.Encode(result); err != nil {
 		return "", err
 	}
 	return output.String(), nil

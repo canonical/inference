@@ -13,14 +13,9 @@ import (
 	"time"
 )
 
-// newUnixServer starts an httptest server listening on a Unix socket in a
-// fresh temp directory and returns the socket path. The server is closed
-// automatically at test cleanup.
 func newUnixServer(t *testing.T, handler http.HandlerFunc) string {
 	t.Helper()
 
-	// Unix socket paths are limited to roughly 108 bytes, so use a short
-	// directory under /tmp rather than t.TempDir(), which nests deeply.
 	dir, err := os.MkdirTemp("", "snapd-test")
 	if err != nil {
 		t.Fatalf("creating temp dir: %v", err)
@@ -172,6 +167,41 @@ func TestStatuses_FallsBackToNextCandidateWhenFirstUnreachable(t *testing.T) {
 	}
 	if statuses["gemma4"] != "active" {
 		t.Fatalf("got %+v", statuses)
+	}
+}
+
+func TestStatuses_FallsBackToNextCandidateWhenFirstForbidden(t *testing.T) {
+	forbidden := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"type":"error","status":"Forbidden","result":{"message":"access denied"}}`)
+	})
+	working := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"type":"sync","status":"OK","result":[{"name":"gemma4","status":"active"}]}`)
+	})
+
+	client := &Client{Sockets: []string{forbidden, working}}
+	statuses, err := client.Statuses(context.Background())
+	if err != nil {
+		t.Fatalf("Statuses: %v", err)
+	}
+	if statuses["gemma4"] != "active" {
+		t.Fatalf("got %+v", statuses)
+	}
+}
+
+func TestStatuses_AllForbidden(t *testing.T) {
+	forbidden := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"type":"error","status":"Forbidden","result":{"message":"access denied"}}`)
+	})
+
+	client := &Client{Sockets: []string{forbidden}}
+	_, err := client.Statuses(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "access denied") {
+		t.Fatalf("expected access denied error, got %v", err)
 	}
 }
 
