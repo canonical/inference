@@ -34,11 +34,13 @@ parts:
     plugin: dump
     source: snap/local
     organize:
+      completion.bash: bin/completion.bash
       refresh-snap-catalog.sh: bin/refresh-snap-catalog.sh
 
 apps:
   inference:
     command: bin/inference
+    completer: bin/completion.bash
     plugs:
       - network
       - snapd-control
