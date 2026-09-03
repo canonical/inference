@@ -1,9 +1,15 @@
 package main
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+
+	"github.com/canonical/inference/cmd/inference/common"
+)
 
 func TestRootIncludesProvidersCommand(t *testing.T) {
-	ctx, _, _ := newTestContext()
+	var stdout, stderr bytes.Buffer
+	ctx := &common.Context{Stdout: &stdout, Stderr: &stderr}
 	rootCmd := root(ctx)
 	cmd, _, err := rootCmd.Find([]string{"providers"})
 	if err != nil {

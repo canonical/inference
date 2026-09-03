@@ -1,33 +1,34 @@
 package main
 
 import (
-	"io"
+	"context"
 	"os"
+	"os/signal"
 
+	"github.com/canonical/inference/cmd/inference/commands"
+	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/spf13/cobra"
 )
 
-type Context struct {
-	Stdout io.Writer
-	Stderr io.Writer
-}
-
 func main() {
-	ctx := &Context{
+	ctx := &common.Context{
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 	}
 
-	if err := root(ctx).Execute(); err != nil {
+	commandCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	if err := root(ctx).ExecuteContext(commandCtx); err != nil {
 		os.Exit(1)
 	}
 }
 
-func root(ctx *Context) *cobra.Command {
+func root(ctx *common.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "inference",
 		Short:             "Manage inference snaps",
-		Long:              "inference provides a CLI to discover, install and manage inference snaps.",
+		Long:              "inference provides a CLI to discover, install and remove inference snaps.",
 		SilenceUsage:      true,
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
@@ -36,7 +37,9 @@ func root(ctx *Context) *cobra.Command {
 	cmd.SetOut(ctx.Stdout)
 	cmd.SetErr(ctx.Stderr)
 	cmd.AddCommand(
-		Providers(ctx),
+		commands.Providers(ctx),
+		commands.Install(ctx),
+		commands.Remove(ctx),
 	)
 	return cmd
 }

@@ -99,10 +99,13 @@ func TestReadPrefersCommonOverSnap(t *testing.T) {
 func TestReadFallsBackToSnapPathWhenCommonIsMissing(t *testing.T) {
 	snapDir := t.TempDir()
 	writeCatalogFile(t, snapDir, publishedEntry("gemma4", "Gemma 4", "canonical/gemma4-snap"))
+	localDir := t.TempDir()
+	writeCatalogFile(t, localDir, publishedEntry("qwen3", "Qwen 3", "canonical/qwen3-snap"))
 
 	reader := Reader{
 		CommonPath: filepath.Join(t.TempDir(), Filename),
 		SnapPath:   filepath.Join(snapDir, Filename),
+		LocalPath:  filepath.Join(localDir, Filename),
 	}
 	entries, err := reader.Read()
 	if err != nil {
@@ -113,10 +116,29 @@ func TestReadFallsBackToSnapPathWhenCommonIsMissing(t *testing.T) {
 	}
 }
 
+func TestReadFallsBackToLocalPathWhenSnapIsMissing(t *testing.T) {
+	localDir := t.TempDir()
+	writeCatalogFile(t, localDir, publishedEntry("qwen3", "Qwen 3", "canonical/qwen3-snap"))
+
+	reader := Reader{
+		CommonPath: filepath.Join(t.TempDir(), Filename),
+		SnapPath:   filepath.Join(t.TempDir(), Filename),
+		LocalPath:  filepath.Join(localDir, Filename),
+	}
+	entries, err := reader.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].SnapName != "qwen3" {
+		t.Fatalf("got %+v", entries)
+	}
+}
+
 func TestReadFailsWhenNeitherPathIsUsable(t *testing.T) {
 	reader := Reader{
 		CommonPath: filepath.Join(t.TempDir(), Filename),
 		SnapPath:   filepath.Join(t.TempDir(), Filename),
+		LocalPath:  filepath.Join(t.TempDir(), Filename),
 	}
 	if _, err := reader.Read(); err == nil {
 		t.Fatal("expected error when neither path has a catalog")
@@ -152,14 +174,22 @@ func TestNewReaderUsesSnapEnvironmentVariables(t *testing.T) {
 	if reader.SnapPath != filepath.Join("/snap/inference/current", Filename) {
 		t.Fatalf("SnapPath=%q", reader.SnapPath)
 	}
+	if reader.LocalPath != Filename {
+		t.Fatalf("LocalPath=%q", reader.LocalPath)
+	}
 }
 
-func TestNewReaderLeavesPathsEmptyWhenEnvironmentIsUnset(t *testing.T) {
+func TestNewReaderUsesLocalPathWhenEnvironmentIsUnset(t *testing.T) {
 	t.Setenv("SNAP_COMMON", "")
 	t.Setenv("SNAP", "")
 
 	reader := NewReader()
-	if reader.CommonPath != "" || reader.SnapPath != "" {
-		t.Fatalf("got CommonPath=%q SnapPath=%q, want both empty", reader.CommonPath, reader.SnapPath)
+	if reader.CommonPath != "" || reader.SnapPath != "" || reader.LocalPath != Filename {
+		t.Fatalf(
+			"got CommonPath=%q SnapPath=%q LocalPath=%q",
+			reader.CommonPath,
+			reader.SnapPath,
+			reader.LocalPath,
+		)
 	}
 }

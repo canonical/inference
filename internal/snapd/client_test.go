@@ -2,6 +2,8 @@ package snapd
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -252,5 +254,169 @@ func TestCandidateSockets_SnappedGoToolchainUsesHostSocket(t *testing.T) {
 	want := []string{"/run/snapd.socket"}
 	if len(got) != 1 || got[0] != want[0] {
 		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestInstall_AsyncResponseReturnsChangeID(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v2/snaps/smollm2" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"change":"42"}`)
+	})
+
+	client := &Client{Sockets: []string{socket}}
+	changeID, err := client.Install(context.Background(), "smollm2")
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if changeID != "42" {
+		t.Fatalf("got change id %q, want %q", changeID, "42")
+	}
+}
+
+func TestInstall_AsyncResponseMissingChangeIDIsRejected(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"result":null}`)
+	})
+
+	client := &Client{Sockets: []string{socket}}
+	if _, err := client.Install(context.Background(), "smollm2"); err == nil {
+		t.Fatal("expected an error for a missing change id, got nil")
+	}
+}
+
+func TestInstall_SyncResponseReturnsEmptyChangeID(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
+	})
+
+	client := &Client{Sockets: []string{socket}}
+	changeID, err := client.Install(context.Background(), "smollm2")
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if changeID != "" {
+		t.Fatalf("expected empty change id for a synchronous response, got %q", changeID)
+	}
+}
+
+func TestInstall_ChangeConflict(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprint(w, `{"type":"error","status":"Conflict","result":{
+			"message":"snap \"smollm2\" has \"install-snap\" change in progress",
+			"kind":"snap-change-conflict"
+		}}`)
+	})
+
+	client := &Client{Sockets: []string{socket}}
+	_, err := client.Install(context.Background(), "smollm2")
+	if !errors.Is(err, ErrChangeConflict) {
+		t.Fatalf("expected ErrChangeConflict, got %v", err)
+	}
+}
+
+func TestRemove_NotInstalled(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"type":"error","status":"Bad Request","result":{
+			"message":"snap \"smollm2\" is not installed",
+			"kind":"snap-not-installed"
+		}}`)
+	})
+
+	client := &Client{Sockets: []string{socket}}
+	_, err := client.Remove(context.Background(), "smollm2")
+	if !errors.Is(err, ErrNotInstalled) {
+		t.Fatalf("expected ErrNotInstalled, got %v", err)
+	}
+}
+
+func TestChange_DecodesTasksAndProgress(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/changes/42" {
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+		fmt.Fprint(w, `{"type":"sync","status":"OK","result":{
+			"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap",
+			"tasks":[{"summary":"Downloading snap smollm2","status":"Doing","progress":{"done":1,"total":4}}]
+		}}`)
+	})
+
+	client := &Client{Sockets: []string{socket}}
+	change, err := client.Change(context.Background(), "42")
+	if err != nil {
+		t.Fatalf("Change: %v", err)
+	}
+	if change.Ready || change.Status != "Doing" {
+		t.Fatalf("got %+v", change)
+	}
+	if len(change.Tasks) != 1 || change.Tasks[0].Progress.Total != 4 {
+		t.Fatalf("got tasks %+v", change.Tasks)
+	}
+}
+
+func TestAbort_PostsAbortAction(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v2/changes/42" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Content-Type"); got != "application/json" {
+			t.Errorf("got Content-Type %q, want application/json", got)
+		}
+		var request struct {
+			Action string `json:"action"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decoding request: %v", err)
+		}
+		if request.Action != "abort" {
+			t.Errorf("got action %q, want abort", request.Action)
+		}
+		fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
+	})
+
+	client := &Client{Sockets: []string{socket}}
+	if err := client.Abort(context.Background(), "42"); err != nil {
+		t.Fatalf("Abort: %v", err)
+	}
+}
+
+func TestChangesInProgress_FiltersByNameAndSelector(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/changes" {
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+		if r.URL.Query().Get("select") != "in-progress" || r.URL.Query().Get("for") != "smollm2" {
+			t.Errorf("unexpected query %q", r.URL.RawQuery)
+		}
+		fmt.Fprint(w, `{"type":"sync","status":"OK","result":[{
+			"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"
+		}]}`)
+	})
+
+	client := &Client{Sockets: []string{socket}}
+	changes, err := client.ChangesInProgress(context.Background(), "smollm2")
+	if err != nil {
+		t.Fatalf("ChangesInProgress: %v", err)
+	}
+	if len(changes) != 1 || changes[0].Summary != `Install "smollm2" snap` {
+		t.Fatalf("got %+v", changes)
+	}
+}
+
+func TestChangesInProgress_EmptyResult(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"type":"sync","status":"OK","result":[]}`)
+	})
+
+	client := &Client{Sockets: []string{socket}}
+	changes, err := client.ChangesInProgress(context.Background(), "smollm2")
+	if err != nil {
+		t.Fatalf("ChangesInProgress: %v", err)
+	}
+	if len(changes) != 0 {
+		t.Fatalf("expected no in-progress changes, got %+v", changes)
 	}
 }

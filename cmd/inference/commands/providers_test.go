@@ -1,16 +1,21 @@
-package main
+package commands
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/providers"
+	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/spf13/cobra"
 )
 
-func newTestContext() (*Context, *bytes.Buffer, *bytes.Buffer) {
+func newTestContext() (*common.Context, *bytes.Buffer, *bytes.Buffer) {
 	var stdout, stderr bytes.Buffer
-	return &Context{Stdout: &stdout, Stderr: &stderr}, &stdout, &stderr
+	return &common.Context{Stdout: &stdout, Stderr: &stderr}, &stdout, &stderr
 }
 
 func execute(cmd *cobra.Command, args ...string) error {
@@ -106,5 +111,21 @@ func TestProviders_PositionalArgsAreRejected(t *testing.T) {
 	}
 	if stdout.String() != "" {
 		t.Fatalf("expected no stdout output for unexpected positional arguments, got %q", stdout.String())
+	}
+}
+
+func TestValidateProvider(t *testing.T) {
+	path := filepath.Join(t.TempDir(), snapcatalog.Filename)
+	if err := os.WriteFile(path, []byte(`[{"snap":"smollm2"}]`), 0o600); err != nil {
+		t.Fatalf("writing catalog: %v", err)
+	}
+	catalog := &snapcatalog.Reader{CommonPath: path}
+
+	if err := validateProvider(catalog, "smollm2"); err != nil {
+		t.Fatalf("validating known provider: %v", err)
+	}
+	err := validateProvider(catalog, "unrelated-snap")
+	if err == nil || !strings.Contains(err.Error(), `unknown inference provider "unrelated-snap"`) {
+		t.Fatalf("got %v, want unknown provider error", err)
 	}
 }

@@ -4,6 +4,12 @@ The `inference` snap is a management interface for Inference Snaps.
 
 ## Local development
 
+Download the snap catalog to the project root:
+
+```console
+curl -LO https://canonical.github.io/inference-snaps-admin/onboarded-snaps.json
+```
+
 Build and run the CLI directly with Go:
 
 ```console

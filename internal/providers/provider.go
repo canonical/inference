@@ -24,13 +24,13 @@ func (p Provider) Installed() bool {
 	return p.Status != StatusNotInstalled
 }
 
-func List(ctx context.Context, installedOnly bool) ([]Provider, error) {
-	availableSnaps, err := snapcatalog.NewReader().Read()
+func List(ctx context.Context, catalog *snapcatalog.Reader, snapdClient *snapd.Client, installedOnly bool) ([]Provider, error) {
+	availableSnaps, err := catalog.Read()
 	if err != nil {
 		return nil, fmt.Errorf("reading snap catalog: %w", err)
 	}
 
-	snapStatuses, err := snapd.NewClient().Statuses(ctx)
+	snapStatuses, err := snapdClient.Statuses(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("reading snap statuses: %w", err)
 	}

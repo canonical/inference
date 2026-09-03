@@ -33,12 +33,14 @@ func ParseEntries(data []byte) ([]Entry, error) {
 type Reader struct {
 	CommonPath string
 	SnapPath   string
+	LocalPath  string
 }
 
-func NewReader() Reader {
-	return Reader{
+func NewReader() *Reader {
+	return &Reader{
 		CommonPath: catalogPath(os.Getenv("SNAP_COMMON")),
 		SnapPath:   catalogPath(os.Getenv("SNAP")),
+		LocalPath:  Filename,
 	}
 }
 
@@ -47,8 +49,11 @@ func (r Reader) Read() ([]Entry, error) {
 	if path == "" || !fileExists(path) {
 		path = r.SnapPath
 	}
+	if path == "" || !fileExists(path) {
+		path = r.LocalPath
+	}
 	if path == "" {
-		return nil, fmt.Errorf("snap catalog not found: neither SNAP_COMMON nor SNAP is set")
+		return nil, fmt.Errorf("snap catalog not found: no catalog path is configured")
 	}
 
 	data, err := os.ReadFile(path)
@@ -56,6 +61,16 @@ func (r Reader) Read() ([]Entry, error) {
 		return nil, fmt.Errorf("reading snap catalog from %s: %w", path, err)
 	}
 	return ParseEntries(data)
+}
+
+func (r Reader) Contains(name string) (bool, error) {
+	entries, err := r.Read()
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(entries, func(entry Entry) bool {
+		return entry.SnapName == name
+	}), nil
 }
 
 func catalogPath(dir string) string {
