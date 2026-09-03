@@ -216,6 +216,39 @@ func TestRunInstall_PropagatesConflictWaitFailure(t *testing.T) {
 	if errors.Is(err, snapd.ErrChangeConflict) {
 		t.Fatalf("expected the underlying wait error, not the original conflict, got %v", err)
 	}
+	if !strings.Contains(err.Error(), "waiting for conflicting change on smollm2") {
+		t.Fatalf("expected the error to identify the conflict wait, got %v", err)
+	}
+}
+
+func TestRunInstall_RepeatedConflictsStopAfterBoundedRetries(t *testing.T) {
+	var installRequests int32
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost:
+			atomic.AddInt32(&installRequests, 1)
+			w.WriteHeader(http.StatusConflict)
+			fmt.Fprint(w, `{"type":"error","status":"Conflict","result":{
+				"message":"snap \"smollm2\" has \"install-snap\" change in progress",
+				"kind":"snap-change-conflict"
+			}}`)
+		case r.URL.Path == "/v2/changes":
+			// The conflicting change is always gone by the time we look, so the
+			// retry loop is bounded only by maxConflictRetries.
+			fmt.Fprint(w, `{"type":"sync","status":"OK","result":[]}`)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	client := &snapd.Client{Sockets: []string{socket}}
+	err := runInstall(context.Background(), client, "smollm2", nil)
+	if !errors.Is(err, snapd.ErrChangeConflict) {
+		t.Fatalf("expected the final conflict to surface, got %v", err)
+	}
+	if got := atomic.LoadInt32(&installRequests); got != maxConflictRetries+1 {
+		t.Fatalf("expected %d attempts, got %d", maxConflictRetries+1, got)
+	}
 }
 
 func TestRunInstall_SynchronousResponseSkipsPolling(t *testing.T) {

@@ -251,46 +251,46 @@ func getChangesForSnap(ctx context.Context, client *http.Client, name string) ([
 	return changes, nil
 }
 
-func decodeEnvelope(resp *http.Response) (snapsEnvelope, error) {
+func decodeEnvelope(resp *http.Response) (envelope, error) {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
-		return snapsEnvelope{}, fmt.Errorf("reading snapd response: %w", err)
+		return envelope{}, fmt.Errorf("reading snapd response: %w", err)
 	}
 	if len(body) > maxResponseBytes {
-		return snapsEnvelope{}, fmt.Errorf("snapd response exceeded %d bytes", maxResponseBytes)
+		return envelope{}, fmt.Errorf("snapd response exceeded %d bytes", maxResponseBytes)
 	}
 
-	var env snapsEnvelope
+	var env envelope
 	if err := json.Unmarshal(body, &env); err != nil {
-		return snapsEnvelope{}, fmt.Errorf("decoding snapd response (HTTP %d): %w", resp.StatusCode, err)
+		return envelope{}, fmt.Errorf("decoding snapd response (HTTP %d): %w", resp.StatusCode, err)
 	}
 
 	if resp.StatusCode >= 300 || env.Type == "error" {
 		var result errorResult
 		if len(env.Result) > 0 {
 			if err := json.Unmarshal(env.Result, &result); err != nil {
-				return snapsEnvelope{}, fmt.Errorf("decoding snapd error: %w", err)
+				return envelope{}, fmt.Errorf("decoding snapd error: %w", err)
 			}
 		}
 		if result.Kind == snapAlreadyInstalledKind {
-			return snapsEnvelope{}, withMessage(ErrAlreadyInstalled, result.Message)
+			return envelope{}, withMessage(ErrAlreadyInstalled, result.Message)
 		}
 		if result.Kind == snapNotInstalledKind {
-			return snapsEnvelope{}, withMessage(ErrNotInstalled, result.Message)
+			return envelope{}, withMessage(ErrNotInstalled, result.Message)
 		}
 		if result.Kind == snapChangeConflictKind {
-			return snapsEnvelope{}, withMessage(ErrChangeConflict, result.Message)
+			return envelope{}, withMessage(ErrChangeConflict, result.Message)
 		}
 		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 			if result.Message != "" {
-				return snapsEnvelope{}, fmt.Errorf("%w: snapd returned HTTP %d: %s", ErrAccessDenied, resp.StatusCode, result.Message)
+				return envelope{}, fmt.Errorf("%w: snapd returned HTTP %d: %s", ErrAccessDenied, resp.StatusCode, result.Message)
 			}
-			return snapsEnvelope{}, fmt.Errorf("%w: snapd returned HTTP %d (%s)", ErrAccessDenied, resp.StatusCode, env.Status)
+			return envelope{}, fmt.Errorf("%w: snapd returned HTTP %d (%s)", ErrAccessDenied, resp.StatusCode, env.Status)
 		}
 		if result.Message != "" {
-			return snapsEnvelope{}, fmt.Errorf("snapd returned HTTP %d: %s", resp.StatusCode, result.Message)
+			return envelope{}, fmt.Errorf("snapd returned HTTP %d: %s", resp.StatusCode, result.Message)
 		}
-		return snapsEnvelope{}, fmt.Errorf("snapd returned HTTP %d (%s)", resp.StatusCode, env.Status)
+		return envelope{}, fmt.Errorf("snapd returned HTTP %d (%s)", resp.StatusCode, env.Status)
 	}
 
 	return env, nil
@@ -353,7 +353,7 @@ func newHTTPClient(socket string) *http.Client {
 	}
 }
 
-type snapsEnvelope struct {
+type envelope struct {
 	Type   string          `json:"type"`
 	Status string          `json:"status"`
 	Result json.RawMessage `json:"result"`

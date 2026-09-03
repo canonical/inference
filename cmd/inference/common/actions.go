@@ -15,6 +15,9 @@ import (
 const (
 	pollInterval = 500 * time.Millisecond
 	abortTimeout = 10 * time.Second
+	// maxConflictRetries bounds the retry loop so a third party repeatedly
+	// starting changes on the same snap cannot livelock us.
+	maxConflictRetries = 3
 )
 
 func NewProgressPrinter(w io.Writer) (progress func(string), finish func()) {
@@ -64,13 +67,7 @@ func runInstall(ctx context.Context, client *snapd.Client, name string, w io.Wri
 	progress, finish := NewProgressPrinter(w)
 	defer finish()
 
-	changeID, err := client.Install(ctx, name)
-	if errors.Is(err, snapd.ErrChangeConflict) {
-		if waitErr := waitForConflictingChange(ctx, client, name, progress); waitErr != nil {
-			return waitErr
-		}
-		changeID, err = client.Install(ctx, name)
-	}
+	changeID, err := startWithConflictRetry(ctx, client, name, progress, client.Install)
 	if err != nil {
 		return err
 	}
@@ -102,13 +99,7 @@ func runRemove(ctx context.Context, client *snapd.Client, name string, w io.Writ
 	progress, finish := NewProgressPrinter(w)
 	defer finish()
 
-	changeID, err := client.Remove(ctx, name)
-	if errors.Is(err, snapd.ErrChangeConflict) {
-		if waitErr := waitForConflictingChange(ctx, client, name, progress); waitErr != nil {
-			return waitErr
-		}
-		changeID, err = client.Remove(ctx, name)
-	}
+	changeID, err := startWithConflictRetry(ctx, client, name, progress, client.Remove)
 	if err != nil {
 		return err
 	}
@@ -195,6 +186,27 @@ func waitForChange(ctx context.Context, client *snapd.Client, changeID string, p
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+		}
+	}
+}
+
+// startWithConflictRetry runs action, waiting out any change already in progress
+// on the snap and retrying up to maxConflictRetries times. The final conflict is
+// returned once the attempts are exhausted.
+func startWithConflictRetry(
+	ctx context.Context,
+	client *snapd.Client,
+	name string,
+	progress func(string),
+	action func(context.Context, string) (string, error),
+) (string, error) {
+	for attempt := 0; ; attempt++ {
+		changeID, err := action(ctx, name)
+		if !errors.Is(err, snapd.ErrChangeConflict) || attempt >= maxConflictRetries {
+			return changeID, err
+		}
+		if waitErr := waitForConflictingChange(ctx, client, name, progress); waitErr != nil {
+			return "", fmt.Errorf("waiting for conflicting change on %s: %w", name, waitErr)
 		}
 	}
 }
