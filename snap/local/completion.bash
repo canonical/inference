@@ -1,7 +1,5 @@
-# Bash completion for inference packaged in a snap.
-
-# Force Cobra to use its basic internal implementation. The implementation
-# provided by bash-completion does not work through snap command wrappers.
+# The bash-completion implementation of _init_completion does not work through
+# snap command wrappers, so force Cobra to use its basic internal one.
 unset -f _init_completion
 
 source <($SNAP/bin/inference completion bash)

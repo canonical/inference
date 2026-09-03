@@ -51,8 +51,8 @@ func InstallSnap(ctx context.Context, cliCtx *Context, client *snapd.Client, nam
 	case errors.Is(err, snapd.ErrAlreadyInstalled):
 		_, err = fmt.Fprintf(cliCtx.Stdout, "%q is already installed\n", name)
 		return err
-	case err == context.Canceled:
-		return errors.New("installation cancelled")
+	case errors.Is(err, context.Canceled):
+		return cancelledError("installation", err)
 	case errors.Is(err, snapd.ErrAccessDenied):
 		return fmt.Errorf("access denied. Try again using sudo")
 	default:
@@ -89,6 +89,8 @@ func RemoveSnap(ctx context.Context, cliCtx *Context, client *snapd.Client, name
 	case errors.Is(err, snapd.ErrNotInstalled):
 		_, err = fmt.Fprintf(cliCtx.Stdout, "%q is not installed\n", name)
 		return err
+	case errors.Is(err, context.Canceled):
+		return cancelledError("removal", err)
 	case errors.Is(err, snapd.ErrAccessDenied):
 		return fmt.Errorf("access denied. Try again using sudo")
 	default:
@@ -116,6 +118,26 @@ func runRemove(ctx context.Context, client *snapd.Client, name string, w io.Writ
 	return waitForChangeOrAbort(ctx, client, changeID, progress)
 }
 
+// The change may still be running after a failed abort.
+type abortError struct {
+	changeID string
+	err      error
+}
+
+func (e *abortError) Error() string {
+	return fmt.Sprintf("could not abort snap change %s: %v", e.changeID, e.err)
+}
+
+func (e *abortError) Unwrap() error { return e.err }
+
+func cancelledError(action string, err error) error {
+	var abortErr *abortError
+	if errors.As(err, &abortErr) {
+		return fmt.Errorf("%s cancelled: %w", action, abortErr)
+	}
+	return fmt.Errorf("%s cancelled", action)
+}
+
 func waitForChangeOrAbort(ctx context.Context, client *snapd.Client, changeID string, progress func(string)) error {
 	err := waitForChange(ctx, client, changeID, progress)
 	if ctx.Err() == nil || err == nil || !errors.Is(err, ctx.Err()) {
@@ -125,7 +147,7 @@ func waitForChangeOrAbort(ctx context.Context, client *snapd.Client, changeID st
 	abortCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), abortTimeout)
 	defer cancel()
 	if abortErr := client.Abort(abortCtx, changeID); abortErr != nil {
-		return errors.Join(ctx.Err(), fmt.Errorf("aborting snap change %s: %w", changeID, abortErr))
+		return errors.Join(ctx.Err(), &abortError{changeID: changeID, err: abortErr})
 	}
 	return ctx.Err()
 }

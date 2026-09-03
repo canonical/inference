@@ -115,7 +115,7 @@ func performSnapAction(ctx context.Context, client *http.Client, name, action st
 		return "", fmt.Errorf("encoding snapd %s request: %w", action, err)
 	}
 
-	url := fmt.Sprintf("http://localhost/v2/snaps/%s", name)
+	url := fmt.Sprintf("http://localhost/v2/snaps/%s", neturl.PathEscape(name))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqBody))
 	if err != nil {
 		return "", fmt.Errorf("building snapd request: %w", err)
@@ -202,7 +202,7 @@ func abortChange(ctx context.Context, client *http.Client, changeID string) erro
 		return fmt.Errorf("encoding snapd abort request: %w", err)
 	}
 
-	url := fmt.Sprintf("http://localhost/v2/changes/%s", changeID)
+	url := fmt.Sprintf("http://localhost/v2/changes/%s", neturl.PathEscape(changeID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqBody))
 	if err != nil {
 		return fmt.Errorf("building snapd request: %w", err)
@@ -226,7 +226,7 @@ func abortChange(ctx context.Context, client *http.Client, changeID string) erro
 }
 
 func getChange(ctx context.Context, client *http.Client, changeID string) (Change, error) {
-	url := fmt.Sprintf("http://localhost/v2/changes/%s", changeID)
+	url := fmt.Sprintf("http://localhost/v2/changes/%s", neturl.PathEscape(changeID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return Change{}, fmt.Errorf("building snapd request: %w", err)

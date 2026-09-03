@@ -81,13 +81,11 @@ func TestParseEntriesRejectsMalformedJSON(t *testing.T) {
 	}
 }
 
-func TestReadPrefersCommonOverSnap(t *testing.T) {
-	commonDir, snapDir := t.TempDir(), t.TempDir()
-	writeCatalogFile(t, commonDir, publishedEntry("qwen3", "Qwen 3", "canonical/qwen3-snap"))
-	writeCatalogFile(t, snapDir, publishedEntry("gemma4", "Gemma 4", "canonical/gemma4-snap"))
+func TestReadUsesConfiguredPath(t *testing.T) {
+	dir := t.TempDir()
+	writeCatalogFile(t, dir, publishedEntry("qwen3", "Qwen 3", "canonical/qwen3-snap"))
 
-	reader := Reader{CommonPath: filepath.Join(commonDir, Filename), SnapPath: filepath.Join(snapDir, Filename)}
-	entries, err := reader.Read()
+	entries, err := Reader{Path: filepath.Join(dir, Filename)}.Read()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,100 +94,66 @@ func TestReadPrefersCommonOverSnap(t *testing.T) {
 	}
 }
 
-func TestReadFallsBackToSnapPathWhenCommonIsMissing(t *testing.T) {
-	snapDir := t.TempDir()
-	writeCatalogFile(t, snapDir, publishedEntry("gemma4", "Gemma 4", "canonical/gemma4-snap"))
-	localDir := t.TempDir()
-	writeCatalogFile(t, localDir, publishedEntry("qwen3", "Qwen 3", "canonical/qwen3-snap"))
-
-	reader := Reader{
-		CommonPath: filepath.Join(t.TempDir(), Filename),
-		SnapPath:   filepath.Join(snapDir, Filename),
-		LocalPath:  filepath.Join(localDir, Filename),
-	}
-	entries, err := reader.Read()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 1 || entries[0].SnapName != "gemma4" {
-		t.Fatalf("got %+v", entries)
-	}
-}
-
-func TestReadFallsBackToLocalPathWhenSnapIsMissing(t *testing.T) {
-	localDir := t.TempDir()
-	writeCatalogFile(t, localDir, publishedEntry("qwen3", "Qwen 3", "canonical/qwen3-snap"))
-
-	reader := Reader{
-		CommonPath: filepath.Join(t.TempDir(), Filename),
-		SnapPath:   filepath.Join(t.TempDir(), Filename),
-		LocalPath:  filepath.Join(localDir, Filename),
-	}
-	entries, err := reader.Read()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 1 || entries[0].SnapName != "qwen3" {
-		t.Fatalf("got %+v", entries)
-	}
-}
-
-func TestReadFailsWhenNeitherPathIsUsable(t *testing.T) {
-	reader := Reader{
-		CommonPath: filepath.Join(t.TempDir(), Filename),
-		SnapPath:   filepath.Join(t.TempDir(), Filename),
-		LocalPath:  filepath.Join(t.TempDir(), Filename),
-	}
+func TestReadFailsWhenCatalogIsMissing(t *testing.T) {
+	reader := Reader{Path: filepath.Join(t.TempDir(), Filename)}
 	if _, err := reader.Read(); err == nil {
-		t.Fatal("expected error when neither path has a catalog")
+		t.Fatal("expected an error when the catalog file does not exist")
 	}
 }
 
-func TestReadFailsWithoutConfiguredPaths(t *testing.T) {
-	if _, err := (Reader{}).Read(); err == nil {
-		t.Fatal("expected error for an unconfigured reader")
+func TestReadFailsWithoutConfiguredPath(t *testing.T) {
+	_, err := (Reader{}).Read()
+	if err == nil {
+		t.Fatal("expected an error for an unconfigured reader")
+	}
+	if !strings.Contains(err.Error(), EnvVar) {
+		t.Fatalf("got %q, want the error to name %s", err, EnvVar)
 	}
 }
 
 func TestReadFailsForMalformedCatalog(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, Filename)
+	path := filepath.Join(t.TempDir(), Filename)
 	if err := os.WriteFile(path, []byte("not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := (Reader{SnapPath: path}).Read(); err == nil {
+	if _, err := (Reader{Path: path}).Read(); err == nil {
 		t.Fatal("expected error for a malformed catalog")
 	}
 }
 
-func TestNewReaderUsesSnapEnvironmentVariables(t *testing.T) {
+func TestDefaultPathPrefersEnvVarOverSnapCommon(t *testing.T) {
+	t.Setenv(EnvVar, "/home/user/catalog.json")
 	t.Setenv("SNAP_COMMON", "/var/snap/inference/common")
-	t.Setenv("SNAP", "/snap/inference/current")
 
-	reader := NewReader()
-	if reader.CommonPath != filepath.Join("/var/snap/inference/common", Filename) {
-		t.Fatalf("CommonPath=%q", reader.CommonPath)
-	}
-	if reader.SnapPath != filepath.Join("/snap/inference/current", Filename) {
-		t.Fatalf("SnapPath=%q", reader.SnapPath)
-	}
-	if reader.LocalPath != Filename {
-		t.Fatalf("LocalPath=%q", reader.LocalPath)
+	if got := DefaultPath(); got != "/home/user/catalog.json" {
+		t.Fatalf("DefaultPath()=%q", got)
 	}
 }
 
-func TestNewReaderUsesLocalPathWhenEnvironmentIsUnset(t *testing.T) {
-	t.Setenv("SNAP_COMMON", "")
-	t.Setenv("SNAP", "")
+func TestDefaultPathFallsBackToSnapCommon(t *testing.T) {
+	t.Setenv(EnvVar, "")
+	t.Setenv("SNAP_COMMON", "/var/snap/inference/common")
 
-	reader := NewReader()
-	if reader.CommonPath != "" || reader.SnapPath != "" || reader.LocalPath != Filename {
-		t.Fatalf(
-			"got CommonPath=%q SnapPath=%q LocalPath=%q",
-			reader.CommonPath,
-			reader.SnapPath,
-			reader.LocalPath,
-		)
+	want := filepath.Join("/var/snap/inference/common", Filename)
+	if got := DefaultPath(); got != want {
+		t.Fatalf("DefaultPath()=%q, want %q", got, want)
+	}
+}
+
+func TestDefaultPathIsEmptyWhenEnvironmentIsUnset(t *testing.T) {
+	t.Setenv(EnvVar, "")
+	t.Setenv("SNAP_COMMON", "")
+
+	if got := DefaultPath(); got != "" {
+		t.Fatalf("DefaultPath()=%q, want an empty path", got)
+	}
+}
+
+func TestNewReaderUsesDefaultPath(t *testing.T) {
+	t.Setenv(EnvVar, "/home/user/catalog.json")
+
+	if reader := NewReader(); reader.Path != "/home/user/catalog.json" {
+		t.Fatalf("Path=%q", reader.Path)
 	}
 }

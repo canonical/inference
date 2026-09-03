@@ -119,7 +119,7 @@ func TestValidateProvider(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`[{"snap":"smollm2"}]`), 0o600); err != nil {
 		t.Fatalf("writing catalog: %v", err)
 	}
-	catalog := &snapcatalog.Reader{CommonPath: path}
+	catalog := &snapcatalog.Reader{Path: path}
 
 	if err := validateProvider(catalog, "smollm2"); err != nil {
 		t.Fatalf("validating known provider: %v", err)

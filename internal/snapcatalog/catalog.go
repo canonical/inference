@@ -11,6 +11,9 @@ import (
 
 const Filename = "onboarded-snaps.json"
 
+// Overrides the default catalog location under SNAP_COMMON.
+const EnvVar = "INFERENCE_SNAPS_CATALOG"
+
 type Entry struct {
 	SnapName      string `json:"snap"`
 	ModelName     string `json:"model_name"`
@@ -31,34 +34,32 @@ func ParseEntries(data []byte) ([]Entry, error) {
 }
 
 type Reader struct {
-	CommonPath string
-	SnapPath   string
-	LocalPath  string
+	// An empty Path means no catalog is configured and reads fail.
+	Path string
 }
 
 func NewReader() *Reader {
-	return &Reader{
-		CommonPath: catalogPath(os.Getenv("SNAP_COMMON")),
-		SnapPath:   catalogPath(os.Getenv("SNAP")),
-		LocalPath:  Filename,
+	return &Reader{Path: DefaultPath()}
+}
+
+func DefaultPath() string {
+	if path := os.Getenv(EnvVar); path != "" {
+		return path
 	}
+	if common := os.Getenv("SNAP_COMMON"); common != "" {
+		return filepath.Join(common, Filename)
+	}
+	return ""
 }
 
 func (r Reader) Read() ([]Entry, error) {
-	path := r.CommonPath
-	if path == "" || !fileExists(path) {
-		path = r.SnapPath
-	}
-	if path == "" || !fileExists(path) {
-		path = r.LocalPath
-	}
-	if path == "" {
-		return nil, fmt.Errorf("snap catalog not found: no catalog path is configured")
+	if r.Path == "" {
+		return nil, fmt.Errorf("snap catalog path is not configured: set %s to the catalog file", EnvVar)
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(r.Path)
 	if err != nil {
-		return nil, fmt.Errorf("reading snap catalog from %s: %w", path, err)
+		return nil, fmt.Errorf("reading snap catalog from %s: %w", r.Path, err)
 	}
 	return ParseEntries(data)
 }
@@ -71,16 +72,4 @@ func (r Reader) Contains(name string) (bool, error) {
 	return slices.ContainsFunc(entries, func(entry Entry) bool {
 		return entry.SnapName == name
 	}), nil
-}
-
-func catalogPath(dir string) string {
-	if dir == "" {
-		return ""
-	}
-	return filepath.Join(dir, Filename)
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

@@ -316,3 +316,60 @@ func TestRunRemove_ContextCancellationDuringPoll(t *testing.T) {
 		t.Fatalf("got %d abort requests, want 1", got)
 	}
 }
+
+func TestInstallSnap_CancellationReportsFailedAbort(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/smollm2":
+			fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"change":"7"}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/changes/7":
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprint(w, `{"type":"error","status":"Internal Server Error","result":{"message":"boom"}}`)
+		case r.URL.Path == "/v2/changes/7":
+			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}}`)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	client := &snapd.Client{Sockets: []string{socket}}
+	ctx, cancel := context.WithCancel(context.Background())
+	timer := time.AfterFunc(50*time.Millisecond, cancel)
+	defer timer.Stop()
+
+	err := InstallSnap(ctx, &Context{Stdout: &bytes.Buffer{}}, client, "smollm2")
+	if err == nil {
+		t.Fatal("expected an error when the abort fails")
+	}
+	if !strings.HasPrefix(err.Error(), "installation cancelled: ") {
+		t.Fatalf("got %q, want the friendly cancellation prefix", err)
+	}
+	if !strings.Contains(err.Error(), "could not abort snap change 7") {
+		t.Fatalf("got %q, want the abort failure to be reported", err)
+	}
+}
+
+func TestRemoveSnap_ContextCancellationHasFriendlyMessage(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/smollm2":
+			fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"change":"7"}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/changes/7":
+			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
+		case r.URL.Path == "/v2/changes/7":
+			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Remove \"smollm2\" snap"}}`)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	client := &snapd.Client{Sockets: []string{socket}}
+	ctx, cancel := context.WithCancel(context.Background())
+	timer := time.AfterFunc(50*time.Millisecond, cancel)
+	defer timer.Stop()
+
+	err := RemoveSnap(ctx, &Context{Stdout: &bytes.Buffer{}}, client, "smollm2")
+	if err == nil || err.Error() != "removal cancelled" {
+		t.Fatalf("got %v, want \"removal cancelled\"", err)
+	}
+}
