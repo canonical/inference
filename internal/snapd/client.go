@@ -175,6 +175,12 @@ func getChange(ctx context.Context, client *http.Client, changeID string) (Chang
 	if err != nil {
 		return Change{}, err
 	}
+	if env.Type != "sync" {
+		return Change{}, fmt.Errorf("snapd returned unexpected response type %q", env.Type)
+	}
+	if len(env.Result) == 0 || string(env.Result) == "null" {
+		return Change{}, fmt.Errorf("snapd response omitted the result")
+	}
 
 	var change Change
 	if err := json.Unmarshal(env.Result, &change); err != nil {
@@ -204,12 +210,16 @@ func getChangesForSnap(ctx context.Context, client *http.Client, name string) ([
 	if err != nil {
 		return nil, err
 	}
+	if env.Type != "sync" {
+		return nil, fmt.Errorf("snapd returned unexpected response type %q", env.Type)
+	}
+	if len(env.Result) == 0 || string(env.Result) == "null" {
+		return nil, fmt.Errorf("snapd response omitted the result")
+	}
 
 	var changes []Change
-	if len(env.Result) > 0 && string(env.Result) != "null" {
-		if err := json.Unmarshal(env.Result, &changes); err != nil {
-			return nil, fmt.Errorf("decoding snapd change list: %w", err)
-		}
+	if err := json.Unmarshal(env.Result, &changes); err != nil {
+		return nil, fmt.Errorf("decoding snapd change list: %w", err)
 	}
 	return changes, nil
 }

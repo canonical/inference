@@ -327,6 +327,27 @@ func TestChange_DecodesTasksAndProgress(t *testing.T) {
 	}
 }
 
+func TestChange_RejectsMalformedEnvelope(t *testing.T) {
+	tests := map[string]string{
+		"unexpected type": `{"type":"async","status":"Accepted","result":{}}`,
+		"missing result":  `{"type":"sync","status":"OK"}`,
+		"null result":     `{"type":"sync","status":"OK","result":null}`,
+	}
+
+	for name, response := range tests {
+		t.Run(name, func(t *testing.T) {
+			socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprint(w, response)
+			})
+
+			client := &Client{Socket: socket}
+			if _, err := client.Change(context.Background(), "42"); err == nil {
+				t.Fatal("expected malformed envelope to be rejected")
+			}
+		})
+	}
+}
+
 func TestAbort_PostsAbortAction(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v2/changes/42" {
@@ -388,5 +409,26 @@ func TestChangesInProgress_EmptyResult(t *testing.T) {
 	}
 	if len(changes) != 0 {
 		t.Fatalf("expected no in-progress changes, got %+v", changes)
+	}
+}
+
+func TestChangesInProgress_RejectsMalformedEnvelope(t *testing.T) {
+	tests := map[string]string{
+		"unexpected type": `{"type":"async","status":"Accepted","result":[]}`,
+		"missing result":  `{"type":"sync","status":"OK"}`,
+		"null result":     `{"type":"sync","status":"OK","result":null}`,
+	}
+
+	for name, response := range tests {
+		t.Run(name, func(t *testing.T) {
+			socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprint(w, response)
+			})
+
+			client := &Client{Socket: socket}
+			if _, err := client.ChangesInProgress(context.Background(), "smollm2"); err == nil {
+				t.Fatal("expected malformed envelope to be rejected")
+			}
+		})
 	}
 }
