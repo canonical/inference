@@ -19,6 +19,13 @@ func main() {
 	commandCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
+	// Stop intercepting once the first interrupt arrives so a second one
+	// force-quits instead of being swallowed by the abort window.
+	go func() {
+		<-commandCtx.Done()
+		stop()
+	}()
+
 	if err := root(ctx).ExecuteContext(commandCtx); err != nil {
 		os.Exit(1)
 	}

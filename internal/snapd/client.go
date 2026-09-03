@@ -42,23 +42,9 @@ func NewClient() *Client {
 }
 
 func (c *Client) Statuses(ctx context.Context) (map[string]string, error) {
-	sockets := c.Sockets
-	if len(sockets) == 0 {
-		sockets = CandidateSockets()
-	}
-	newClient := c.newClient
-	if newClient == nil {
-		newClient = newHTTPClient
-	}
-
-	var failures []error
-	for _, socket := range sockets {
-		snaps, err := getSnaps(ctx, newClient(socket))
+	return withSocket(c, func(client *http.Client) (map[string]string, error) {
+		snaps, err := getSnaps(ctx, client)
 		if err != nil {
-			if errors.Is(err, errUnreachable) || errors.Is(err, ErrAccessDenied) {
-				failures = append(failures, err)
-				continue
-			}
 			return nil, err
 		}
 		statuses := make(map[string]string, len(snaps))
@@ -72,19 +58,15 @@ func (c *Client) Statuses(ctx context.Context) (map[string]string, error) {
 			statuses[snap.Name] = snap.Status
 		}
 		return statuses, nil
-	}
-	return nil, fmt.Errorf("no snapd socket granted access: %w", errors.Join(failures...))
+	})
 }
 
-func (c *Client) Install(ctx context.Context, name string) (changeID string, err error) {
-	return c.snapAction(ctx, name, "install")
-}
+// withSocket tries each candidate snapd socket in turn, moving on when a socket
+// is unreachable or denies access, and reporting the collected failures if none
+// of them work.
+func withSocket[T any](c *Client, fn func(*http.Client) (T, error)) (T, error) {
+	var zero T
 
-func (c *Client) Remove(ctx context.Context, name string) (changeID string, err error) {
-	return c.snapAction(ctx, name, "remove")
-}
-
-func (c *Client) snapAction(ctx context.Context, name, action string) (string, error) {
 	sockets := c.Sockets
 	if len(sockets) == 0 {
 		sockets = CandidateSockets()
@@ -96,17 +78,40 @@ func (c *Client) snapAction(ctx context.Context, name, action string) (string, e
 
 	var failures []error
 	for _, socket := range sockets {
-		changeID, err := performSnapAction(ctx, newClient(socket), name, action)
+		result, err := fn(newClient(socket))
 		if err == nil {
-			return changeID, nil
+			return result, nil
 		}
 		if errors.Is(err, errUnreachable) || errors.Is(err, ErrAccessDenied) {
 			failures = append(failures, err)
 			continue
 		}
-		return "", err
+		return zero, err
 	}
-	return "", fmt.Errorf("no snapd socket granted access: %w", errors.Join(failures...))
+	return zero, noSocketError(failures)
+}
+
+// noSocketError describes the failure to reach any snapd socket, including the
+// case where there was no socket to try at all.
+func noSocketError(failures []error) error {
+	if len(failures) == 0 {
+		return errors.New("no snapd socket available to try")
+	}
+	return fmt.Errorf("no snapd socket granted access: %w", errors.Join(failures...))
+}
+
+func (c *Client) Install(ctx context.Context, name string) (changeID string, err error) {
+	return c.snapAction(ctx, name, "install")
+}
+
+func (c *Client) Remove(ctx context.Context, name string) (changeID string, err error) {
+	return c.snapAction(ctx, name, "remove")
+}
+
+func (c *Client) snapAction(ctx context.Context, name, action string) (string, error) {
+	return withSocket(c, func(client *http.Client) (string, error) {
+		return performSnapAction(ctx, client, name, action)
+	})
 }
 
 func performSnapAction(ctx context.Context, client *http.Client, name, action string) (string, error) {
@@ -147,53 +152,16 @@ func performSnapAction(ctx context.Context, client *http.Client, name, action st
 }
 
 func (c *Client) Change(ctx context.Context, changeID string) (Change, error) {
-	sockets := c.Sockets
-	if len(sockets) == 0 {
-		sockets = CandidateSockets()
-	}
-	newClient := c.newClient
-	if newClient == nil {
-		newClient = newHTTPClient
-	}
-
-	var failures []error
-	for _, socket := range sockets {
-		change, err := getChange(ctx, newClient(socket), changeID)
-		if err == nil {
-			return change, nil
-		}
-		if errors.Is(err, errUnreachable) || errors.Is(err, ErrAccessDenied) {
-			failures = append(failures, err)
-			continue
-		}
-		return Change{}, err
-	}
-	return Change{}, fmt.Errorf("no snapd socket granted access: %w", errors.Join(failures...))
+	return withSocket(c, func(client *http.Client) (Change, error) {
+		return getChange(ctx, client, changeID)
+	})
 }
 
 func (c *Client) Abort(ctx context.Context, changeID string) error {
-	sockets := c.Sockets
-	if len(sockets) == 0 {
-		sockets = CandidateSockets()
-	}
-	newClient := c.newClient
-	if newClient == nil {
-		newClient = newHTTPClient
-	}
-
-	var failures []error
-	for _, socket := range sockets {
-		err := abortChange(ctx, newClient(socket), changeID)
-		if err == nil {
-			return nil
-		}
-		if errors.Is(err, errUnreachable) || errors.Is(err, ErrAccessDenied) {
-			failures = append(failures, err)
-			continue
-		}
-		return err
-	}
-	return fmt.Errorf("no snapd socket granted access: %w", errors.Join(failures...))
+	_, err := withSocket(c, func(client *http.Client) (struct{}, error) {
+		return struct{}{}, abortChange(ctx, client, changeID)
+	})
+	return err
 }
 
 func abortChange(ctx context.Context, client *http.Client, changeID string) error {
@@ -251,28 +219,9 @@ func getChange(ctx context.Context, client *http.Client, changeID string) (Chang
 }
 
 func (c *Client) ChangesInProgress(ctx context.Context, name string) ([]Change, error) {
-	sockets := c.Sockets
-	if len(sockets) == 0 {
-		sockets = CandidateSockets()
-	}
-	newClient := c.newClient
-	if newClient == nil {
-		newClient = newHTTPClient
-	}
-
-	var failures []error
-	for _, socket := range sockets {
-		changes, err := getChangesForSnap(ctx, newClient(socket), name)
-		if err == nil {
-			return changes, nil
-		}
-		if errors.Is(err, errUnreachable) || errors.Is(err, ErrAccessDenied) {
-			failures = append(failures, err)
-			continue
-		}
-		return nil, err
-	}
-	return nil, fmt.Errorf("no snapd socket granted access: %w", errors.Join(failures...))
+	return withSocket(c, func(client *http.Client) ([]Change, error) {
+		return getChangesForSnap(ctx, client, name)
+	})
 }
 
 func getChangesForSnap(ctx context.Context, client *http.Client, name string) ([]Change, error) {
@@ -324,13 +273,13 @@ func decodeEnvelope(resp *http.Response) (snapsEnvelope, error) {
 			}
 		}
 		if result.Kind == snapAlreadyInstalledKind {
-			return snapsEnvelope{}, ErrAlreadyInstalled
+			return snapsEnvelope{}, withMessage(ErrAlreadyInstalled, result.Message)
 		}
 		if result.Kind == snapNotInstalledKind {
-			return snapsEnvelope{}, ErrNotInstalled
+			return snapsEnvelope{}, withMessage(ErrNotInstalled, result.Message)
 		}
 		if result.Kind == snapChangeConflictKind {
-			return snapsEnvelope{}, ErrChangeConflict
+			return snapsEnvelope{}, withMessage(ErrChangeConflict, result.Message)
 		}
 		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 			if result.Message != "" {
@@ -345,6 +294,15 @@ func decodeEnvelope(resp *http.Response) (snapsEnvelope, error) {
 	}
 
 	return env, nil
+}
+
+// withMessage preserves snapd's own explanation alongside the sentinel error so
+// the reason is not lost when the sentinel is matched with errors.Is.
+func withMessage(sentinel error, message string) error {
+	if message == "" {
+		return sentinel
+	}
+	return fmt.Errorf("%w: %s", sentinel, message)
 }
 
 func getSnaps(ctx context.Context, client *http.Client) ([]snapInfo, error) {

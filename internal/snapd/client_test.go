@@ -315,6 +315,38 @@ func TestInstall_ChangeConflict(t *testing.T) {
 	if !errors.Is(err, ErrChangeConflict) {
 		t.Fatalf("expected ErrChangeConflict, got %v", err)
 	}
+	if !strings.Contains(err.Error(), `has "install-snap" change in progress`) {
+		t.Fatalf("got %q, want snapd's own message to be preserved", err)
+	}
+}
+
+func TestRemove_NotInstalledKeepsSnapdMessage(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"type":"error","status":"Bad Request","result":{
+			"message":"snap \"smollm2\" is not installed",
+			"kind":"snap-not-installed"
+		}}`)
+	})
+
+	client := &Client{Sockets: []string{socket}}
+	_, err := client.Remove(context.Background(), "smollm2")
+	if !errors.Is(err, ErrNotInstalled) {
+		t.Fatalf("expected ErrNotInstalled, got %v", err)
+	}
+	if !strings.Contains(err.Error(), `snap "smollm2" is not installed`) {
+		t.Fatalf("got %q, want snapd's own message to be preserved", err)
+	}
+}
+
+func TestNoSocketError_WithoutFailuresIsReadable(t *testing.T) {
+	err := noSocketError(nil)
+	if err == nil {
+		t.Fatal("expected an error when there is no socket to try")
+	}
+	if strings.Contains(err.Error(), "%!w") {
+		t.Fatalf("got %q, want a readable message", err)
+	}
 }
 
 func TestRemove_NotInstalled(t *testing.T) {

@@ -146,10 +146,28 @@ func waitForChangeOrAbort(ctx context.Context, client *snapd.Client, changeID st
 
 	abortCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), abortTimeout)
 	defer cancel()
+
+	// The change may have completed in the same tick the context was cancelled.
+	// snapd rejects aborting a ready change, so report its outcome instead.
+	if change, changeErr := client.Change(abortCtx, changeID); changeErr == nil && change.Ready {
+		return changeOutcome(change)
+	}
+
 	if abortErr := client.Abort(abortCtx, changeID); abortErr != nil {
 		return errors.Join(ctx.Err(), &abortError{changeID: changeID, err: abortErr})
 	}
 	return ctx.Err()
+}
+
+// changeOutcome converts a ready change into the corresponding result.
+func changeOutcome(change snapd.Change) error {
+	if change.Status == "Done" {
+		return nil
+	}
+	if change.Err != "" {
+		return errors.New(change.Err)
+	}
+	return fmt.Errorf("change failed with status %q", change.Status)
 }
 
 func waitForChange(ctx context.Context, client *snapd.Client, changeID string, progress func(string)) error {
@@ -170,13 +188,7 @@ func waitForChange(ctx context.Context, client *snapd.Client, changeID string, p
 			lastMessage = message
 		}
 		if change.Ready {
-			if change.Status == "Done" {
-				return nil
-			}
-			if change.Err != "" {
-				return fmt.Errorf("%s", change.Err)
-			}
-			return fmt.Errorf("change failed with status %q", change.Status)
+			return changeOutcome(change)
 		}
 
 		select {

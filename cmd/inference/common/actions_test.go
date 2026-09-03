@@ -373,3 +373,37 @@ func TestRemoveSnap_ContextCancellationHasFriendlyMessage(t *testing.T) {
 		t.Fatalf("got %v, want \"removal cancelled\"", err)
 	}
 }
+
+func TestRunInstall_ChangeReadyAtCancellationSkipsAbort(t *testing.T) {
+	var cancel context.CancelFunc
+	var polls int32
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/smollm2":
+			fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"change":"7"}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/changes/7":
+			t.Error("abort must not be issued for a change that is already ready")
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"type":"error","status":"Bad Request","result":{"message":"cannot abort change 7 with nothing pending"}}`)
+		case r.URL.Path == "/v2/changes/7":
+			// The change completes in the same tick the context is cancelled.
+			if atomic.AddInt32(&polls, 1) == 1 {
+				cancel()
+				fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}}`)
+				return
+			}
+			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true,"summary":"Install \"smollm2\" snap"}}`)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	client := &snapd.Client{Sockets: []string{socket}}
+	ctx, cancelFn := context.WithCancel(context.Background())
+	cancel = cancelFn
+	defer cancelFn()
+
+	if err := runInstall(ctx, client, "smollm2", nil); err != nil {
+		t.Fatalf("got %v, want the completed install to be reported as success", err)
+	}
+}
