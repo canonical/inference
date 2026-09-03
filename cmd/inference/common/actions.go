@@ -15,6 +15,9 @@ import (
 const (
 	pollInterval = 500 * time.Millisecond
 	abortTimeout = 10 * time.Second
+	// maxTransientPollRetries allows snapd to restart without hiding a
+	// persistently unavailable daemon.
+	maxTransientPollRetries = 3
 	// maxConflictRetries bounds the retry loop so a third party repeatedly
 	// starting changes on the same snap cannot livelock us.
 	maxConflictRetries = 3
@@ -71,9 +74,6 @@ func runInstall(ctx context.Context, client *snapd.Client, name string, w io.Wri
 	if err != nil {
 		return err
 	}
-	if changeID == "" {
-		return nil
-	}
 	return waitForChangeOrAbort(ctx, client, changeID, progress)
 }
 
@@ -102,9 +102,6 @@ func runRemove(ctx context.Context, client *snapd.Client, name string, w io.Writ
 	changeID, err := startWithConflictRetry(ctx, client, name, progress, client.Remove)
 	if err != nil {
 		return err
-	}
-	if changeID == "" {
-		return nil
 	}
 	return waitForChangeOrAbort(ctx, client, changeID, progress)
 }
@@ -161,17 +158,32 @@ func changeOutcome(change snapd.Change) error {
 }
 
 func waitForChange(ctx context.Context, client *snapd.Client, changeID string, progress func(string)) error {
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
-
 	var lastMessage string
+	var transientFailures int
 	for {
 		change, err := client.Change(ctx, changeID)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
+			if errors.Is(err, snapd.ErrTransient) && transientFailures < maxTransientPollRetries {
+				delay := pollInterval * time.Duration(1<<transientFailures)
+				transientFailures++
+				if err := waitForNextPoll(ctx, delay); err != nil {
+					return err
+				}
+				continue
+			}
 			return err
+		}
+		transientFailures = 0
+		if maintenance := change.Maintenance; maintenance != nil {
+			switch maintenance.Kind {
+			case "system-restart":
+				return fmt.Errorf("snapd reports a system restart required for change %s: %s", changeID, maintenance.Message)
+			case "daemon-restart":
+				reportProgress(progress, maintenance.Message)
+			}
 		}
 		if message := changeProgressMessage(change); message != "" && message != lastMessage {
 			reportProgress(progress, message)
@@ -181,11 +193,20 @@ func waitForChange(ctx context.Context, client *snapd.Client, changeID string, p
 			return changeOutcome(change)
 		}
 
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
+		if err := waitForNextPoll(ctx, pollInterval); err != nil {
+			return err
 		}
+	}
+}
+
+func waitForNextPoll(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
 

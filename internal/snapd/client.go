@@ -22,6 +22,8 @@ var ErrNotInstalled = errors.New("snap is not installed")
 
 var ErrChangeConflict = errors.New("snap has a conflicting change in progress")
 
+var ErrTransient = errors.New("temporary snapd communication failure")
+
 const snapAlreadyInstalledKind = "snap-already-installed"
 
 const snapNotInstalledKind = "snap-not-installed"
@@ -110,12 +112,15 @@ func performSnapAction(ctx context.Context, client *http.Client, name, action st
 
 	switch env.Type {
 	case "async":
+		if resp.StatusCode != http.StatusAccepted {
+			return "", fmt.Errorf("snapd returned an async %s response with HTTP status %d", action, resp.StatusCode)
+		}
 		if env.Change == "" {
 			return "", fmt.Errorf("snapd accepted the %s request but returned no change id", action)
 		}
 		return env.Change, nil
 	case "sync":
-		return "", nil
+		return "", fmt.Errorf("snapd returned an unexpected synchronous response for %s", action)
 	default:
 		return "", fmt.Errorf("snapd returned unexpected response type %q", env.Type)
 	}
@@ -167,7 +172,7 @@ func getChange(ctx context.Context, client *http.Client, changeID string) (Chang
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return Change{}, fmt.Errorf("calling snapd: %w", err)
+		return Change{}, fmt.Errorf("%w: calling snapd: %w", ErrTransient, err)
 	}
 	defer resp.Body.Close()
 
@@ -186,6 +191,7 @@ func getChange(ctx context.Context, client *http.Client, changeID string) (Chang
 	if err := json.Unmarshal(env.Result, &change); err != nil {
 		return Change{}, fmt.Errorf("decoding snapd change: %w", err)
 	}
+	change.Maintenance = env.Maintenance
 	return change, nil
 }
 
@@ -237,6 +243,13 @@ func decodeEnvelope(resp *http.Response) (envelope, error) {
 	if err := json.Unmarshal(body, &env); err != nil {
 		return envelope{}, fmt.Errorf("decoding snapd response (HTTP %d): %w", resp.StatusCode, err)
 	}
+	if env.StatusCode != 0 && env.StatusCode != resp.StatusCode {
+		return envelope{}, fmt.Errorf(
+			"snapd response status-code %d does not match HTTP status %d",
+			env.StatusCode,
+			resp.StatusCode,
+		)
+	}
 
 	if resp.StatusCode >= 300 || env.Type == "error" {
 		var result errorResult
@@ -259,6 +272,12 @@ func decodeEnvelope(resp *http.Response) (envelope, error) {
 				return envelope{}, fmt.Errorf("%w: snapd returned HTTP %d: %s", ErrAccessDenied, resp.StatusCode, result.Message)
 			}
 			return envelope{}, fmt.Errorf("%w: snapd returned HTTP %d (%s)", ErrAccessDenied, resp.StatusCode, env.Status)
+		}
+		if resp.StatusCode >= http.StatusInternalServerError {
+			if result.Message != "" {
+				return envelope{}, fmt.Errorf("%w: snapd returned HTTP %d: %s", ErrTransient, resp.StatusCode, result.Message)
+			}
+			return envelope{}, fmt.Errorf("%w: snapd returned HTTP %d (%s)", ErrTransient, resp.StatusCode, env.Status)
 		}
 		if result.Message != "" {
 			return envelope{}, fmt.Errorf("snapd returned HTTP %d: %s", resp.StatusCode, result.Message)
@@ -326,10 +345,12 @@ func newHTTPClient(socket string) *http.Client {
 }
 
 type envelope struct {
-	Type   string          `json:"type"`
-	Status string          `json:"status"`
-	Result json.RawMessage `json:"result"`
-	Change string          `json:"change"`
+	Type        string          `json:"type"`
+	Status      string          `json:"status"`
+	StatusCode  int             `json:"status-code"`
+	Result      json.RawMessage `json:"result"`
+	Change      string          `json:"change"`
+	Maintenance *Maintenance    `json:"maintenance"`
 }
 
 type errorResult struct {
@@ -343,11 +364,17 @@ type snapInfo struct {
 }
 
 type Change struct {
-	Status  string `json:"status"`
-	Summary string `json:"summary"`
-	Ready   bool   `json:"ready"`
-	Err     string `json:"err"`
-	Tasks   []Task `json:"tasks"`
+	Status      string       `json:"status"`
+	Summary     string       `json:"summary"`
+	Ready       bool         `json:"ready"`
+	Err         string       `json:"err"`
+	Tasks       []Task       `json:"tasks"`
+	Maintenance *Maintenance `json:"-"`
+}
+
+type Maintenance struct {
+	Kind    string `json:"kind"`
+	Message string `json:"message"`
 }
 
 type Task struct {

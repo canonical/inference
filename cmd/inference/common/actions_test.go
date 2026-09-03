@@ -42,6 +42,11 @@ func newUnixServer(t *testing.T, handler http.HandlerFunc) string {
 	return socket
 }
 
+func writeAsyncAccepted(w http.ResponseWriter, changeID string) {
+	w.WriteHeader(http.StatusAccepted)
+	fmt.Fprintf(w, `{"type":"async","status":"Accepted","status-code":202,"change":%q}`, changeID)
+}
+
 func TestNewProgressPrinter_NonFileWriterPrintsEachLine(t *testing.T) {
 	var buf bytes.Buffer
 	progress, finish := NewProgressPrinter(&buf)
@@ -115,7 +120,7 @@ func TestRunInstall_PollsUntilDone(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost:
-			fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"change":"7"}`)
+			writeAsyncAccepted(w, "7")
 		case r.URL.Path == "/v2/changes/7":
 			if atomic.AddInt32(&changeRequests, 1) < 3 {
 				fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}}`)
@@ -142,7 +147,7 @@ func TestRunInstall_ReturnsErrorWhenChangeFails(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost:
-			fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"change":"7"}`)
+			writeAsyncAccepted(w, "7")
 		case r.URL.Path == "/v2/changes/7":
 			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Error","ready":true,"err":"boom"}}`)
 		}
@@ -152,6 +157,54 @@ func TestRunInstall_ReturnsErrorWhenChangeFails(t *testing.T) {
 	err := runInstall(context.Background(), client, "smollm2", nil)
 	if err == nil || err.Error() != "boom" {
 		t.Fatalf("got %v, want error \"boom\"", err)
+	}
+}
+
+func TestRunInstall_RetriesTransientPollFailure(t *testing.T) {
+	var changeRequests int32
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost:
+			writeAsyncAccepted(w, "7")
+		case r.URL.Path == "/v2/changes/7":
+			if atomic.AddInt32(&changeRequests, 1) == 1 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				fmt.Fprint(w, `{"type":"error","status":"Service Unavailable","status-code":503,"result":{"message":"snapd is restarting"}}`)
+				return
+			}
+			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	client := &snapd.Client{Socket: socket}
+	if err := runInstall(context.Background(), client, "smollm2", nil); err != nil {
+		t.Fatalf("runInstall: %v", err)
+	}
+	if got := atomic.LoadInt32(&changeRequests); got != 2 {
+		t.Fatalf("got %d change requests, want 2", got)
+	}
+}
+
+func TestRunInstall_SurfacesSystemRestartMaintenance(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost:
+			writeAsyncAccepted(w, "7")
+		case r.URL.Path == "/v2/changes/7":
+			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{
+				"status":"Wait","ready":false
+			},"maintenance":{"kind":"system-restart","message":"system restart required"}}`)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	client := &snapd.Client{Socket: socket}
+	err := runInstall(context.Background(), client, "smollm2", nil)
+	if err == nil || !strings.Contains(err.Error(), "system restart required for change 7") {
+		t.Fatalf("got %v, want a system restart error containing the change id", err)
 	}
 }
 
@@ -169,7 +222,7 @@ func TestRunInstall_WaitsOutConflictThenRetries(t *testing.T) {
 				}}`)
 				return
 			}
-			fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"change":"7"}`)
+			writeAsyncAccepted(w, "7")
 		case r.URL.Path == "/v2/changes":
 			if atomic.AddInt32(&inProgressRequests, 1) < 2 {
 				fmt.Fprint(w, `{"type":"sync","status":"OK","result":[{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}]}`)
@@ -249,7 +302,7 @@ func TestRunInstall_RepeatedConflictsStopAfterBoundedRetries(t *testing.T) {
 	}
 }
 
-func TestRunInstall_SynchronousResponseSkipsPolling(t *testing.T) {
+func TestRunInstall_SynchronousResponseIsRejected(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost:
@@ -260,8 +313,8 @@ func TestRunInstall_SynchronousResponseSkipsPolling(t *testing.T) {
 	})
 
 	client := &snapd.Client{Socket: socket}
-	if err := runInstall(context.Background(), client, "smollm2", nil); err != nil {
-		t.Fatalf("runInstall: %v", err)
+	if err := runInstall(context.Background(), client, "smollm2", nil); err == nil {
+		t.Fatal("expected a synchronous action response to be rejected")
 	}
 }
 
@@ -270,7 +323,7 @@ func TestRunInstall_ContextCancellationDuringPoll(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/smollm2":
-			fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"change":"7"}`)
+			writeAsyncAccepted(w, "7")
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/changes/7":
 			atomic.AddInt32(&abortRequests, 1)
 			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
@@ -298,7 +351,7 @@ func TestInstallSnap_ContextCancellationHasFriendlyMessage(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/smollm2":
-			fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"change":"7"}`)
+			writeAsyncAccepted(w, "7")
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/changes/7":
 			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
 		case r.URL.Path == "/v2/changes/7":
@@ -324,7 +377,7 @@ func TestRunRemove_ContextCancellationDuringPoll(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/smollm2":
-			fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"change":"7"}`)
+			writeAsyncAccepted(w, "7")
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/changes/7":
 			atomic.AddInt32(&abortRequests, 1)
 			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
@@ -352,7 +405,7 @@ func TestInstallSnap_CancellationReportsFailedAbort(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/smollm2":
-			fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"change":"7"}`)
+			writeAsyncAccepted(w, "7")
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/changes/7":
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprint(w, `{"type":"error","status":"Internal Server Error","result":{"message":"boom"}}`)
@@ -384,7 +437,7 @@ func TestRemoveSnap_ContextCancellationHasFriendlyMessage(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/smollm2":
-			fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"change":"7"}`)
+			writeAsyncAccepted(w, "7")
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/changes/7":
 			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
 		case r.URL.Path == "/v2/changes/7":
@@ -411,7 +464,7 @@ func TestRunInstall_ChangeReadyAtCancellationSkipsAbort(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/smollm2":
-			fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"change":"7"}`)
+			writeAsyncAccepted(w, "7")
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/changes/7":
 			t.Error("abort must not be issued for a change that is already ready")
 			w.WriteHeader(http.StatusBadRequest)

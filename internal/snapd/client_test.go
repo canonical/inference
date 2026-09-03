@@ -39,6 +39,11 @@ func newUnixServer(t *testing.T, handler http.HandlerFunc) string {
 	return socket
 }
 
+func writeAsyncAccepted(w http.ResponseWriter, changeID string) {
+	w.WriteHeader(http.StatusAccepted)
+	fmt.Fprintf(w, `{"type":"async","status":"Accepted","status-code":202,"change":%q}`, changeID)
+}
+
 func TestStatuses_SuccessfulEnvelope(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v2/snaps" {
@@ -210,7 +215,7 @@ func TestInstall_AsyncResponseReturnsChangeID(t *testing.T) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v2/snaps/smollm2" {
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
-		fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"change":"42"}`)
+		writeAsyncAccepted(w, "42")
 	})
 
 	client := &Client{Socket: socket}
@@ -225,7 +230,7 @@ func TestInstall_AsyncResponseReturnsChangeID(t *testing.T) {
 
 func TestInstall_AsyncResponseMissingChangeIDIsRejected(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":202,"result":null}`)
+		writeAsyncAccepted(w, "")
 	})
 
 	client := &Client{Socket: socket}
@@ -234,18 +239,37 @@ func TestInstall_AsyncResponseMissingChangeIDIsRejected(t *testing.T) {
 	}
 }
 
-func TestInstall_SyncResponseReturnsEmptyChangeID(t *testing.T) {
+func TestInstall_SyncResponseIsRejected(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
 	})
 
 	client := &Client{Socket: socket}
-	changeID, err := client.Install(context.Background(), "smollm2")
-	if err != nil {
-		t.Fatalf("Install: %v", err)
+	if _, err := client.Install(context.Background(), "smollm2"); err == nil {
+		t.Fatal("expected a synchronous action response to be rejected")
 	}
-	if changeID != "" {
-		t.Fatalf("expected empty change id for a synchronous response, got %q", changeID)
+}
+
+func TestInstall_AsyncHTTPStatusIsRequired(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"type":"async","status":"OK","status-code":200,"change":"42"}`)
+	})
+
+	client := &Client{Socket: socket}
+	if _, err := client.Install(context.Background(), "smollm2"); err == nil {
+		t.Fatal("expected an async response with HTTP 200 to be rejected")
+	}
+}
+
+func TestInstall_EnvelopeStatusMustMatchHTTPStatus(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		fmt.Fprint(w, `{"type":"async","status":"Accepted","status-code":200,"change":"42"}`)
+	})
+
+	client := &Client{Socket: socket}
+	if _, err := client.Install(context.Background(), "smollm2"); err == nil {
+		t.Fatal("expected mismatched response statuses to be rejected")
 	}
 }
 
@@ -324,6 +348,23 @@ func TestChange_DecodesTasksAndProgress(t *testing.T) {
 	}
 	if len(change.Tasks) != 1 || change.Tasks[0].Progress.Total != 4 {
 		t.Fatalf("got tasks %+v", change.Tasks)
+	}
+}
+
+func TestChange_DecodesMaintenance(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"type":"sync","status":"OK","result":{
+			"status":"Wait","ready":false
+		},"maintenance":{"kind":"system-restart","message":"system restart required"}}`)
+	})
+
+	client := &Client{Socket: socket}
+	change, err := client.Change(context.Background(), "42")
+	if err != nil {
+		t.Fatalf("Change: %v", err)
+	}
+	if change.Maintenance == nil || change.Maintenance.Kind != "system-restart" {
+		t.Fatalf("got maintenance %+v", change.Maintenance)
 	}
 }
 
