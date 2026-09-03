@@ -11,6 +11,13 @@ curl -LO https://canonical.github.io/inference-snaps-admin/onboarded-snaps.json
 export INFERENCE_SNAPS_CATALOG="$PWD/onboarded-snaps.json"
 ```
 
+The CLI defaults to the confined snapd socket at `/run/snapd-snap.socket`. When
+running outside the snap, point it at the host socket:
+
+```console
+export SNAPD_SOCKET=/run/snapd.socket
+```
+
 Build and run the CLI directly with Go:
 
 ```console

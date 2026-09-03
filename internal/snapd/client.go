@@ -14,8 +14,6 @@ import (
 	"time"
 )
 
-var errUnreachable = errors.New("snapd socket unreachable")
-
 var ErrAccessDenied = errors.New("snapd socket denied access")
 
 var ErrAlreadyInstalled = errors.New("snap is already installed")
@@ -32,72 +30,46 @@ const snapChangeConflictKind = "snap-change-conflict"
 
 const maxResponseBytes = 4 << 20
 
+const DefaultSocketPath = "/run/snapd-snap.socket"
+
+const EnvVar = "SNAPD_SOCKET"
+
 type Client struct {
-	Sockets   []string
+	Socket    string
 	newClient func(socket string) *http.Client
 }
 
 func NewClient() *Client {
-	return &Client{Sockets: CandidateSockets()}
+	return &Client{Socket: DefaultSocket()}
 }
 
 func (c *Client) Statuses(ctx context.Context) (map[string]string, error) {
-	return withSocket(c, func(client *http.Client) (map[string]string, error) {
-		snaps, err := getSnaps(ctx, client)
-		if err != nil {
-			return nil, err
+	snaps, err := getSnaps(ctx, c.httpClient())
+	if err != nil {
+		return nil, err
+	}
+	statuses := make(map[string]string, len(snaps))
+	for _, snap := range snaps {
+		if snap.Name == "" {
+			return nil, fmt.Errorf("snapd returned a snap with no name")
 		}
-		statuses := make(map[string]string, len(snaps))
-		for _, snap := range snaps {
-			if snap.Name == "" {
-				return nil, fmt.Errorf("snapd returned a snap with no name")
-			}
-			if _, found := statuses[snap.Name]; found {
-				return nil, fmt.Errorf("snapd returned duplicate entries for %q", snap.Name)
-			}
-			statuses[snap.Name] = snap.Status
+		if _, found := statuses[snap.Name]; found {
+			return nil, fmt.Errorf("snapd returned duplicate entries for %q", snap.Name)
 		}
-		return statuses, nil
-	})
+		statuses[snap.Name] = snap.Status
+	}
+	return statuses, nil
 }
 
-// withSocket tries each candidate snapd socket in turn, moving on when a socket
-// is unreachable or denies access, and reporting the collected failures if none
-// of them work.
-func withSocket[T any](c *Client, fn func(*http.Client) (T, error)) (T, error) {
-	var zero T
-
-	sockets := c.Sockets
-	if len(sockets) == 0 {
-		sockets = CandidateSockets()
+func (c *Client) httpClient() *http.Client {
+	socket := c.Socket
+	if socket == "" {
+		socket = DefaultSocket()
 	}
-	newClient := c.newClient
-	if newClient == nil {
-		newClient = newHTTPClient
+	if c.newClient != nil {
+		return c.newClient(socket)
 	}
-
-	var failures []error
-	for _, socket := range sockets {
-		result, err := fn(newClient(socket))
-		if err == nil {
-			return result, nil
-		}
-		if errors.Is(err, errUnreachable) || errors.Is(err, ErrAccessDenied) {
-			failures = append(failures, err)
-			continue
-		}
-		return zero, err
-	}
-	return zero, noSocketError(failures)
-}
-
-// noSocketError describes the failure to reach any snapd socket, including the
-// case where there was no socket to try at all.
-func noSocketError(failures []error) error {
-	if len(failures) == 0 {
-		return errors.New("no snapd socket available to try")
-	}
-	return fmt.Errorf("no snapd socket granted access: %w", errors.Join(failures...))
+	return newHTTPClient(socket)
 }
 
 func (c *Client) Install(ctx context.Context, name string) (changeID string, err error) {
@@ -109,9 +81,7 @@ func (c *Client) Remove(ctx context.Context, name string) (changeID string, err 
 }
 
 func (c *Client) snapAction(ctx context.Context, name, action string) (string, error) {
-	return withSocket(c, func(client *http.Client) (string, error) {
-		return performSnapAction(ctx, client, name, action)
-	})
+	return performSnapAction(ctx, c.httpClient(), name, action)
 }
 
 func performSnapAction(ctx context.Context, client *http.Client, name, action string) (string, error) {
@@ -129,7 +99,7 @@ func performSnapAction(ctx context.Context, client *http.Client, name, action st
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", errUnreachable, err)
+		return "", fmt.Errorf("calling snapd: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -152,16 +122,11 @@ func performSnapAction(ctx context.Context, client *http.Client, name, action st
 }
 
 func (c *Client) Change(ctx context.Context, changeID string) (Change, error) {
-	return withSocket(c, func(client *http.Client) (Change, error) {
-		return getChange(ctx, client, changeID)
-	})
+	return getChange(ctx, c.httpClient(), changeID)
 }
 
 func (c *Client) Abort(ctx context.Context, changeID string) error {
-	_, err := withSocket(c, func(client *http.Client) (struct{}, error) {
-		return struct{}{}, abortChange(ctx, client, changeID)
-	})
-	return err
+	return abortChange(ctx, c.httpClient(), changeID)
 }
 
 func abortChange(ctx context.Context, client *http.Client, changeID string) error {
@@ -179,7 +144,7 @@ func abortChange(ctx context.Context, client *http.Client, changeID string) erro
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("%w: %v", errUnreachable, err)
+		return fmt.Errorf("calling snapd: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -202,7 +167,7 @@ func getChange(ctx context.Context, client *http.Client, changeID string) (Chang
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return Change{}, fmt.Errorf("%w: %v", errUnreachable, err)
+		return Change{}, fmt.Errorf("calling snapd: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -219,9 +184,7 @@ func getChange(ctx context.Context, client *http.Client, changeID string) (Chang
 }
 
 func (c *Client) ChangesInProgress(ctx context.Context, name string) ([]Change, error) {
-	return withSocket(c, func(client *http.Client) ([]Change, error) {
-		return getChangesForSnap(ctx, client, name)
-	})
+	return getChangesForSnap(ctx, c.httpClient(), name)
 }
 
 func getChangesForSnap(ctx context.Context, client *http.Client, name string) ([]Change, error) {
@@ -233,7 +196,7 @@ func getChangesForSnap(ctx context.Context, client *http.Client, name string) ([
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", errUnreachable, err)
+		return nil, fmt.Errorf("calling snapd: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -296,8 +259,7 @@ func decodeEnvelope(resp *http.Response) (envelope, error) {
 	return env, nil
 }
 
-// withMessage preserves snapd's own explanation alongside the sentinel error so
-// the reason is not lost when the sentinel is matched with errors.Is.
+// Keep snapd's message while preserving errors.Is support.
 func withMessage(sentinel error, message string) error {
 	if message == "" {
 		return sentinel
@@ -313,7 +275,7 @@ func getSnaps(ctx context.Context, client *http.Client) ([]snapInfo, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", errUnreachable, err)
+		return nil, fmt.Errorf("calling snapd: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -335,11 +297,11 @@ func getSnaps(ctx context.Context, client *http.Client) ([]snapInfo, error) {
 	return snaps, nil
 }
 
-func CandidateSockets() []string {
-	if os.Getenv("SNAP") != "" && os.Getenv("SNAP_NAME") != "go" {
-		return []string{"/run/snapd-snap.socket", "/run/snapd.socket"}
+func DefaultSocket() string {
+	if socket := os.Getenv(EnvVar); socket != "" {
+		return socket
 	}
-	return []string{"/run/snapd.socket"}
+	return DefaultSocketPath
 }
 
 func newHTTPClient(socket string) *http.Client {

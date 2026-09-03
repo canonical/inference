@@ -127,7 +127,7 @@ func TestRunInstall_PollsUntilDone(t *testing.T) {
 		}
 	})
 
-	client := &snapd.Client{Sockets: []string{socket}}
+	client := &snapd.Client{Socket: socket}
 	var buf bytes.Buffer
 	err := runInstall(context.Background(), client, "smollm2", &buf)
 	if err != nil {
@@ -148,7 +148,7 @@ func TestRunInstall_ReturnsErrorWhenChangeFails(t *testing.T) {
 		}
 	})
 
-	client := &snapd.Client{Sockets: []string{socket}}
+	client := &snapd.Client{Socket: socket}
 	err := runInstall(context.Background(), client, "smollm2", nil)
 	if err == nil || err.Error() != "boom" {
 		t.Fatalf("got %v, want error \"boom\"", err)
@@ -183,7 +183,7 @@ func TestRunInstall_WaitsOutConflictThenRetries(t *testing.T) {
 		}
 	})
 
-	client := &snapd.Client{Sockets: []string{socket}}
+	client := &snapd.Client{Socket: socket}
 	err := runInstall(context.Background(), client, "smollm2", nil)
 	if err != nil {
 		t.Fatalf("runInstall: %v", err)
@@ -208,7 +208,7 @@ func TestRunInstall_PropagatesConflictWaitFailure(t *testing.T) {
 		}
 	})
 
-	client := &snapd.Client{Sockets: []string{socket}}
+	client := &snapd.Client{Socket: socket}
 	err := runInstall(context.Background(), client, "smollm2", nil)
 	if err == nil {
 		t.Fatal("expected an error when waiting out the conflict fails")
@@ -233,15 +233,13 @@ func TestRunInstall_RepeatedConflictsStopAfterBoundedRetries(t *testing.T) {
 				"kind":"snap-change-conflict"
 			}}`)
 		case r.URL.Path == "/v2/changes":
-			// The conflicting change is always gone by the time we look, so the
-			// retry loop is bounded only by maxConflictRetries.
 			fmt.Fprint(w, `{"type":"sync","status":"OK","result":[]}`)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 	})
 
-	client := &snapd.Client{Sockets: []string{socket}}
+	client := &snapd.Client{Socket: socket}
 	err := runInstall(context.Background(), client, "smollm2", nil)
 	if !errors.Is(err, snapd.ErrChangeConflict) {
 		t.Fatalf("expected the final conflict to surface, got %v", err)
@@ -261,7 +259,7 @@ func TestRunInstall_SynchronousResponseSkipsPolling(t *testing.T) {
 		}
 	})
 
-	client := &snapd.Client{Sockets: []string{socket}}
+	client := &snapd.Client{Socket: socket}
 	if err := runInstall(context.Background(), client, "smollm2", nil); err != nil {
 		t.Fatalf("runInstall: %v", err)
 	}
@@ -283,7 +281,7 @@ func TestRunInstall_ContextCancellationDuringPoll(t *testing.T) {
 		}
 	})
 
-	client := &snapd.Client{Sockets: []string{socket}}
+	client := &snapd.Client{Socket: socket}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
@@ -310,7 +308,7 @@ func TestInstallSnap_ContextCancellationHasFriendlyMessage(t *testing.T) {
 		}
 	})
 
-	client := &snapd.Client{Sockets: []string{socket}}
+	client := &snapd.Client{Socket: socket}
 	ctx, cancel := context.WithCancel(context.Background())
 	timer := time.AfterFunc(50*time.Millisecond, cancel)
 	defer timer.Stop()
@@ -337,7 +335,7 @@ func TestRunRemove_ContextCancellationDuringPoll(t *testing.T) {
 		}
 	})
 
-	client := &snapd.Client{Sockets: []string{socket}}
+	client := &snapd.Client{Socket: socket}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
@@ -365,7 +363,7 @@ func TestInstallSnap_CancellationReportsFailedAbort(t *testing.T) {
 		}
 	})
 
-	client := &snapd.Client{Sockets: []string{socket}}
+	client := &snapd.Client{Socket: socket}
 	ctx, cancel := context.WithCancel(context.Background())
 	timer := time.AfterFunc(50*time.Millisecond, cancel)
 	defer timer.Stop()
@@ -396,7 +394,7 @@ func TestRemoveSnap_ContextCancellationHasFriendlyMessage(t *testing.T) {
 		}
 	})
 
-	client := &snapd.Client{Sockets: []string{socket}}
+	client := &snapd.Client{Socket: socket}
 	ctx, cancel := context.WithCancel(context.Background())
 	timer := time.AfterFunc(50*time.Millisecond, cancel)
 	defer timer.Stop()
@@ -419,7 +417,6 @@ func TestRunInstall_ChangeReadyAtCancellationSkipsAbort(t *testing.T) {
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprint(w, `{"type":"error","status":"Bad Request","result":{"message":"cannot abort change 7 with nothing pending"}}`)
 		case r.URL.Path == "/v2/changes/7":
-			// The change completes in the same tick the context is cancelled.
 			if atomic.AddInt32(&polls, 1) == 1 {
 				cancel()
 				fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}}`)
@@ -431,7 +428,7 @@ func TestRunInstall_ChangeReadyAtCancellationSkipsAbort(t *testing.T) {
 		}
 	})
 
-	client := &snapd.Client{Sockets: []string{socket}}
+	client := &snapd.Client{Socket: socket}
 	ctx, cancelFn := context.WithCancel(context.Background())
 	cancel = cancelFn
 	defer cancelFn()

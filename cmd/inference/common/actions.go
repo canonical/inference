@@ -150,7 +150,6 @@ func waitForChangeOrAbort(ctx context.Context, client *snapd.Client, changeID st
 	return ctx.Err()
 }
 
-// changeOutcome converts a ready change into the corresponding result.
 func changeOutcome(change snapd.Change) error {
 	if change.Status == "Done" {
 		return nil
@@ -190,9 +189,6 @@ func waitForChange(ctx context.Context, client *snapd.Client, changeID string, p
 	}
 }
 
-// startWithConflictRetry runs action, waiting out any change already in progress
-// on the snap and retrying up to maxConflictRetries times. The final conflict is
-// returned once the attempts are exhausted.
 func startWithConflictRetry(
 	ctx context.Context,
 	client *snapd.Client,
