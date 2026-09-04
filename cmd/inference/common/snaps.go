@@ -8,7 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func CompleteProviderNames(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+// CompleteSnapNames is used for tab completion. It only returns inference snap names from the catalog.
+func CompleteSnapNames(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -27,13 +28,14 @@ func CompleteProviderNames(_ *cobra.Command, args []string, toComplete string) (
 	return matches, cobra.ShellCompDirectiveNoFileComp
 }
 
-func ValidateProvider(catalog *snapcatalog.Reader, name string) error {
+// ValidateSnapName checks if the given snap name is present in the catalog.
+func ValidateSnapName(catalog *snapcatalog.Reader, name string) error {
 	found, err := catalog.Contains(name)
 	if err != nil {
 		return fmt.Errorf("reading snap catalog: %w", err)
 	}
 	if !found {
-		return fmt.Errorf("unknown inference provider %q", name)
+		return fmt.Errorf("unknown inference snap %q", name)
 	}
 	return nil
 }

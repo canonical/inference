@@ -18,7 +18,7 @@ func Install(ctx *common.Context) *cobra.Command {
 		Short:             "Install an inference provider",
 		Long:              "Install the inference snap with the provided name.",
 		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: common.CompleteProviderNames,
+		ValidArgsFunction: common.CompleteSnapNames,
 		SilenceUsage:      true,
 		RunE:              cmd.run,
 	}
@@ -31,7 +31,7 @@ func (cmd *installCommand) run(cobraCmd *cobra.Command, args []string) error {
 
 func (cmd *installCommand) install(cobraCmd *cobra.Command, name string) error {
 	// Validation of the provider is important to only allow snaps from the catalog to be installed
-	if err := common.ValidateProvider(cmd.ctx.SnapCatalog, name); err != nil {
+	if err := common.ValidateSnapName(cmd.ctx.SnapCatalog, name); err != nil {
 		return err
 	}
 	return common.InstallSnap(cobraCmd.Context(), cmd.ctx, name)

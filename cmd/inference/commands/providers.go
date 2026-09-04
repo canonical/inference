@@ -22,9 +22,9 @@ type providersCommand struct {
 }
 
 type providerJSON struct {
-	Name   string `json:"provider"`
-	Type   string `json:"type"`
-	Status string `json:"status"`
+	Name  string `json:"provider"`
+	Type  string `json:"type"`
+	State string `json:"state"`
 }
 
 type providersJSONOutput struct {
@@ -80,9 +80,9 @@ func renderProvidersJSON(list []providers.Provider) (string, error) {
 	result := providersJSONOutput{Providers: make([]providerJSON, len(list))}
 	for i, p := range list {
 		result.Providers[i] = providerJSON{
-			Name:   p.Name,
-			Type:   string(p.Type),
-			Status: p.Status,
+			Name:  p.Name,
+			Type:  string(p.Type),
+			State: p.State,
 		}
 	}
 	if err := encoder.Encode(result); err != nil {
@@ -126,10 +126,10 @@ func renderProvidersTable(list []providers.Provider) (string, error) {
 			},
 		}),
 	)
-	table.Header([]string{"PROVIDER", "TYPE", "STATUS"})
+	table.Header([]string{"PROVIDER", "TYPE", "STATE"})
 	showHint := false
 	for _, p := range list {
-		if err := table.Append([]string{p.Name, string(p.Type), p.Status}); err != nil {
+		if err := table.Append([]string{p.Name, string(p.Type), p.State}); err != nil {
 			return "", err
 		}
 		if !p.Installed() {

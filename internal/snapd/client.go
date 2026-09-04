@@ -30,6 +30,15 @@ const snapNotInstalledKind = "snap-not-installed"
 
 const snapChangeConflictKind = "snap-change-conflict"
 
+const snapNotFoundKind = "snap-not-found"
+
+// StatusNotInstalled is returned by Client.Status when a snap is not
+// installed. Unlike SnapStatusActive and SnapStatusInstalled, snapd itself
+// has no such value: it simply omits the snap from its API responses.
+const StatusNotInstalled = "not installed"
+const SnapStatusActive = "active"
+const SnapStatusInstalled = "installed"
+
 const maxResponseBytes = 4 << 20
 
 const DefaultSocketPath = "/run/snapd.socket"
@@ -45,22 +54,20 @@ func NewClient() *Client {
 	return &Client{Socket: DefaultSocket()}
 }
 
-func (c *Client) Statuses(ctx context.Context) (map[string]string, error) {
-	snaps, err := getSnaps(ctx, c.httpClient())
+func (c *Client) Status(ctx context.Context, name string) (string, error) {
+	snap, err := getSnap(ctx, c.httpClient(), name)
 	if err != nil {
-		return nil, err
-	}
-	statuses := make(map[string]string, len(snaps))
-	for _, snap := range snaps {
-		if snap.Name == "" {
-			return nil, fmt.Errorf("snapd returned a snap with no name")
+		if errors.Is(err, ErrNotInstalled) {
+			return StatusNotInstalled, nil
 		}
-		if _, found := statuses[snap.Name]; found {
-			return nil, fmt.Errorf("snapd returned duplicate entries for %q", snap.Name)
-		}
-		statuses[snap.Name] = snap.Status
+		return "", err
 	}
-	return statuses, nil
+	switch snap.Status {
+	case SnapStatusActive, SnapStatusInstalled:
+		return snap.Status, nil
+	default:
+		return "", fmt.Errorf("snapd returned unexpected status %q for %q", snap.Status, name)
+	}
 }
 
 func (c *Client) httpClient() *http.Client {
@@ -261,7 +268,7 @@ func decodeEnvelope(resp *http.Response) (envelope, error) {
 		if result.Kind == snapAlreadyInstalledKind {
 			return envelope{}, withMessage(ErrAlreadyInstalled, result.Message)
 		}
-		if result.Kind == snapNotInstalledKind {
+		if result.Kind == snapNotInstalledKind || result.Kind == snapNotFoundKind {
 			return envelope{}, withMessage(ErrNotInstalled, result.Message)
 		}
 		if result.Kind == snapChangeConflictKind {
@@ -296,34 +303,35 @@ func withMessage(sentinel error, message string) error {
 	return fmt.Errorf("%w: %s", sentinel, message)
 }
 
-func getSnaps(ctx context.Context, client *http.Client) ([]snapInfo, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost/v2/snaps", nil)
+func getSnap(ctx context.Context, client *http.Client, name string) (snapInfo, error) {
+	url := fmt.Sprintf("http://localhost/v2/snaps/%s", neturl.PathEscape(name))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("building snapd request: %w", err)
+		return snapInfo{}, fmt.Errorf("building snapd request: %w", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("calling snapd: %w", err)
+		return snapInfo{}, fmt.Errorf("calling snapd: %w", err)
 	}
 	defer resp.Body.Close()
 
 	env, err := decodeEnvelope(resp)
 	if err != nil {
-		return nil, err
+		return snapInfo{}, err
 	}
 	if env.Type != "sync" {
-		return nil, fmt.Errorf("snapd returned unexpected response type %q", env.Type)
+		return snapInfo{}, fmt.Errorf("snapd returned unexpected response type %q", env.Type)
 	}
 	if len(env.Result) == 0 || string(env.Result) == "null" {
-		return nil, fmt.Errorf("snapd response omitted the result")
+		return snapInfo{}, fmt.Errorf("snapd response omitted the result")
 	}
 
-	var snaps []snapInfo
-	if err := json.Unmarshal(env.Result, &snaps); err != nil {
-		return nil, fmt.Errorf("decoding snapd snap list: %w", err)
+	var snap snapInfo
+	if err := json.Unmarshal(env.Result, &snap); err != nil {
+		return snapInfo{}, fmt.Errorf("decoding snapd snap: %w", err)
 	}
-	return snaps, nil
+	return snap, nil
 }
 
 func DefaultSocket() string {

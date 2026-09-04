@@ -44,38 +44,66 @@ func writeAsyncAccepted(w http.ResponseWriter, changeID string) {
 	fmt.Fprintf(w, `{"type":"async","status":"Accepted","status-code":202,"change":%q}`, changeID)
 }
 
-func TestStatuses_SuccessfulEnvelope(t *testing.T) {
+func TestStatus_ActiveSnapIsEnabled(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v2/snaps" {
+		if r.URL.Path != "/v2/snaps/gemma4" {
 			t.Errorf("unexpected path %q", r.URL.Path)
 		}
-		if r.URL.Query().Get("select") == "all" {
-			t.Errorf("request must not use select=all, got query %q", r.URL.RawQuery)
-		}
-		fmt.Fprint(w, `{"type":"sync","status":"OK","result":[
-			{"name":"gemma4","status":"active"},
-			{"name":"qwen3","status":"installed"}
-		]}`)
+		fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"name":"gemma4","status":"active"}}`)
 	})
 
 	client := &Client{Socket: socket}
-	statuses, err := client.Statuses(context.Background())
+	status, err := client.Status(context.Background(), "gemma4")
 	if err != nil {
-		t.Fatalf("Statuses: %v", err)
+		t.Fatalf("Status: %v", err)
 	}
-	if statuses["gemma4"] != "active" || statuses["qwen3"] != "installed" {
-		t.Fatalf("got %+v", statuses)
+	if status != SnapStatusActive {
+		t.Fatalf("got %q, want %q", status, SnapStatusActive)
 	}
 }
 
-func TestStatuses_APIErrorEnvelope(t *testing.T) {
+func TestStatus_InstalledSnapIsDisabled(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"name":"qwen3","status":"installed"}}`)
+	})
+
+	client := &Client{Socket: socket}
+	status, err := client.Status(context.Background(), "qwen3")
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if status != SnapStatusInstalled {
+		t.Fatalf("got %q, want %q", status, SnapStatusInstalled)
+	}
+}
+
+func TestStatus_SnapNotFoundIsNotInstalled(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, `{"type":"error","status":"Not Found","status-code":404,"result":{
+			"message":"snap \"smollm2\" not found",
+			"kind":"snap-not-found"
+		}}`)
+	})
+
+	client := &Client{Socket: socket}
+	status, err := client.Status(context.Background(), "smollm2")
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if status != StatusNotInstalled {
+		t.Fatalf("got %q, want %q", status, StatusNotInstalled)
+	}
+}
+
+func TestStatus_APIErrorEnvelope(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprint(w, `{"type":"error","status":"Internal Server Error","result":{"message":"boom"}}`)
 	})
 
 	client := &Client{Socket: socket}
-	_, err := client.Statuses(context.Background())
+	_, err := client.Status(context.Background(), "gemma4")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -87,26 +115,26 @@ func TestStatuses_APIErrorEnvelope(t *testing.T) {
 	}
 }
 
-func TestStatuses_NonOKStatus(t *testing.T) {
+func TestStatus_NonOKStatus(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, `{"type":"sync","status":"Forbidden","result":[]}`)
+		fmt.Fprint(w, `{"type":"sync","status":"Forbidden","result":{}}`)
 	})
 
 	client := &Client{Socket: socket}
-	if _, err := client.Statuses(context.Background()); err == nil {
+	if _, err := client.Status(context.Background(), "gemma4"); err == nil {
 		t.Fatal("expected error, got nil")
 	}
 }
 
-func TestStatuses_ForbiddenErrorObjectIsNotDecodedAsSnapList(t *testing.T) {
+func TestStatus_ForbiddenErrorObjectIsNotDecodedAsSnap(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		fmt.Fprint(w, `{"type":"error","status":"Forbidden","result":{"message":"access denied"}}`)
 	})
 
 	client := &Client{Socket: socket}
-	_, err := client.Statuses(context.Background())
+	_, err := client.Status(context.Background(), "gemma4")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -118,57 +146,54 @@ func TestStatuses_ForbiddenErrorObjectIsNotDecodedAsSnapList(t *testing.T) {
 	}
 }
 
-func TestStatuses_MalformedJSON(t *testing.T) {
+func TestStatus_MalformedJSON(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{not json`)
 	})
 
 	client := &Client{Socket: socket}
-	if _, err := client.Statuses(context.Background()); err == nil {
+	if _, err := client.Status(context.Background(), "gemma4"); err == nil {
 		t.Fatal("expected error, got nil")
 	}
 }
 
-func TestStatuses_MissingResult(t *testing.T) {
+func TestStatus_MissingResult(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"type":"sync","status":"OK"}`)
 	})
 
 	client := &Client{Socket: socket}
-	if _, err := client.Statuses(context.Background()); err == nil {
+	if _, err := client.Status(context.Background(), "gemma4"); err == nil {
 		t.Fatal("expected error for missing result, got nil")
 	}
 }
 
-func TestStatuses_DuplicateCurrentRecordsRejected(t *testing.T) {
+func TestStatus_UnexpectedStatusValue(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"type":"sync","status":"OK","result":[
-			{"name":"gemma4","status":"active"},
-			{"name":"gemma4","status":"installed"}
-		]}`)
+		fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"name":"gemma4","status":"removed"}}`)
 	})
 
 	client := &Client{Socket: socket}
-	if _, err := client.Statuses(context.Background()); err == nil {
-		t.Fatal("expected error for duplicate entries, got nil")
+	if _, err := client.Status(context.Background(), "gemma4"); err == nil {
+		t.Fatal("expected error for unexpected status value, got nil")
 	}
 }
 
-func TestStatuses_UnavailableSocket(t *testing.T) {
+func TestStatus_UnavailableSocket(t *testing.T) {
 	client := &Client{Socket: filepath.Join(t.TempDir(), "does-not-exist.socket")}
-	if _, err := client.Statuses(context.Background()); err == nil {
+	if _, err := client.Status(context.Background(), "gemma4"); err == nil {
 		t.Fatal("expected error for unavailable socket, got nil")
 	}
 }
 
-func TestStatuses_Forbidden(t *testing.T) {
+func TestStatus_Forbidden(t *testing.T) {
 	forbidden := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		fmt.Fprint(w, `{"type":"error","status":"Forbidden","result":{"message":"access denied"}}`)
 	})
 
 	client := &Client{Socket: forbidden}
-	_, err := client.Statuses(context.Background())
+	_, err := client.Status(context.Background(), "gemma4")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -177,10 +202,10 @@ func TestStatuses_Forbidden(t *testing.T) {
 	}
 }
 
-func TestStatuses_Timeout(t *testing.T) {
+func TestStatus_Timeout(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond)
-		fmt.Fprint(w, `{"type":"sync","status":"OK","result":[]}`)
+		fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"name":"gemma4","status":"active"}}`)
 	})
 
 	client := &Client{
@@ -191,7 +216,7 @@ func TestStatuses_Timeout(t *testing.T) {
 			return c
 		},
 	}
-	if _, err := client.Statuses(context.Background()); err == nil {
+	if _, err := client.Status(context.Background(), "gemma4"); err == nil {
 		t.Fatal("expected timeout error, got nil")
 	}
 }

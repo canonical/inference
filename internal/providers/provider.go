@@ -9,19 +9,22 @@ import (
 	"github.com/canonical/inference/internal/snapd"
 )
 
-type Type string
+type ProviderType string
 
-const TypeInferenceSnap Type = "inference-snap"
-const StatusNotInstalled = "not installed"
+const TypeInferenceSnap ProviderType = "inference-snap"
+const TypeOpenAI ProviderType = "openai"
+const StateNotInstalled = "not installed"
+const StateDisabled = "disabled"
+const StateEnabled = "enabled"
 
 type Provider struct {
-	Name   string `json:"provider"`
-	Type   Type   `json:"type"`
-	Status string `json:"status"`
+	Name  string
+	Type  ProviderType
+	State string
 }
 
 func (p Provider) Installed() bool {
-	return p.Status != StatusNotInstalled
+	return p.State != StateNotInstalled
 }
 
 func List(ctx context.Context, catalog *snapcatalog.Reader, snapdClient *snapd.Client, installedOnly bool) ([]Provider, error) {
@@ -30,22 +33,34 @@ func List(ctx context.Context, catalog *snapcatalog.Reader, snapdClient *snapd.C
 		return nil, fmt.Errorf("reading snap catalog: %w", err)
 	}
 
-	snapStatuses, err := snapdClient.Statuses(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("reading snap statuses: %w", err)
-	}
-
 	result := make([]Provider, 0, len(availableSnaps))
 	for _, entry := range availableSnaps {
-		status, installed := snapStatuses[entry.SnapName]
-		if !installed {
-			status = StatusNotInstalled
+		snapStatus, err := snapdClient.Status(ctx, entry.SnapName)
+		if err != nil {
+			return nil, fmt.Errorf("reading snap status for %q: %w", entry.SnapName, err)
 		}
-		if installedOnly && !installed {
+		state, err := snapStatusToProviderState(snapStatus)
+		if err != nil {
+			return nil, fmt.Errorf("reading snap status for %q: %w", entry.SnapName, err)
+		}
+		if installedOnly && state == StateNotInstalled {
 			continue
 		}
-		result = append(result, Provider{Name: entry.SnapName, Type: TypeInferenceSnap, Status: status})
+		result = append(result, Provider{Name: entry.SnapName, Type: TypeInferenceSnap, State: state})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result, nil
+}
+
+func snapStatusToProviderState(snapStatus string) (string, error) {
+	switch snapStatus {
+	case snapd.StatusNotInstalled:
+		return StateNotInstalled, nil
+	case snapd.SnapStatusActive:
+		return StateEnabled, nil
+	case snapd.SnapStatusInstalled:
+		return StateDisabled, nil
+	default:
+		return "", fmt.Errorf("unexpected snapd status %q", snapStatus)
+	}
 }
