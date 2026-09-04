@@ -64,7 +64,7 @@ func TestProviders_JSONExactOutput(t *testing.T) {
     {
       "provider": "gemma4",
       "type": "inference-snap",
-      "status": "active"
+      "state": "active"
     }
   ]
 }

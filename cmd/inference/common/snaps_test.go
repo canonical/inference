@@ -20,7 +20,7 @@ func TestValidateSnapName(t *testing.T) {
 		t.Fatalf("validating known provider: %v", err)
 	}
 	err := ValidateSnapName(catalog, "unrelated-snap")
-	if err == nil || !strings.Contains(err.Error(), `unknown inference provider "unrelated-snap"`) {
+	if err == nil || !strings.Contains(err.Error(), `unknown inference snap "unrelated-snap"`) {
 		t.Fatalf("got %v, want unknown provider error", err)
 	}
 }
