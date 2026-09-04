@@ -17,10 +17,10 @@ func TestValidateSnapName(t *testing.T) {
 	catalog := &snapcatalog.Reader{Path: path}
 
 	if err := ValidateSnapName(catalog, "smollm2"); err != nil {
-		t.Fatalf("validating known provider: %v", err)
+		t.Fatalf("validating known snap: %v", err)
 	}
 	err := ValidateSnapName(catalog, "unrelated-snap")
 	if err == nil || !strings.Contains(err.Error(), `unknown inference snap "unrelated-snap"`) {
-		t.Fatalf("got %v, want unknown provider error", err)
+		t.Fatalf("got %v, want unknown snap error", err)
 	}
 }
