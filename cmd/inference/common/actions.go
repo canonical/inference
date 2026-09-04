@@ -12,6 +12,23 @@ import (
 	"github.com/mattn/go-isatty"
 )
 
+var errSnapdControlNotConnected = errors.New(
+	`cannot reach snapd. Connect the snapd-control interface`,
+)
+
+var errSnapdAccessDenied = errors.New("access denied. Try again using sudo")
+
+func FriendlySnapdError(err error) error {
+	switch {
+	case errors.Is(err, snapd.ErrAccessDenied):
+		return errSnapdAccessDenied
+	case errors.Is(err, snapd.ErrSocketUnreachable):
+		return errSnapdControlNotConnected
+	default:
+		return err
+	}
+}
+
 const (
 	pollInterval = 500 * time.Millisecond
 	abortTimeout = 10 * time.Second
@@ -59,8 +76,8 @@ func InstallSnap(ctx context.Context, cliCtx *Context, name string) error {
 		return err
 	case errors.Is(err, context.Canceled):
 		return cancelledError("installation", err)
-	case errors.Is(err, snapd.ErrAccessDenied):
-		return fmt.Errorf("access denied. Try again using sudo")
+	case errors.Is(err, snapd.ErrAccessDenied), errors.Is(err, snapd.ErrSocketUnreachable):
+		return FriendlySnapdError(err)
 	default:
 		return fmt.Errorf("installing %s: %w", name, err)
 	}
@@ -88,8 +105,8 @@ func RemoveSnap(ctx context.Context, cliCtx *Context, name string) error {
 		return err
 	case errors.Is(err, context.Canceled):
 		return cancelledError("removal", err)
-	case errors.Is(err, snapd.ErrAccessDenied):
-		return fmt.Errorf("access denied. Try again using sudo")
+	case errors.Is(err, snapd.ErrAccessDenied), errors.Is(err, snapd.ErrSocketUnreachable):
+		return FriendlySnapdError(err)
 	default:
 		return fmt.Errorf("removing %s: %w", name, err)
 	}

@@ -16,6 +16,8 @@ import (
 
 var ErrAccessDenied = errors.New("snapd socket denied access")
 
+var ErrSocketUnreachable = errors.New("cannot reach snapd socket")
+
 var ErrAlreadyInstalled = errors.New("snap is already installed")
 
 var ErrNotInstalled = errors.New("snap is not installed")
@@ -108,7 +110,7 @@ func performSnapAction(ctx context.Context, client *http.Client, name, action st
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("calling snapd: %w", err)
+		return "", wrapCallErr(err)
 	}
 	defer resp.Body.Close()
 
@@ -156,7 +158,7 @@ func abortChange(ctx context.Context, client *http.Client, changeID string) erro
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("calling snapd: %w", err)
+		return wrapCallErr(err)
 	}
 	defer resp.Body.Close()
 
@@ -179,6 +181,9 @@ func getChange(ctx context.Context, client *http.Client, changeID string) (Chang
 
 	resp, err := client.Do(req)
 	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return Change{}, wrapCallErr(err)
+		}
 		return Change{}, fmt.Errorf("%w: calling snapd: %w", ErrTransient, err)
 	}
 	defer resp.Body.Close()
@@ -215,7 +220,7 @@ func getChangesForSnap(ctx context.Context, client *http.Client, name string) ([
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("calling snapd: %w", err)
+		return nil, wrapCallErr(err)
 	}
 	defer resp.Body.Close()
 
@@ -295,6 +300,17 @@ func decodeEnvelope(resp *http.Response) (envelope, error) {
 	return env, nil
 }
 
+// wrapCallErr classifies failures to reach the snapd socket itself (as
+// opposed to an error response from snapd). Confinement blocks the socket
+// connection with a permission error when the snapd-control interface is
+// not connected, which otherwise surfaces as an opaque dial error.
+func wrapCallErr(err error) error {
+	if errors.Is(err, os.ErrPermission) {
+		return fmt.Errorf("%w: %w", ErrSocketUnreachable, err)
+	}
+	return fmt.Errorf("calling snapd: %w", err)
+}
+
 // Keep snapd's message while preserving errors.Is support.
 func withMessage(sentinel error, message string) error {
 	if message == "" {
@@ -312,7 +328,7 @@ func getSnap(ctx context.Context, client *http.Client, name string) (snapInfo, e
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return snapInfo{}, fmt.Errorf("calling snapd: %w", err)
+		return snapInfo{}, wrapCallErr(err)
 	}
 	defer resp.Body.Close()
 

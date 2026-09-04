@@ -54,7 +54,7 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 
 	list, err := providers.List(cobraCmd.Context(), cmd.SnapCatalog, cmd.SnapdClient, cmd.installed)
 	if err != nil {
-		return err
+		return common.FriendlySnapdError(err)
 	}
 
 	var output string
