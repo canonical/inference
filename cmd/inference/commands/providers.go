@@ -8,8 +8,6 @@ import (
 
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/providers"
-	"github.com/canonical/inference/internal/snapcatalog"
-	"github.com/canonical/inference/internal/snapd"
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
@@ -19,10 +17,8 @@ import (
 
 type providersCommand struct {
 	*common.Context
-	format      string
-	installed   bool
-	snapdClient *snapd.Client
-	catalog     *snapcatalog.Reader
+	format    string
+	installed bool
 }
 
 type providerJSON struct {
@@ -36,7 +32,7 @@ type providersJSONOutput struct {
 }
 
 func Providers(ctx *common.Context) *cobra.Command {
-	cmd := providersCommand{Context: ctx, snapdClient: snapd.NewClient(), catalog: snapcatalog.NewReader()}
+	cmd := providersCommand{Context: ctx}
 	cobraCmd := &cobra.Command{
 		Use:               "providers",
 		Short:             "List inference providers",
@@ -56,7 +52,7 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	list, err := providers.List(cobraCmd.Context(), cmd.catalog, cmd.snapdClient, cmd.installed)
+	list, err := providers.List(cobraCmd.Context(), cmd.SnapCatalog, cmd.SnapdClient, cmd.installed)
 	if err != nil {
 		return err
 	}
@@ -152,15 +148,4 @@ func renderProvidersTable(list []providers.Provider) (string, error) {
 		result += "\n" + `Hint: run "inference install <provider>" to install providers.` + "\n"
 	}
 	return result, nil
-}
-
-func validateProvider(catalog *snapcatalog.Reader, name string) error {
-	found, err := catalog.Contains(name)
-	if err != nil {
-		return fmt.Errorf("reading snap catalog: %w", err)
-	}
-	if !found {
-		return fmt.Errorf("unknown inference provider %q", name)
-	}
-	return nil
 }

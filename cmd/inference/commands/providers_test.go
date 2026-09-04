@@ -121,10 +121,10 @@ func TestValidateProvider(t *testing.T) {
 	}
 	catalog := &snapcatalog.Reader{Path: path}
 
-	if err := validateProvider(catalog, "smollm2"); err != nil {
+	if err := ValidateProvider(catalog, "smollm2"); err != nil {
 		t.Fatalf("validating known provider: %v", err)
 	}
-	err := validateProvider(catalog, "unrelated-snap")
+	err := ValidateProvider(catalog, "unrelated-snap")
 	if err == nil || !strings.Contains(err.Error(), `unknown inference provider "unrelated-snap"`) {
 		t.Fatalf("got %v, want unknown provider error", err)
 	}

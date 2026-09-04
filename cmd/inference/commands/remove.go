@@ -2,29 +2,23 @@ package commands
 
 import (
 	"github.com/canonical/inference/cmd/inference/common"
-	"github.com/canonical/inference/internal/snapcatalog"
-	"github.com/canonical/inference/internal/snapd"
 	"github.com/spf13/cobra"
 )
 
 type removeCommand struct {
-	ctx         *common.Context
-	snapdClient *snapd.Client
-	catalog     *snapcatalog.Reader
+	ctx *common.Context
 }
 
 func Remove(ctx *common.Context) *cobra.Command {
 	cmd := removeCommand{
-		ctx:         ctx,
-		snapdClient: snapd.NewClient(),
-		catalog:     snapcatalog.NewReader(),
+		ctx: ctx,
 	}
 	cobraCmd := &cobra.Command{
 		Use:               "remove <provider>",
 		Short:             "Remove an inference provider",
 		Long:              "Remove the inference snap with the provided name.",
 		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: completeProviderNames,
+		ValidArgsFunction: common.CompleteProviderNames,
 		SilenceUsage:      true,
 		RunE:              cmd.run,
 	}
@@ -36,8 +30,9 @@ func (cmd *removeCommand) run(cobraCmd *cobra.Command, args []string) error {
 }
 
 func (cmd *removeCommand) remove(cobraCmd *cobra.Command, name string) error {
-	if err := validateProvider(cmd.catalog, name); err != nil {
+	// Validation of the provider is important to only allow snaps from the catalog to be removed
+	if err := common.ValidateProvider(cmd.ctx.SnapCatalog, name); err != nil {
 		return err
 	}
-	return common.RemoveSnap(cobraCmd.Context(), cmd.ctx, cmd.snapdClient, name)
+	return common.RemoveSnap(cobraCmd.Context(), cmd.ctx, name)
 }

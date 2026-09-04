@@ -32,7 +32,7 @@ const snapChangeConflictKind = "snap-change-conflict"
 
 const maxResponseBytes = 4 << 20
 
-const DefaultSocketPath = "/run/snapd-snap.socket"
+const DefaultSocketPath = "/run/snapd.socket"
 
 const EnvVar = "SNAPD_SOCKET"
 

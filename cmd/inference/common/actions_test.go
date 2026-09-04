@@ -366,7 +366,7 @@ func TestInstallSnap_ContextCancellationHasFriendlyMessage(t *testing.T) {
 	timer := time.AfterFunc(50*time.Millisecond, cancel)
 	defer timer.Stop()
 
-	err := InstallSnap(ctx, &Context{Stdout: &bytes.Buffer{}}, client, "smollm2")
+	err := InstallSnap(ctx, &Context{Stdout: &bytes.Buffer{}, SnapdClient: client}, "smollm2")
 	if err == nil || err.Error() != "installation cancelled" {
 		t.Fatalf("got %v, want \"installation cancelled\"", err)
 	}
@@ -421,7 +421,7 @@ func TestInstallSnap_CancellationReportsFailedAbort(t *testing.T) {
 	timer := time.AfterFunc(50*time.Millisecond, cancel)
 	defer timer.Stop()
 
-	err := InstallSnap(ctx, &Context{Stdout: &bytes.Buffer{}}, client, "smollm2")
+	err := InstallSnap(ctx, &Context{Stdout: &bytes.Buffer{}, SnapdClient: client}, "smollm2")
 	if err == nil {
 		t.Fatal("expected an error when the abort fails")
 	}
@@ -452,7 +452,7 @@ func TestRemoveSnap_ContextCancellationHasFriendlyMessage(t *testing.T) {
 	timer := time.AfterFunc(50*time.Millisecond, cancel)
 	defer timer.Stop()
 
-	err := RemoveSnap(ctx, &Context{Stdout: &bytes.Buffer{}}, client, "smollm2")
+	err := RemoveSnap(ctx, &Context{Stdout: &bytes.Buffer{}, SnapdClient: client}, "smollm2")
 	if err == nil || err.Error() != "removal cancelled" {
 		t.Fatalf("got %v, want \"removal cancelled\"", err)
 	}

@@ -48,8 +48,8 @@ func NewProgressPrinter(w io.Writer) (progress func(string), finish func()) {
 	return progress, finish
 }
 
-func InstallSnap(ctx context.Context, cliCtx *Context, client *snapd.Client, name string) error {
-	err := runInstall(ctx, client, name, cliCtx.Stdout)
+func InstallSnap(ctx context.Context, cliCtx *Context, name string) error {
+	err := runInstall(ctx, cliCtx.SnapdClient, name, cliCtx.Stdout)
 	switch {
 	case err == nil:
 		_, err = fmt.Fprintf(cliCtx.Stdout, "Installed %s\n", name)
@@ -77,8 +77,8 @@ func runInstall(ctx context.Context, client *snapd.Client, name string, w io.Wri
 	return waitForChangeOrAbort(ctx, client, changeID, progress)
 }
 
-func RemoveSnap(ctx context.Context, cliCtx *Context, client *snapd.Client, name string) error {
-	err := runRemove(ctx, client, name, cliCtx.Stdout)
+func RemoveSnap(ctx context.Context, cliCtx *Context, name string) error {
+	err := runRemove(ctx, cliCtx.SnapdClient, name, cliCtx.Stdout)
 	switch {
 	case err == nil:
 		_, err = fmt.Fprintf(cliCtx.Stdout, "Removed %s\n", name)
