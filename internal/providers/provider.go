@@ -11,11 +11,14 @@ import (
 
 type ProviderType string
 
-const TypeInferenceSnap ProviderType = "inference-snap"
-const TypeOpenAI ProviderType = "openai"
-const StateNotInstalled = "not installed"
-const StateDisabled = "disabled"
-const StateEnabled = "enabled"
+const (
+	TypeInferenceSnap ProviderType = "inference-snap"
+	TypeOpenAI        ProviderType = "openai"
+
+	StateNotInstalled = "not installed"
+	StateDisabled     = "disabled"
+	StateEnabled      = "enabled"
+)
 
 type Provider struct {
 	Name  string

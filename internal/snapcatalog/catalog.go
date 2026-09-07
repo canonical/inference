@@ -9,10 +9,12 @@ import (
 	"strings"
 )
 
-const Filename = "onboarded-snaps.json"
+const (
+	Filename = "onboarded-snaps.json"
 
-// Overrides the default catalog location under SNAP_COMMON.
-const EnvVar = "INFERENCE_SNAPS_CATALOG"
+	// EnvVar overrides the default catalog location under SNAP_COMMON.
+	EnvVar = "INFERENCE_SNAPS_CATALOG"
+)
 
 type Entry struct {
 	SnapName      string `json:"snap"`

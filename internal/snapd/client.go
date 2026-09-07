@@ -14,38 +14,37 @@ import (
 	"time"
 )
 
-var ErrAccessDenied = errors.New("snapd socket denied access")
+var (
+	ErrAccessDenied      = errors.New("snapd socket denied access")
+	ErrSocketUnreachable = errors.New("cannot reach snapd socket")
+	ErrAlreadyInstalled  = errors.New("snap is already installed")
+	ErrNotInstalled      = errors.New("snap is not installed")
+	ErrChangeConflict    = errors.New("snap has a conflicting change in progress")
+	ErrTransient         = errors.New("temporary snapd communication failure")
+)
 
-var ErrSocketUnreachable = errors.New("cannot reach snapd socket")
+const (
+	snapAlreadyInstalledKind = "snap-already-installed"
+	snapNotInstalledKind     = "snap-not-installed"
+	snapChangeConflictKind   = "snap-change-conflict"
+	snapNotFoundKind         = "snap-not-found"
+)
 
-var ErrAlreadyInstalled = errors.New("snap is already installed")
+const (
+	// StatusNotInstalled is returned by Client.Status when a snap is not
+	// installed. Unlike SnapStatusActive and SnapStatusInstalled, snapd itself
+	// has no such value: it simply omits the snap from its API responses.
+	StatusNotInstalled  = "not installed"
+	SnapStatusActive    = "active"
+	SnapStatusInstalled = "installed"
+)
 
-var ErrNotInstalled = errors.New("snap is not installed")
+const (
+	maxResponseBytes = 4 << 20
 
-var ErrChangeConflict = errors.New("snap has a conflicting change in progress")
-
-var ErrTransient = errors.New("temporary snapd communication failure")
-
-const snapAlreadyInstalledKind = "snap-already-installed"
-
-const snapNotInstalledKind = "snap-not-installed"
-
-const snapChangeConflictKind = "snap-change-conflict"
-
-const snapNotFoundKind = "snap-not-found"
-
-// StatusNotInstalled is returned by Client.Status when a snap is not
-// installed. Unlike SnapStatusActive and SnapStatusInstalled, snapd itself
-// has no such value: it simply omits the snap from its API responses.
-const StatusNotInstalled = "not installed"
-const SnapStatusActive = "active"
-const SnapStatusInstalled = "installed"
-
-const maxResponseBytes = 4 << 20
-
-const DefaultSocketPath = "/run/snapd.socket"
-
-const EnvVar = "SNAPD_SOCKET"
+	DefaultSocketPath = "/run/snapd.socket"
+	EnvVar            = "SNAPD_SOCKET"
+)
 
 type Client struct {
 	Socket    string
