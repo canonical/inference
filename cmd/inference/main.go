@@ -7,6 +7,7 @@ import (
 
 	"github.com/canonical/inference/cmd/inference/commands"
 	"github.com/canonical/inference/cmd/inference/common"
+	"github.com/canonical/inference/internal/providers"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
 	"github.com/spf13/cobra"
@@ -14,10 +15,11 @@ import (
 
 func main() {
 	ctx := &common.Context{
-		Stdout:      os.Stdout,
-		Stderr:      os.Stderr,
-		SnapdClient: snapd.NewClient(),
-		SnapCatalog: snapcatalog.NewReader(),
+		Stdout:             os.Stdout,
+		Stderr:             os.Stderr,
+		SnapdClient:        snapd.NewClient(),
+		SnapCatalog:        snapcatalog.NewReader(),
+		ShareProvidersPath: providers.DefaultShareProvidersPath(),
 	}
 
 	commandCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

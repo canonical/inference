@@ -52,7 +52,13 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	list, err := providers.List(cobraCmd.Context(), cmd.SnapCatalog, cmd.SnapdClient, cmd.installed)
+	list, err := providers.List(
+		cobraCmd.Context(),
+		cmd.SnapCatalog,
+		cmd.SnapdClient,
+		cmd.ShareProvidersPath,
+		providers.ListOptions{InstalledOnly: cmd.installed},
+	)
 	if err != nil {
 		return common.FriendlySnapdError(err)
 	}
@@ -82,7 +88,7 @@ func renderProvidersJSON(list []providers.Provider) (string, error) {
 		result.Providers[i] = providerJSON{
 			Name:  p.Name,
 			Type:  string(p.Type),
-			State: p.State,
+			State: string(p.State),
 		}
 	}
 	if err := encoder.Encode(result); err != nil {
@@ -129,7 +135,7 @@ func renderProvidersTable(list []providers.Provider) (string, error) {
 	table.Header([]string{"PROVIDER", "TYPE", "STATE"})
 	showHint := false
 	for _, p := range list {
-		if err := table.Append([]string{p.Name, string(p.Type), p.State}); err != nil {
+		if err := table.Append([]string{p.Name, string(p.Type), string(p.State)}); err != nil {
 			return "", err
 		}
 		if !p.Installed() {

@@ -21,7 +21,7 @@ func execute(cmd *cobra.Command, args ...string) error {
 
 func TestProviders_TableExactOutput(t *testing.T) {
 	list := []providers.Provider{
-		{Name: "gemma4", Type: providers.TypeInferenceSnap, State: "active"},
+		{Name: "gemma4", Type: providers.TypeInferenceSnap, State: providers.StateEnabled},
 		{Name: "qwen3", Type: providers.TypeInferenceSnap, State: providers.StateNotInstalled},
 	}
 	got, err := renderProvidersTable(list)
@@ -30,7 +30,7 @@ func TestProviders_TableExactOutput(t *testing.T) {
 	}
 
 	want := "PROVIDER  TYPE            STATE\n" +
-		"gemma4    inference-snap  active\n" +
+		"gemma4    inference-snap  enabled\n" +
 		"qwen3     inference-snap  not installed\n" +
 		"\n" +
 		`Hint: run "inference install <provider>" to install providers.` + "\n"
@@ -40,7 +40,7 @@ func TestProviders_TableExactOutput(t *testing.T) {
 }
 
 func TestProviders_TableNoHintWhenAllInstalled(t *testing.T) {
-	list := []providers.Provider{{Name: "gemma4", Type: providers.TypeInferenceSnap, State: "active"}}
+	list := []providers.Provider{{Name: "gemma4", Type: providers.TypeInferenceSnap, State: providers.StateEnabled}}
 	got, err := renderProvidersTable(list)
 	if err != nil {
 		t.Fatalf("render table: %v", err)
@@ -52,7 +52,7 @@ func TestProviders_TableNoHintWhenAllInstalled(t *testing.T) {
 
 func TestProviders_JSONExactOutput(t *testing.T) {
 	list := []providers.Provider{
-		{Name: "gemma4", Type: providers.TypeInferenceSnap, State: "active"},
+		{Name: "gemma4", Type: providers.TypeInferenceSnap, State: providers.StateEnabled},
 	}
 	got, err := renderProvidersJSON(list)
 	if err != nil {
@@ -64,7 +64,7 @@ func TestProviders_JSONExactOutput(t *testing.T) {
     {
       "provider": "gemma4",
       "type": "inference-snap",
-      "state": "active"
+      "state": "enabled"
     }
   ]
 }

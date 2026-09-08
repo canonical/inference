@@ -4,6 +4,7 @@ go 1.26.7
 
 require (
 	github.com/fatih/color v1.18.0
+	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-isatty v0.0.20
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/spf13/cobra v1.10.2

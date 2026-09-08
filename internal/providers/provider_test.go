@@ -16,19 +16,21 @@ import (
 
 func TestProviderInstalled(t *testing.T) {
 	tests := []struct {
-		name  string
-		state string
-		want  bool
+		name string
+		p    Provider
+		want bool
 	}{
-		{name: "not installed", state: StateNotInstalled, want: false},
-		{name: "disabled", state: StateDisabled, want: true},
-		{name: "enabled", state: StateEnabled, want: true},
+		{name: "unknown snap", p: Provider{Type: TypeInferenceSnap, State: StateUnknown}, want: false},
+		{name: "not installed snap", p: Provider{Type: TypeInferenceSnap, State: StateNotInstalled}, want: false},
+		{name: "disabled snap", p: Provider{Type: TypeInferenceSnap, State: StateDisabled}, want: true},
+		{name: "enabled snap", p: Provider{Type: TypeInferenceSnap, State: StateEnabled}, want: true},
+		{name: "configured OpenAI provider", p: Provider{Type: TypeOpenAI}, want: true},
+		{name: "unknown provider type", p: Provider{Type: ProviderType("unknown")}, want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := Provider{Name: "gemma4", State: tt.state}
-			if got := p.Installed(); got != tt.want {
+			if got := tt.p.Installed(); got != tt.want {
 				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
@@ -89,14 +91,14 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("all providers", func(t *testing.T) {
-		got, err := List(context.Background(), catalog, client, false)
+		got, err := List(context.Background(), catalog, client, "", ListOptions{})
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
 		want := []Provider{
-			{Name: "gemma4", Type: TypeInferenceSnap, State: StateEnabled},
-			{Name: "qwen3", Type: TypeInferenceSnap, State: StateDisabled},
-			{Name: "smollm2", Type: TypeInferenceSnap, State: StateNotInstalled},
+			{Name: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected},
+			{Name: "qwen3", Type: TypeInferenceSnap, State: StateDisabled, Connection: ConnectionNotConnected},
+			{Name: "smollm2", Type: TypeInferenceSnap, State: StateNotInstalled, Connection: ConnectionNotConnected},
 		}
 		if len(got) != len(want) {
 			t.Fatalf("got %d providers, want %d: %+v", len(got), len(want), got)
@@ -109,13 +111,13 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("installed only", func(t *testing.T) {
-		got, err := List(context.Background(), catalog, client, true)
+		got, err := List(context.Background(), catalog, client, "", ListOptions{InstalledOnly: true})
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
 		want := []Provider{
-			{Name: "gemma4", Type: TypeInferenceSnap, State: StateEnabled},
-			{Name: "qwen3", Type: TypeInferenceSnap, State: StateDisabled},
+			{Name: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected},
+			{Name: "qwen3", Type: TypeInferenceSnap, State: StateDisabled, Connection: ConnectionNotConnected},
 		}
 		if len(got) != len(want) {
 			t.Fatalf("got %d providers, want %d: %+v", len(got), len(want), got)
@@ -132,7 +134,7 @@ func TestList_CatalogReadError(t *testing.T) {
 	catalog := &snapcatalog.Reader{}
 	client := newSnapdServer(t, nil)
 
-	_, err := List(context.Background(), catalog, client, false)
+	_, err := List(context.Background(), catalog, client, "", ListOptions{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -142,7 +144,7 @@ func TestSnapStatusToProviderState(t *testing.T) {
 	tests := []struct {
 		name       string
 		snapStatus string
-		want       string
+		want       LifecycleState
 		wantErr    bool
 	}{
 		{
