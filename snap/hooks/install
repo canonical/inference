@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+
+cp "$SNAP/onboarded-snaps.json" "$SNAP_COMMON/onboarded-snaps.json"

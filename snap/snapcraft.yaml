@@ -1,0 +1,54 @@
+name: inference
+base: core24
+summary: Manage inference snaps
+description: |
+  This application acts as an entrypoint to the world of Inference Snaps.
+  It provides a CLI to discover, install and manage inference snaps.
+
+grade: stable
+confinement: strict
+adopt-info: version
+
+parts:
+  version:
+    plugin: dump
+    build-packages:
+      - git
+    source: .
+    override-pull: |
+      craftctl set version="$(git -C $SNAPCRAFT_PROJECT_DIR describe --always --dirty)"
+
+  cli:
+    plugin: go
+    build-snaps:
+      - go/1.26/stable
+    source: .
+    source-type: local
+
+  snap-catalog:
+    plugin: dump
+    source: https://canonical.github.io/inference-snaps-admin/onboarded-snaps.json
+    source-type: file
+
+  scripts:
+    plugin: dump
+    source: snap/local
+    organize:
+      completion.bash: bin/completion.bash
+      refresh-snap-catalog.sh: bin/refresh-snap-catalog.sh
+
+apps:
+  inference:
+    command: bin/inference
+    completer: bin/completion.bash
+    plugs:
+      - network
+      - snapd-control
+
+  snap-catalog-refresh:
+    command: bin/refresh-snap-catalog.sh
+    daemon: oneshot
+    install-mode: enable
+    timer: 00:00-24:00/2
+    plugs:
+      - network
