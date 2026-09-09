@@ -5,8 +5,8 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/canonical/inference/cmd/inference/commands"
-	"github.com/canonical/inference/cmd/inference/common"
+	"github.com/canonical/inference/cmd/cli/commands"
+	"github.com/canonical/inference/cmd/cli/common"
 	"github.com/canonical/inference/internal/providers"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"

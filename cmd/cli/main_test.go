@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/canonical/inference/cmd/inference/common"
+	"github.com/canonical/inference/cmd/cli/common"
 )
 
 func TestRootIncludesProvidersCommand(t *testing.T) {

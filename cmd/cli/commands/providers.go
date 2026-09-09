@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/canonical/inference/cmd/inference/common"
+	"github.com/canonical/inference/cmd/cli/common"
 	"github.com/canonical/inference/internal/providers"
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"

@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"github.com/canonical/inference/cmd/inference/common"
+	"github.com/canonical/inference/cmd/cli/common"
 	"github.com/spf13/cobra"
 )
 

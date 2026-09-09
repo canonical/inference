@@ -39,7 +39,7 @@ parts:
 
 apps:
   inference:
-    command: bin/inference
+    command: bin/cli
     completer: bin/completion.bash
     plugs:
       - network
