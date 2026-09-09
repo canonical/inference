@@ -163,7 +163,9 @@ func (h *ModelsHandler) refresh(ctx context.Context) (*routingSnapshot, error) {
 	h.refreshMu.Lock()
 	defer h.refreshMu.Unlock()
 
-	return h.refreshLocked(ctx)
+	snapshot, err := h.refreshLocked(ctx)
+	h.snapshot.Store(snapshot)
+	return snapshot, err
 }
 
 func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, error) {
@@ -263,7 +265,6 @@ func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, er
 		snapshot.ambiguous[modelID] = struct{}{}
 	}
 	sort.Slice(snapshot.models, func(i, j int) bool { return snapshot.models[i].ID < snapshot.models[j].ID })
-	h.snapshot.Store(snapshot)
 	h.logger.Info(
 		"refreshed provider models",
 		"providers_discovered", len(allProviders),

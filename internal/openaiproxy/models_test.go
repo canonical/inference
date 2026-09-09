@@ -150,6 +150,39 @@ func TestModelsHandlerReturnsServiceUnavailableWithoutHealthyProviders(t *testin
 	}
 }
 
+func TestModelsHandlerClearsSnapshotWhenRefreshFails(t *testing.T) {
+	var fail atomic.Bool
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if fail.Load() {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"ready"}]}`))
+	}))
+	defer upstream.Close()
+
+	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
+		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
+	}, upstream.Client(), discardLogger())
+	if err := handler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	fail.Store(true)
+	if err := handler.Refresh(context.Background()); err == nil {
+		t.Fatal("refresh succeeded, want error")
+	}
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(
+		response,
+		httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"provider/ready"}`)),
+	)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("got status %d body %s, want 503", response.Code, response.Body.String())
+	}
+}
+
 func TestModelsHandlerRejectsOtherMethodsAndPaths(t *testing.T) {
 	handler := NewModelsHandler(connectedProviderLister(t.TempDir()), http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
