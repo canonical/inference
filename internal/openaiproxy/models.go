@@ -23,6 +23,7 @@ import (
 const (
 	maxModelsResponseSize = 4 << 20
 	maxProxyRequestSize   = 16 << 20
+	modelDiscoveryTimeout = 15 * time.Second
 )
 
 type ModelsHandler struct {
@@ -276,6 +277,9 @@ func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, er
 }
 
 func (h *ModelsHandler) fetchModels(ctx context.Context, baseURL string) ([]upstreamModel, error) {
+	ctx, cancel := context.WithTimeout(ctx, modelDiscoveryTimeout)
+	defer cancel()
+
 	endpoint, err := modelsURL(baseURL)
 	if err != nil {
 		return nil, err

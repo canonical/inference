@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -18,9 +20,16 @@ import (
 )
 
 const (
-	defaultAddress  = "127.0.0.1:8000"
-	requestTimeout  = 15 * time.Second
-	shutdownTimeout = 10 * time.Second
+	bindHostEnvVar          = "INFERENCE_BIND_HOST"
+	bindPortEnvVar          = "INFERENCE_BIND_PORT"
+	defaultBindHost         = "127.0.0.1"
+	defaultBindPort         = 8000
+	responseHeaderTimeout   = 10 * time.Second
+	maxResponseHeaderBytes  = 1 << 20
+	serverReadHeaderTimeout = 10 * time.Second
+	serverIdleTimeout       = 2 * time.Minute
+	serverMaxHeaderBytes    = 1 << 20
+	shutdownTimeout         = 10 * time.Second
 )
 
 func main() {
@@ -28,13 +37,21 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	address, err := listenAddress()
+	if err != nil {
+		logger.Error("configuring listen address", "error", err)
+		os.Exit(1)
+	}
 	providerRoot := providers.DefaultShareProvidersPath()
 	if providerRoot == "" {
 		logger.Error("provider directory is not configured", "environment", providers.ShareProvidersEnvVar)
 		os.Exit(1)
 	}
 
-	client := &http.Client{Timeout: requestTimeout}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = responseHeaderTimeout
+	transport.MaxResponseHeaderBytes = maxResponseHeaderBytes
+	client := &http.Client{Transport: transport}
 	catalog := snapcatalog.NewReader()
 	snapdClient := snapd.NewClient()
 	listProviders := func(ctx context.Context) ([]providers.Provider, error) {
@@ -46,11 +63,11 @@ func main() {
 		os.Exit(1)
 	}
 	server := &http.Server{
-		Addr:              defaultAddress,
+		Addr:              address,
 		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       2 * time.Minute,
-		MaxHeaderBytes:    1 << 20,
+		ReadHeaderTimeout: serverReadHeaderTimeout,
+		IdleTimeout:       serverIdleTimeout,
+		MaxHeaderBytes:    serverMaxHeaderBytes,
 		BaseContext: func(net.Listener) context.Context {
 			return context.Background()
 		},
@@ -70,4 +87,20 @@ func main() {
 		logger.Error("serving requests", "error", err)
 		os.Exit(1)
 	}
+}
+
+func listenAddress() (string, error) {
+	host := os.Getenv(bindHostEnvVar)
+	if host == "" {
+		host = defaultBindHost
+	}
+	port := defaultBindPort
+	if value := os.Getenv(bindPortEnvVar); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 || parsed > 65535 {
+			return "", fmt.Errorf("%s must be an integer between 1 and 65535", bindPortEnvVar)
+		}
+		port = parsed
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port)), nil
 }
