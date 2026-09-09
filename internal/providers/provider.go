@@ -2,7 +2,9 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"sort"
 
 	"github.com/canonical/inference/internal/snapcatalog"
@@ -74,7 +76,9 @@ func List(
 ) ([]Provider, error) {
 
 	catalogProviders, err := CatalogSnapProviders(catalog)
-	if err != nil {
+	if errors.Is(err, snapcatalog.ErrNotConfigured) || errors.Is(err, os.ErrNotExist) {
+		catalogProviders = []Provider{}
+	} else if err != nil {
 		return nil, err
 	}
 

@@ -130,13 +130,29 @@ func TestList(t *testing.T) {
 	})
 }
 
-func TestList_CatalogReadError(t *testing.T) {
-	catalog := &snapcatalog.Reader{}
+func TestListTreatsMissingCatalogAsEmpty(t *testing.T) {
 	client := newSnapdServer(t, nil)
 
-	_, err := List(context.Background(), catalog, client, "", ListOptions{})
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	for _, catalog := range []*snapcatalog.Reader{
+		{},
+		{Path: filepath.Join(t.TempDir(), "missing.json")},
+	} {
+		got, err := List(context.Background(), catalog, client, "", ListOptions{})
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("got %+v, want no providers", got)
+		}
+	}
+}
+
+func TestListReturnsMalformedCatalogError(t *testing.T) {
+	catalog := writeCatalog(t, "not json")
+	client := newSnapdServer(t, nil)
+
+	if _, err := List(context.Background(), catalog, client, "", ListOptions{}); err == nil {
+		t.Fatal("expected malformed catalog error")
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
 )
 
@@ -204,7 +203,7 @@ func TestListFailsWhenCatalogFails(t *testing.T) {
 
 	_, err := List(
 		context.Background(),
-		&snapcatalog.Reader{},
+		writeCatalog(t, "not json"),
 		client,
 		root,
 		ListOptions{},

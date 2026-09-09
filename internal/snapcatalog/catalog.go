@@ -2,6 +2,7 @@ package snapcatalog
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,8 @@ const (
 	// EnvVar overrides the default catalog location under SNAP_COMMON.
 	EnvVar = "INFERENCE_SNAPS_CATALOG"
 )
+
+var ErrNotConfigured = errors.New("snap catalog path is not configured")
 
 type Entry struct {
 	SnapName      string `json:"snap"`
@@ -56,7 +59,7 @@ func DefaultPath() string {
 
 func (r Reader) Read() ([]Entry, error) {
 	if r.Path == "" {
-		return nil, fmt.Errorf("snap catalog path is not configured: set %s to the catalog file", EnvVar)
+		return nil, fmt.Errorf("%w: set %s to the catalog file", ErrNotConfigured, EnvVar)
 	}
 
 	data, err := os.ReadFile(r.Path)
