@@ -76,6 +76,7 @@ type modelRoute struct {
 	providerName  string
 	baseURL       string
 	nativeModelID string
+	model         modelOutput
 }
 
 type routingSnapshot struct {
@@ -120,6 +121,10 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveModels(responseWriter, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/v1/models/") {
+		h.serveModel(responseWriter, r, logger)
+		return
+	}
 	if !strings.HasPrefix(r.URL.Path, "/v1/") {
 		http.NotFound(responseWriter, r)
 		return
@@ -151,6 +156,39 @@ func (h *ModelsHandler) serveModels(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(modelsResponse{Object: "list", Data: snapshot.models}); err != nil {
 		h.logger.Error("writing models response", "error", err)
+	}
+}
+
+func (h *ModelsHandler) serveModel(w http.ResponseWriter, r *http.Request, logger *slog.Logger) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeError(w, http.StatusMethodNotAllowed, "Only GET is supported for /v1/models/{model}.", "invalid_request_error")
+		return
+	}
+
+	snapshot := h.snapshot.Load()
+	if snapshot == nil {
+		logger.Warn("rejecting model request", "reason", "provider inventory is unavailable")
+		writeError(w, http.StatusServiceUnavailable, "No inference providers are available.", "service_unavailable")
+		return
+	}
+
+	modelID := strings.TrimPrefix(r.URL.Path, "/v1/models/")
+	route, exists := snapshot.routes[modelID]
+	if !exists {
+		if _, ambiguous := snapshot.ambiguous[modelID]; ambiguous {
+			logger.Warn("rejecting model request", "reason", "model is ambiguous", "model", modelID)
+			writeError(w, http.StatusBadRequest, "Model ID is ambiguous; use a provider-qualified model ID.", "invalid_request_error")
+			return
+		}
+		logger.Warn("rejecting model request", "reason", "model does not exist", "model", modelID)
+		writeError(w, http.StatusNotFound, "The requested model does not exist.", "invalid_request_error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(route.model); err != nil {
+		logger.Error("writing model response", "model", modelID, "error", err)
 	}
 }
 
@@ -238,19 +276,21 @@ func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, er
 				continue
 			}
 			seen[publicID] = struct{}{}
-			route := modelRoute{
-				providerName:  result.provider.Name,
-				baseURL:       result.provider.BaseURL,
-				nativeModelID: model.ID,
-			}
-			snapshot.routes[publicID] = route
-			unqualifiedRoutes[model.ID] = append(unqualifiedRoutes[model.ID], route)
-			snapshot.models = append(snapshot.models, modelOutput{
+			output := modelOutput{
 				ID:      publicID,
 				Object:  "model",
 				Created: model.Created,
 				OwnedBy: result.provider.Name,
-			})
+			}
+			route := modelRoute{
+				providerName:  result.provider.Name,
+				baseURL:       result.provider.BaseURL,
+				nativeModelID: model.ID,
+				model:         output,
+			}
+			snapshot.routes[publicID] = route
+			unqualifiedRoutes[model.ID] = append(unqualifiedRoutes[model.ID], route)
+			snapshot.models = append(snapshot.models, output)
 		}
 	}
 	if healthyProviders == 0 {

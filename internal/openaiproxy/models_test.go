@@ -74,6 +74,98 @@ func TestModelsHandlerRefreshesAndAggregatesProviders(t *testing.T) {
 	}
 }
 
+func TestModelsHandlerRetrievesModelFromSnapshot(t *testing.T) {
+	var requests atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("got upstream path %q, want /v1/models", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"organization/model","created":1234}]}`))
+	}))
+	defer upstream.Close()
+
+	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
+		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
+	}, upstream.Client(), discardLogger())
+	if err := handler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, modelID := range []string{"provider/organization/model", "organization/model"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(
+			response,
+			httptest.NewRequest(http.MethodGet, "/v1/models/"+modelID, nil),
+		)
+
+		if response.Code != http.StatusOK {
+			t.Fatalf("model %q got status %d body %s", modelID, response.Code, response.Body.String())
+		}
+		var got modelOutput
+		if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		want := modelOutput{
+			ID:      "provider/organization/model",
+			Object:  "model",
+			Created: 1234,
+			OwnedBy: "provider",
+		}
+		if got != want {
+			t.Errorf("model %q returned %+v, want %+v", modelID, got, want)
+		}
+	}
+	if requests.Load() != 1 {
+		t.Errorf("upstream received %d requests, want only the initial model list request", requests.Load())
+	}
+}
+
+func TestModelsHandlerRejectsUnavailableAmbiguousAndUnknownModelRetrieval(t *testing.T) {
+	first := modelServer(t, "shared")
+	defer first.Close()
+	second := modelServer(t, "shared")
+	defer second.Close()
+
+	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
+		return []providers.Provider{
+			{Name: "first", BaseURL: first.URL + "/v1"},
+			{Name: "second", BaseURL: second.URL + "/v1"},
+		}, nil
+	}, first.Client(), discardLogger())
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models/anything", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("request without snapshot got status %d, want 503", response.Code)
+	}
+
+	if err := handler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		code   int
+		allow  string
+	}{
+		{name: "ambiguous", method: http.MethodGet, path: "/v1/models/shared", code: http.StatusBadRequest},
+		{name: "unknown", method: http.MethodGet, path: "/v1/models/missing", code: http.StatusNotFound},
+		{name: "empty", method: http.MethodGet, path: "/v1/models/", code: http.StatusNotFound},
+		{name: "method", method: http.MethodPost, path: "/v1/models/first/shared", code: http.StatusMethodNotAllowed, allow: http.MethodGet},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(test.method, test.path, nil))
+			if response.Code != test.code || response.Header().Get("Allow") != test.allow {
+				t.Errorf("got status %d and Allow %q, want %d and %q", response.Code, response.Header().Get("Allow"), test.code, test.allow)
+			}
+		})
+	}
+}
+
 func TestModelsHandlerSkipsUnavailableProvider(t *testing.T) {
 	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"data":[{"id":"ready"}]}`))
