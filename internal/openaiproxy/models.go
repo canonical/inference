@@ -1,13 +1,13 @@
 package openaiproxy
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -24,6 +24,7 @@ const (
 	maxModelsResponseSize = 4 << 20
 	maxProxyRequestSize   = 16 << 20
 	modelDiscoveryTimeout = 15 * time.Second
+	statusClientClosed    = 499
 )
 
 type ModelsHandler struct {
@@ -376,36 +377,17 @@ func (h *ModelsHandler) proxy(
 	snapshot *routingSnapshot,
 	logger *slog.Logger,
 ) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxProxyRequestSize+1))
-	if err != nil {
-		logger.Warn("rejecting inference request", "reason", "request body could not be read", "error", err)
-		writeError(w, http.StatusBadRequest, "Unable to read request body.", "invalid_request_error")
+	modelRequest, requestErr := parseModelRequest(r)
+	if requestErr != nil {
+		attributes := []any{"reason", requestErr.reason}
+		if requestErr.err != nil {
+			attributes = append(attributes, "error", requestErr.err)
+		}
+		logger.Warn("rejecting inference request", attributes...)
+		writeError(w, requestErr.status, requestErr.message, "invalid_request_error")
 		return
 	}
-	if len(body) > maxProxyRequestSize {
-		logger.Warn("rejecting inference request", "reason", "request body is too large", "request_bytes", len(body))
-		writeError(w, http.StatusRequestEntityTooLarge, "Request body is too large.", "invalid_request_error")
-		return
-	}
-
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal(body, &payload); err != nil {
-		logger.Warn("rejecting inference request", "reason", "request body is not a JSON object", "error", err)
-		writeError(w, http.StatusBadRequest, "Request body must be a JSON object.", "invalid_request_error")
-		return
-	}
-	rawModel, exists := payload["model"]
-	if !exists {
-		logger.Warn("rejecting inference request", "reason", "model is missing")
-		writeError(w, http.StatusBadRequest, "Request body must contain a model.", "invalid_request_error")
-		return
-	}
-	var requestedModel string
-	if err := json.Unmarshal(rawModel, &requestedModel); err != nil || requestedModel == "" {
-		logger.Warn("rejecting inference request", "reason", "model is not a non-empty string")
-		writeError(w, http.StatusBadRequest, "Model must be a non-empty string.", "invalid_request_error")
-		return
-	}
+	requestedModel := modelRequest.model
 
 	route, exists := snapshot.routes[requestedModel]
 	if !exists {
@@ -423,19 +405,11 @@ func (h *ModelsHandler) proxy(
 		"provider", route.providerName,
 		"model", requestedModel,
 		"upstream_model", route.nativeModelID,
-		"request_bytes", len(body),
+		"request_bytes", modelRequest.bodySize,
 	)
 
-	encodedModel, err := json.Marshal(route.nativeModelID)
-	if err != nil {
-		logger.Error("encoding upstream model", "provider", route.providerName, "model", requestedModel, "error", err)
-		writeError(w, http.StatusInternalServerError, "Unable to encode request body.", "internal_error")
-		return
-	}
-	payload["model"] = encodedModel
-	rewrittenBody, err := json.Marshal(payload)
-	if err != nil {
-		logger.Error("encoding upstream request", "provider", route.providerName, "model", requestedModel, "error", err)
+	if err := modelRequest.rewrite(route.nativeModelID); err != nil {
+		logger.Error("rewriting upstream request", "provider", route.providerName, "model", requestedModel, "error", err)
 		writeError(w, http.StatusInternalServerError, "Unable to encode request body.", "internal_error")
 		return
 	}
@@ -451,49 +425,62 @@ func (h *ModelsHandler) proxy(
 		request.Out.URL.Scheme = target.Scheme
 		request.Out.URL.Host = target.Host
 		request.Out.URL.User = target.User
-		request.Out.URL.Path = proxyPath(target.Path, request.In.URL.Path)
-		request.Out.URL.RawPath = ""
+		request.Out.URL.Path, request.Out.URL.RawPath = proxyPath(target, request.In.URL)
 		request.Out.URL.RawQuery = joinQueries(target.RawQuery, request.In.URL.RawQuery)
 		request.Out.Host = target.Host
 		request.SetXForwarded()
 		request.Out.Header.Del("Authorization")
-		request.Out.Body = io.NopCloser(bytes.NewReader(rewrittenBody))
-		request.Out.ContentLength = int64(len(rewrittenBody))
-		request.Out.Header.Set("Content-Length", fmt.Sprint(len(rewrittenBody)))
 	}
 	proxy.Transport = h.client.Transport
 	if proxy.Transport == nil {
 		proxy.Transport = http.DefaultTransport
 	}
 	proxy.FlushInterval = -1
-	proxy.ErrorHandler = func(responseWriter http.ResponseWriter, _ *http.Request, proxyErr error) {
-		logger.Error(
-			"proxying inference request",
+	proxy.ModifyResponse = func(response *http.Response) error {
+		mediaType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
+		if strings.EqualFold(mediaType, "text/event-stream") {
+			response.Header.Set("X-Accel-Buffering", "no")
+		}
+		return nil
+	}
+	proxy.ErrorHandler = func(responseWriter http.ResponseWriter, request *http.Request, proxyErr error) {
+		handleProxyError(responseWriter, request, proxyErr, logger, route.providerName, requestedModel)
+	}
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			return
+		}
+		if recovered != http.ErrAbortHandler {
+			panic(recovered)
+		}
+		logger.Info(
+			"upstream response stream terminated",
 			"provider", route.providerName,
 			"model", requestedModel,
-			"error", redactURLError(proxyErr),
 		)
-		writeError(responseWriter, http.StatusBadGateway, "The inference provider is unavailable.", "service_unavailable")
-	}
+	}()
 	proxy.ServeHTTP(w, r)
 }
 
 type loggingResponseWriter struct {
 	http.ResponseWriter
 	status       int
+	wroteHeader  bool
 	bytesWritten int64
 }
 
 func (w *loggingResponseWriter) WriteHeader(status int) {
-	if w.status != 0 {
+	if w.wroteHeader {
 		return
 	}
+	w.wroteHeader = true
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
 }
 
 func (w *loggingResponseWriter) Write(data []byte) (int, error) {
-	if w.status == 0 {
+	if !w.wroteHeader {
 		w.WriteHeader(http.StatusOK)
 	}
 	written, err := w.ResponseWriter.Write(data)
@@ -512,6 +499,16 @@ func (w *loggingResponseWriter) statusCode() int {
 	return w.status
 }
 
+func (w *loggingResponseWriter) WroteHeader() bool {
+	return w.wroteHeader
+}
+
+func (w *loggingResponseWriter) MarkStatus(status int) {
+	if !w.wroteHeader {
+		w.status = status
+	}
+}
+
 func redactURLError(err error) error {
 	var urlError *url.Error
 	if errors.As(err, &urlError) {
@@ -520,9 +517,16 @@ func redactURLError(err error) error {
 	return err
 }
 
-func proxyPath(basePath, requestPath string) string {
-	suffix := strings.TrimPrefix(requestPath, "/v1")
-	return strings.TrimRight(basePath, "/") + "/" + strings.TrimLeft(suffix, "/")
+func proxyPath(baseURL, requestURL *url.URL) (string, string) {
+	pathSuffix := strings.TrimPrefix(requestURL.Path, "/v1")
+	path := strings.TrimRight(baseURL.Path, "/") + "/" + strings.TrimLeft(pathSuffix, "/")
+
+	escapedSuffix := strings.TrimPrefix(requestURL.EscapedPath(), "/v1")
+	rawPath := strings.TrimRight(baseURL.EscapedPath(), "/") + "/" + strings.TrimLeft(escapedSuffix, "/")
+	if rawPath == (&url.URL{Path: path}).EscapedPath() {
+		rawPath = ""
+	}
+	return path, rawPath
 }
 
 func joinQueries(baseQuery, requestQuery string) string {

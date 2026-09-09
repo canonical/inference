@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -24,7 +25,6 @@ const (
 	bindPortEnvVar          = "INFERENCE_BIND_PORT"
 	defaultBindHost         = "127.0.0.1"
 	defaultBindPort         = 8000
-	responseHeaderTimeout   = 10 * time.Second
 	maxResponseHeaderBytes  = 1 << 20
 	serverReadHeaderTimeout = 10 * time.Second
 	serverIdleTimeout       = 2 * time.Minute
@@ -47,11 +47,7 @@ func main() {
 		logger.Error("provider directory is not configured", "environment", providers.ShareProvidersEnvVar)
 		os.Exit(1)
 	}
-
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.ResponseHeaderTimeout = responseHeaderTimeout
-	transport.MaxResponseHeaderBytes = maxResponseHeaderBytes
-	client := &http.Client{Transport: transport}
+	client := newUpstreamClient()
 	catalog := snapcatalog.NewReader()
 	snapdClient := snapd.NewClient()
 	listProviders := func(ctx context.Context) ([]providers.Provider, error) {
@@ -62,6 +58,9 @@ func main() {
 		logger.Error("initializing provider models", "error", err)
 		os.Exit(1)
 	}
+	serverContext, cancelRequests := context.WithCancelCause(context.Background())
+	defer cancelRequests(nil)
+	hijacked := newHijackedConnections()
 	server := &http.Server{
 		Addr:              address,
 		Handler:           handler,
@@ -69,23 +68,110 @@ func main() {
 		IdleTimeout:       serverIdleTimeout,
 		MaxHeaderBytes:    serverMaxHeaderBytes,
 		BaseContext: func(net.Listener) context.Context {
-			return context.Background()
+			return serverContext
 		},
+		ConnState: hijacked.connState,
 	}
 
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			logger.Error("shutting down daemon", "error", err)
-		}
-	}()
-
 	logger.Info("starting inference daemon", "address", server.Addr)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := serve(ctx, server, cancelRequests, hijacked.close, logger); err != nil {
 		logger.Error("serving requests", "error", err)
 		os.Exit(1)
+	}
+}
+
+func newUpstreamClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 0
+	transport.MaxResponseHeaderBytes = maxResponseHeaderBytes
+	return &http.Client{Transport: transport}
+}
+
+func serve(
+	ctx context.Context,
+	server *http.Server,
+	cancelRequests context.CancelCauseFunc,
+	closeLongLived func(),
+	logger *slog.Logger,
+) error {
+	serveErrors := make(chan error, 1)
+	go func() {
+		serveErrors <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serveErrors:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+	}
+
+	if err := shutdownServer(server, cancelRequests, closeLongLived, shutdownTimeout); err != nil {
+		logger.Warn("graceful shutdown deadline reached", "error", err)
+	}
+	if err := <-serveErrors; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+func shutdownServer(
+	server *http.Server,
+	cancelRequests context.CancelCauseFunc,
+	closeLongLived func(),
+	timeout time.Duration,
+) error {
+	if closeLongLived != nil {
+		closeLongLived()
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		cancelRequests(http.ErrServerClosed)
+		if closeErr := server.Close(); closeErr != nil && !errors.Is(closeErr, http.ErrServerClosed) {
+			return errors.Join(err, closeErr)
+		}
+		return err
+	}
+	return nil
+}
+
+type hijackedConnections struct {
+	mu           sync.Mutex
+	connections  map[net.Conn]struct{}
+	shuttingDown bool
+}
+
+func newHijackedConnections() *hijackedConnections {
+	return &hijackedConnections{connections: make(map[net.Conn]struct{})}
+}
+
+func (h *hijackedConnections) connState(connection net.Conn, state http.ConnState) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	switch state {
+	case http.StateHijacked:
+		if h.shuttingDown {
+			_ = connection.Close()
+			return
+		}
+		h.connections[connection] = struct{}{}
+	case http.StateClosed:
+		delete(h.connections, connection)
+	}
+}
+
+func (h *hijackedConnections) close() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.shuttingDown = true
+	for connection := range h.connections {
+		_ = connection.Close()
+		delete(h.connections, connection)
 	}
 }
 
