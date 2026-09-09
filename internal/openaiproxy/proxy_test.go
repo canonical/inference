@@ -72,6 +72,7 @@ func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 	)
 	request.Header.Set("Authorization", "Bearer secret")
 	request.Header.Set("X-Forwarded-For", "spoofed")
+	clientAuthorization := request.Header.Get("Authorization")
 	response := httptest.NewRecorder()
 
 	handler.ServeHTTP(response, request)
@@ -88,8 +89,8 @@ func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 	if gotModel != "native-model" {
 		t.Errorf("upstream model = %q", gotModel)
 	}
-	if gotAuthorization != "Bearer secret" {
-		t.Errorf("upstream authorization = %q", gotAuthorization)
+	if gotAuthorization != "" {
+		t.Errorf("upstream authorization = %q, want empty", gotAuthorization)
 	}
 	if strings.Contains(gotForwardedFor, "spoofed") {
 		t.Errorf("upstream X-Forwarded-For trusted inbound value: %q", gotForwardedFor)
@@ -110,7 +111,7 @@ func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 			t.Errorf("logs do not contain %q:\n%s", expected, logOutput)
 		}
 	}
-	for _, sensitive := range []string{"hello", "stream=true", gotAuthorization} {
+	for _, sensitive := range []string{"hello", "stream=true", clientAuthorization} {
 		if strings.Contains(logOutput, sensitive) {
 			t.Errorf("logs contain sensitive value %q:\n%s", sensitive, logOutput)
 		}

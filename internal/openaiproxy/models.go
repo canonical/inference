@@ -415,6 +415,7 @@ func (h *ModelsHandler) proxy(
 		request.Out.URL.RawQuery = joinQueries(target.RawQuery, request.In.URL.RawQuery)
 		request.Out.Host = target.Host
 		request.SetXForwarded()
+		request.Out.Header.Del("Authorization")
 		request.Out.Body = io.NopCloser(bytes.NewReader(rewrittenBody))
 		request.Out.ContentLength = int64(len(rewrittenBody))
 		request.Out.Header.Set("Content-Length", fmt.Sprint(len(rewrittenBody)))
