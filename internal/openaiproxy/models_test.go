@@ -160,7 +160,7 @@ func TestModelsHandlerRejectsOtherMethodsAndPaths(t *testing.T) {
 	}
 
 	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/chat/completions", nil))
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/health", nil))
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("unknown path returned status %d", response.Code)
 	}

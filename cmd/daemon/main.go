@@ -25,6 +25,9 @@ const (
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	providerRoot := providers.DefaultShareProvidersPath()
 	if providerRoot == "" {
 		logger.Error("provider directory is not configured", "environment", providers.ShareProvidersEnvVar)
@@ -37,9 +40,14 @@ func main() {
 	listProviders := func(ctx context.Context) ([]providers.Provider, error) {
 		return providers.List(ctx, catalog, snapdClient, providerRoot, providers.ListOptions{})
 	}
+	handler := openaiproxy.NewModelsHandler(listProviders, client, logger)
+	if err := handler.Refresh(ctx); err != nil {
+		logger.Error("initializing provider models", "error", err)
+		os.Exit(1)
+	}
 	server := &http.Server{
 		Addr:              defaultAddress,
-		Handler:           openaiproxy.NewModelsHandler(listProviders, client, logger),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 		MaxHeaderBytes:    1 << 20,
@@ -48,8 +56,6 @@ func main() {
 		},
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
