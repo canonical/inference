@@ -37,12 +37,32 @@ parts:
       completion.bash: bin/completion.bash
       refresh-snap-catalog.sh: bin/refresh-snap-catalog.sh
 
+  providers:
+    plugin: nil
+    override-build: |
+        mkdir -p $SNAPCRAFT_PART_INSTALL/share/providers/smollm2
+        cat <<EOF > $SNAPCRAFT_PART_INSTALL/share/providers/smollm2/provider.env
+        # $(date)
+        OPENAI_BASE_URL=http://127.0.0.1:8344/v1
+        SNAP_NAME=smollm2
+        EOF
+
 apps:
   inference:
     command: bin/cli
     completer: bin/completion.bash
     plugs:
       - network
+      - snapd-control
+
+  d:
+    command: bin/daemon
+    daemon: simple
+    install-mode: enable
+    restart-condition: on-failure
+    plugs:
+      - network
+      - network-bind
       - snapd-control
 
   snap-catalog-refresh:
