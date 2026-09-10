@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/mattn/go-runewidth"
 )
 
 func newUnixServer(t *testing.T, handler http.HandlerFunc) string {
@@ -47,24 +48,28 @@ func writeAsyncAccepted(w http.ResponseWriter, changeID string) {
 	fmt.Fprintf(w, `{"type":"async","status":"Accepted","status-code":202,"change":%q}`, changeID)
 }
 
-func TestNewProgressPrinter_NonFileWriterPrintsEachLine(t *testing.T) {
+func TestProgressPrinter_NonTerminalSuppressesTransientProgress(t *testing.T) {
 	var buf bytes.Buffer
-	progress, finish := NewProgressPrinter(&buf)
+	progress := newProgressPrinter(&buf)
 
-	progress("Download component (10%)")
-	progress("Download component (20%)")
-	finish()
+	progress.Update(snapd.Change{Tasks: []snapd.Task{{
+		ID:      "1",
+		Summary: "Download component",
+		Status:  "Doing",
+		Progress: snapd.TaskProgress{
+			Done:  10,
+			Total: 100,
+		},
+	}}})
+	progress.Notify("snapd log message")
+	progress.Finished()
 
-	got := buf.String()
-	if strings.Count(got, "\n") != 2 {
-		t.Fatalf("expected each update on its own line, got %q", got)
-	}
-	if strings.Contains(got, "\x1b[K") {
-		t.Fatalf("non-terminal writer must not receive cursor control codes, got %q", got)
+	if got, want := buf.String(), "snapd log message\n"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
 	}
 }
 
-func TestNewProgressPrinter_NonTerminalFilePrintsEachLine(t *testing.T) {
+func TestProgressPrinter_NonTerminalFileSuppressesTransientProgress(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("creating pipe: %v", err)
@@ -72,45 +77,148 @@ func TestNewProgressPrinter_NonTerminalFilePrintsEachLine(t *testing.T) {
 	defer r.Close()
 	defer w.Close()
 
-	progress, finish := NewProgressPrinter(w)
-	progress("Download component (10%)")
-	progress("Download component (20%)")
-	finish()
+	progress := newProgressPrinter(w)
+	progress.Spin("Download component")
+	progress.Finished()
 	w.Close()
 
 	buf := make([]byte, 4096)
 	n, _ := r.Read(buf)
-	got := string(buf[:n])
-	if strings.Count(got, "\n") != 2 {
-		t.Fatalf("expected each update on its own line for a non-tty file, got %q", got)
+	if got := string(buf[:n]); got != "" {
+		t.Fatalf("non-terminal file received transient progress %q", got)
 	}
 }
 
-func TestChangeProgressMessage_PrefersLastDoingTaskOverEarlierStuckOne(t *testing.T) {
-	change := snapd.Change{
-		Summary: `Install "deepseek-r1" snap`,
-		Tasks: []snapd.Task{
-			{Summary: "Process delayed security backend side effects for affected snaps", Status: "Doing"},
-			{Summary: "Download component \"model-distill-qwen-7b-ov-int4\" (162)", Status: "Doing", Progress: snapd.TaskProgress{Done: 1, Total: 100}},
-		},
+func TestActiveTaskPrefersLastTaskOverEarlierMonitor(t *testing.T) {
+	tasks := []snapd.Task{
+		{ID: "1", Kind: "process-delayed-security-backend-effects", Summary: "Process delayed security backend side effects", Status: "Doing"},
+		{ID: "2", Kind: "download-component", Summary: "Download component", Status: "Doing"},
 	}
 
-	got := changeProgressMessage(change)
-	want := `Download component "model-distill-qwen-7b-ov-int4" (162) (1.00%)`
-	if got != want {
-		t.Fatalf("got %q, want %q", got, want)
+	got := activeTask(tasks)
+	if got == nil || got.ID != "2" {
+		t.Fatalf("got %+v, want task 2", got)
 	}
 }
 
-func TestChangeProgressMessage_FallsBackToSummaryWhenNoTaskIsDoing(t *testing.T) {
-	change := snapd.Change{
-		Summary: `Install "smollm2" snap`,
-		Tasks: []snapd.Task{
-			{Summary: "Mount snap", Status: "Done"},
-		},
+func TestActiveTaskSkipsTrailingMonitorWhileOtherTaskIsDoing(t *testing.T) {
+	tasks := []snapd.Task{
+		{ID: "1", Kind: "download-component", Summary: "Download component", Status: "Doing"},
+		{ID: "2", Kind: "check-rerefresh", Summary: "Check for re-refresh", Status: "Doing"},
 	}
 
-	if got, want := changeProgressMessage(change), `Install "smollm2" snap`; got != want {
+	got := activeTask(tasks)
+	if got == nil || got.ID != "1" {
+		t.Fatalf("got %+v, want task 1", got)
+	}
+}
+
+func TestProgressPrinter_RendersDownloadMetrics(t *testing.T) {
+	var buf bytes.Buffer
+	now := time.Unix(2, 0)
+	progress := &progressPrinter{
+		w:          &buf,
+		terminal:   true,
+		now:        func() time.Time { return now },
+		width:      func() int { return 60 },
+		taskID:     "download",
+		started:    time.Unix(1, 0),
+		cursorHide: true,
+		lastLog:    make(map[string]string),
+	}
+
+	progress.Update(snapd.Change{Tasks: []snapd.Task{{
+		ID:      "download",
+		Summary: "Download component",
+		Status:  "Doing",
+		Progress: snapd.TaskProgress{
+			Done:  25_000,
+			Total: 100_000,
+		},
+	}}})
+
+	got := buf.String()
+	if !strings.Contains(got, " 25% 25.0kB/s 3.00s") {
+		t.Fatalf("expected percentage, speed, and ETA, got %q", got)
+	}
+	if !strings.Contains(got, reverseVideo) {
+		t.Fatalf("expected progress bar rendering, got %q", got)
+	}
+}
+
+func TestProgressFormattingUsesStableSnapWidths(t *testing.T) {
+	speedTests := []struct {
+		bytesPerSecond float64
+		want           string
+	}{
+		{0, "    0B/s"},
+		{96_200, "96.2kB/s"},
+		{932_000, " 932kB/s"},
+		{1_230_000, "1.23MB/s"},
+	}
+	for _, test := range speedTests {
+		got := formatBPS(test.bytesPerSecond, 1)
+		if got != test.want || runewidth.StringWidth(got) != 8 {
+			t.Fatalf("formatBPS(%v) = %q, want %q with width 8", test.bytesPerSecond, got, test.want)
+		}
+	}
+
+	etaTests := []struct {
+		seconds float64
+		want    string
+	}{
+		{2.8, "2.80s"},
+		{180, "3m00s"},
+		{900, "15.0m"},
+		{3_600, "60.0m"},
+		{6_000, "1h40m"},
+	}
+	for _, test := range etaTests {
+		got := formatETA(1, 2, test.seconds)
+		if got != test.want || runewidth.StringWidth(got) != 5 {
+			t.Fatalf("formatETA(%v) = %q, want %q with width 5", test.seconds, got, test.want)
+		}
+	}
+}
+
+func TestProgressPrinter_AdvancesSpinner(t *testing.T) {
+	var buf bytes.Buffer
+	progress := &progressPrinter{
+		w:        &buf,
+		terminal: true,
+		now:      time.Now,
+		width:    func() int { return 30 },
+		lastLog:  make(map[string]string),
+	}
+	change := snapd.Change{Tasks: []snapd.Task{{
+		ID:       "hook",
+		Summary:  "Run install hook",
+		Status:   "Doing",
+		Progress: snapd.TaskProgress{Total: 1},
+	}}}
+
+	progress.Update(change)
+	progress.Update(change)
+
+	if got := buf.String(); !strings.Contains(got, " /") || !strings.Contains(got, " -") {
+		t.Fatalf("spinner did not advance, got %q", got)
+	}
+}
+
+func TestProgressPrinter_PrintsEachTaskLogOnce(t *testing.T) {
+	var buf bytes.Buffer
+	progress := newProgressPrinter(&buf)
+	change := snapd.Change{Tasks: []snapd.Task{{
+		ID:      "download",
+		Summary: "Download component",
+		Status:  "Doing",
+		Log:     []string{"download started"},
+	}}}
+
+	progress.Update(change)
+	progress.Update(change)
+
+	if got, want := buf.String(), "download started\n"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
@@ -123,7 +231,7 @@ func TestRunInstall_PollsUntilDone(t *testing.T) {
 			writeAsyncAccepted(w, "7")
 		case r.URL.Path == "/v2/changes/7":
 			if atomic.AddInt32(&changeRequests, 1) < 3 {
-				fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}}`)
+				fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap","tasks":[{"id":"1","summary":"Download snap","status":"Doing","log":["download started"],"progress":{"done":1,"total":4}}]}}`)
 				return
 			}
 			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true,"summary":"Install \"smollm2\" snap"}}`)

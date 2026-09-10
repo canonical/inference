@@ -359,7 +359,11 @@ func TestChange_DecodesTasksAndProgress(t *testing.T) {
 		}
 		fmt.Fprint(w, `{"type":"sync","status":"OK","result":{
 			"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap",
-			"tasks":[{"summary":"Downloading snap smollm2","status":"Doing","progress":{"done":1,"total":4}}]
+			"tasks":[{
+				"id":"17","kind":"download-snap","summary":"Downloading snap smollm2","status":"Doing",
+				"log":["download started"],"progress":{"label":"smollm2","done":1,"total":4},
+				"spawn-time":"2026-09-10T12:00:00Z"
+			}]
 		}}`)
 	})
 
@@ -371,7 +375,9 @@ func TestChange_DecodesTasksAndProgress(t *testing.T) {
 	if change.Ready || change.Status != "Doing" {
 		t.Fatalf("got %+v", change)
 	}
-	if len(change.Tasks) != 1 || change.Tasks[0].Progress.Total != 4 {
+	if len(change.Tasks) != 1 || change.Tasks[0].ID != "17" || change.Tasks[0].Kind != "download-snap" ||
+		change.Tasks[0].Progress.Label != "smollm2" || change.Tasks[0].Progress.Total != 4 ||
+		len(change.Tasks[0].Log) != 1 || change.Tasks[0].SpawnTime.IsZero() {
 		t.Fatalf("got tasks %+v", change.Tasks)
 	}
 }

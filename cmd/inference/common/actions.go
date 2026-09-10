@@ -5,11 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
 	"github.com/canonical/inference/internal/snapd"
-	"github.com/mattn/go-isatty"
 )
 
 var errSnapdControlNotConnected = errors.New(
@@ -30,7 +28,7 @@ func FriendlySnapdError(err error) error {
 }
 
 const (
-	pollInterval = 500 * time.Millisecond
+	pollInterval = 100 * time.Millisecond
 	abortTimeout = 10 * time.Second
 	// maxTransientPollRetries allows snapd to restart without hiding a
 	// persistently unavailable daemon.
@@ -39,31 +37,6 @@ const (
 	// starting changes on the same snap cannot livelock us.
 	maxConflictRetries = 3
 )
-
-func NewProgressPrinter(w io.Writer) (progress func(string), finish func()) {
-	if w == nil {
-		w = io.Discard
-	}
-	file, ok := w.(*os.File)
-	if !ok || !isatty.IsTerminal(file.Fd()) {
-		return func(message string) {
-			fmt.Fprintln(w, message)
-		}, func() {}
-	}
-
-	var lineOpen bool
-	progress = func(message string) {
-		fmt.Fprintf(file, "\r\x1b[K%s", message)
-		lineOpen = true
-	}
-	finish = func() {
-		if lineOpen {
-			fmt.Fprint(file, "\r\x1b[K")
-			lineOpen = false
-		}
-	}
-	return progress, finish
-}
 
 func InstallSnap(ctx context.Context, cliCtx *Context, name string) error {
 	err := runInstall(ctx, cliCtx.SnapdClient, name, cliCtx.Stdout)
@@ -84,8 +57,8 @@ func InstallSnap(ctx context.Context, cliCtx *Context, name string) error {
 }
 
 func runInstall(ctx context.Context, client *snapd.Client, name string, w io.Writer) error {
-	progress, finish := NewProgressPrinter(w)
-	defer finish()
+	progress := newProgressPrinter(w)
+	defer progress.Finished()
 
 	changeID, err := startWithConflictRetry(ctx, client, name, progress, client.Install)
 	if err != nil {
@@ -113,8 +86,8 @@ func RemoveSnap(ctx context.Context, cliCtx *Context, name string) error {
 }
 
 func runRemove(ctx context.Context, client *snapd.Client, name string, w io.Writer) error {
-	progress, finish := NewProgressPrinter(w)
-	defer finish()
+	progress := newProgressPrinter(w)
+	defer progress.Finished()
 
 	changeID, err := startWithConflictRetry(ctx, client, name, progress, client.Remove)
 	if err != nil {
@@ -143,7 +116,7 @@ func cancelledError(action string, err error) error {
 	return fmt.Errorf("%s cancelled", action)
 }
 
-func waitForChangeOrAbort(ctx context.Context, client *snapd.Client, changeID string, progress func(string)) error {
+func waitForChangeOrAbort(ctx context.Context, client *snapd.Client, changeID string, progress *progressPrinter) error {
 	err := waitForChange(ctx, client, changeID, progress)
 	if ctx.Err() == nil || err == nil || !errors.Is(err, ctx.Err()) {
 		return err
@@ -174,8 +147,7 @@ func changeOutcome(change snapd.Change) error {
 	return fmt.Errorf("change failed with status %q", change.Status)
 }
 
-func waitForChange(ctx context.Context, client *snapd.Client, changeID string, progress func(string)) error {
-	var lastMessage string
+func waitForChange(ctx context.Context, client *snapd.Client, changeID string, progress *progressPrinter) error {
 	var transientFailures int
 	for {
 		change, err := client.Change(ctx, changeID)
@@ -186,6 +158,7 @@ func waitForChange(ctx context.Context, client *snapd.Client, changeID string, p
 			if errors.Is(err, snapd.ErrTransient) && transientFailures < maxTransientPollRetries {
 				delay := pollInterval * time.Duration(1<<transientFailures)
 				transientFailures++
+				progress.Spin("Waiting for snapd to restart")
 				if err := waitForNextPoll(ctx, delay); err != nil {
 					return err
 				}
@@ -199,13 +172,10 @@ func waitForChange(ctx context.Context, client *snapd.Client, changeID string, p
 			case "system-restart":
 				return fmt.Errorf("snapd reports a system restart required for change %s: %s", changeID, maintenance.Message)
 			case "daemon-restart":
-				reportProgress(progress, maintenance.Message)
+				progress.Spin(maintenance.Message)
 			}
 		}
-		if message := changeProgressMessage(change); message != "" && message != lastMessage {
-			reportProgress(progress, message)
-			lastMessage = message
-		}
+		progress.Update(change)
 		if change.Ready {
 			return changeOutcome(change)
 		}
@@ -231,7 +201,7 @@ func startWithConflictRetry(
 	ctx context.Context,
 	client *snapd.Client,
 	name string,
-	progress func(string),
+	progress *progressPrinter,
 	action func(context.Context, string) (string, error),
 ) (string, error) {
 	for attempt := 0; ; attempt++ {
@@ -245,11 +215,10 @@ func startWithConflictRetry(
 	}
 }
 
-func waitForConflictingChange(ctx context.Context, client *snapd.Client, name string, progress func(string)) error {
+func waitForConflictingChange(ctx context.Context, client *snapd.Client, name string, progress *progressPrinter) error {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
-	var lastMessage string
 	for {
 		changes, err := client.ChangesInProgress(ctx, name)
 		if err != nil {
@@ -258,10 +227,7 @@ func waitForConflictingChange(ctx context.Context, client *snapd.Client, name st
 		if len(changes) == 0 {
 			return nil
 		}
-		if message := changeProgressMessage(changes[0]); message != "" && message != lastMessage {
-			reportProgress(progress, message)
-			lastMessage = message
-		}
+		progress.Update(changes[0])
 
 		select {
 		case <-ctx.Done():
@@ -269,27 +235,4 @@ func waitForConflictingChange(ctx context.Context, client *snapd.Client, name st
 		case <-ticker.C:
 		}
 	}
-}
-
-func reportProgress(progress func(string), message string) {
-	if progress != nil {
-		progress(message)
-	}
-}
-
-func changeProgressMessage(change snapd.Change) string {
-	message := change.Summary
-	// Later concurrent tasks reflect the most recent, specific activity.
-	for _, task := range change.Tasks {
-		if task.Status != "Doing" || task.Summary == "" {
-			continue
-		}
-		if task.Progress.Total > 1 {
-			percent := 100 * float64(task.Progress.Done) / float64(task.Progress.Total)
-			message = fmt.Sprintf("%s (%.2f%%)", task.Summary, percent)
-			continue
-		}
-		message = task.Summary
-	}
-	return message
 }
