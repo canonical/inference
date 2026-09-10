@@ -25,6 +25,8 @@ const (
 	bindPortEnvVar          = "INFERENCE_BIND_PORT"
 	defaultBindHost         = "127.0.0.1"
 	defaultBindPort         = 8400
+	catalogRefreshInterval  = 12 * time.Hour
+	catalogRequestTimeout   = 30 * time.Second
 	maxResponseHeaderBytes  = 1 << 20
 	serverReadHeaderTimeout = 10 * time.Second
 	serverIdleTimeout       = 2 * time.Minute
@@ -49,6 +51,8 @@ func main() {
 	}
 	client := newUpstreamClient()
 	catalog := snapcatalog.NewReader()
+	catalogRefresher := snapcatalog.NewRefresher(newCatalogClient())
+	refreshCatalog(ctx, catalogRefresher.Refresh, logger)
 	snapdClient := snapd.NewClient()
 	listProviders := func(ctx context.Context) ([]providers.Provider, error) {
 		return providers.List(ctx, catalog, snapdClient, providerRoot, providers.ListOptions{})
@@ -57,6 +61,7 @@ func main() {
 	if err := handler.Refresh(ctx); err != nil {
 		logger.Warn("initializing provider models", "error", err)
 	}
+	go refreshCatalogPeriodically(ctx, catalogRefreshInterval, catalogRefresher.Refresh, logger)
 	serverContext, cancelRequests := context.WithCancelCause(context.Background())
 	defer cancelRequests(nil)
 	hijacked := newHijackedConnections()
@@ -84,6 +89,40 @@ func newUpstreamClient() *http.Client {
 	transport.ResponseHeaderTimeout = 0
 	transport.MaxResponseHeaderBytes = maxResponseHeaderBytes
 	return &http.Client{Transport: transport}
+}
+
+func newCatalogClient() *http.Client {
+	return &http.Client{Timeout: catalogRequestTimeout}
+}
+
+func refreshCatalog(
+	ctx context.Context,
+	refresh func(context.Context) error,
+	logger *slog.Logger,
+) {
+	if err := refresh(ctx); err != nil {
+		logger.Warn("refreshing snap catalog", "error", err)
+		return
+	}
+	logger.Info("refreshed snap catalog")
+}
+
+func refreshCatalogPeriodically(
+	ctx context.Context,
+	interval time.Duration,
+	refresh func(context.Context) error,
+	logger *slog.Logger,
+) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			refreshCatalog(ctx, refresh, logger)
+		}
+	}
 }
 
 func serve(
