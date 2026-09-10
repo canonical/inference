@@ -52,7 +52,7 @@ func main() {
 	client := newUpstreamClient()
 	catalog := snapcatalog.NewReader()
 	catalogRefresher := snapcatalog.NewRefresher(newCatalogClient())
-	refreshCatalog(ctx, catalogRefresher.Refresh, logger)
+	go refreshCatalog(ctx, catalogRefresher.Refresh, logger)
 	snapdClient := snapd.NewClient()
 	listProviders := func(ctx context.Context) ([]providers.Provider, error) {
 		return providers.List(ctx, catalog, snapdClient, providerRoot, providers.ListOptions{})
