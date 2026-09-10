@@ -93,36 +93,34 @@ func TestModelsHandlerRetrievesModelFromSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, modelID := range []string{"provider/organization/model", "organization/model"} {
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(
-			response,
-			httptest.NewRequest(http.MethodGet, "/v1/models/"+modelID, nil),
-		)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(
+		response,
+		httptest.NewRequest(http.MethodGet, "/v1/models/provider/organization/model", nil),
+	)
 
-		if response.Code != http.StatusOK {
-			t.Fatalf("model %q got status %d body %s", modelID, response.Code, response.Body.String())
-		}
-		var got modelOutput
-		if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
-			t.Fatal(err)
-		}
-		want := modelOutput{
-			ID:      "provider/organization/model",
-			Object:  "model",
-			Created: 1234,
-			OwnedBy: "provider",
-		}
-		if got != want {
-			t.Errorf("model %q returned %+v, want %+v", modelID, got, want)
-		}
+	if response.Code != http.StatusOK {
+		t.Fatalf("got status %d body %s", response.Code, response.Body.String())
+	}
+	var got modelOutput
+	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := modelOutput{
+		ID:      "provider/organization/model",
+		Object:  "model",
+		Created: 1234,
+		OwnedBy: "provider",
+	}
+	if got != want {
+		t.Errorf("returned %+v, want %+v", got, want)
 	}
 	if requests.Load() != 1 {
 		t.Errorf("upstream received %d requests, want only the initial model list request", requests.Load())
 	}
 }
 
-func TestModelsHandlerRejectsUnavailableAmbiguousAndUnknownModelRetrieval(t *testing.T) {
+func TestModelsHandlerRejectsUnavailableUnqualifiedAndUnknownModelRetrieval(t *testing.T) {
 	first := modelServer(t, "shared")
 	defer first.Close()
 	second := modelServer(t, "shared")
@@ -151,7 +149,7 @@ func TestModelsHandlerRejectsUnavailableAmbiguousAndUnknownModelRetrieval(t *tes
 		code   int
 		allow  string
 	}{
-		{name: "ambiguous", method: http.MethodGet, path: "/v1/models/shared", code: http.StatusBadRequest},
+		{name: "unqualified", method: http.MethodGet, path: "/v1/models/shared", code: http.StatusNotFound},
 		{name: "unknown", method: http.MethodGet, path: "/v1/models/missing", code: http.StatusNotFound},
 		{name: "empty", method: http.MethodGet, path: "/v1/models/", code: http.StatusNotFound},
 		{name: "method", method: http.MethodPost, path: "/v1/models/first/shared", code: http.StatusMethodNotAllowed, allow: http.MethodGet},
@@ -203,6 +201,20 @@ func TestModelsHandlerSkipsProviderWithoutBaseURL(t *testing.T) {
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":"healthy/ready"`) {
 		t.Fatalf("got status %d body %s", response.Code, response.Body.String())
+	}
+}
+
+func TestModelsHandlerRejectsDuplicateProviderNames(t *testing.T) {
+	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
+		return []providers.Provider{
+			{Name: "duplicate", BaseURL: "http://first.example/v1"},
+			{Name: "duplicate", BaseURL: "http://second.example/v1"},
+		}, nil
+	}, http.DefaultClient, discardLogger())
+
+	err := handler.Refresh(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `duplicate provider name "duplicate"`) {
+		t.Fatalf("got error %v, want duplicate provider name error", err)
 	}
 }
 

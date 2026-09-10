@@ -154,7 +154,7 @@ func TestProxyDoesNotRefreshWithoutSnapshot(t *testing.T) {
 	}
 }
 
-func TestProxyUsesExistingSnapshotAndUniqueUnqualifiedModel(t *testing.T) {
+func TestProxyRejectsUnqualifiedModel(t *testing.T) {
 	var listCalls atomic.Int32
 	var gotModels atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -179,22 +179,37 @@ func TestProxyUsesExistingSnapshotAndUniqueUnqualifiedModel(t *testing.T) {
 
 	modelsResponse := httptest.NewRecorder()
 	handler.ServeHTTP(modelsResponse, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
-	for range 2 {
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(`{"model":"unique"}`)))
-		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"model":"unique"`) {
-			t.Fatalf("got status %d body %s", response.Code, response.Body.String())
-		}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(`{"model":"unique"}`)))
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), "does not exist") {
+		t.Fatalf("got status %d body %s", response.Code, response.Body.String())
 	}
 	if listCalls.Load() != 1 || gotModels.Load() != 1 {
 		t.Errorf("got list calls %d and model requests %d, want 1 each", listCalls.Load(), gotModels.Load())
 	}
 }
 
-func TestProxyRejectsAmbiguousAndUnknownModels(t *testing.T) {
-	first := modelServer(t, "shared")
+func TestProxyQualifiedModelsDoNotCollideWithNativeModelIDs(t *testing.T) {
+	providerServer := func(provider, advertisedModel string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/v1/models" {
+				_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"id": advertisedModel}}})
+				return
+			}
+			var request struct {
+				Model string `json:"model"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("%s decoding request: %v", provider, err)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"provider": provider, "model": request.Model})
+		}))
+	}
+
+	first := providerServer("first", "model")
 	defer first.Close()
-	second := modelServer(t, "shared")
+	second := providerServer("second", "first/model")
 	defer second.Close()
 
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
@@ -209,19 +224,24 @@ func TestProxyRejectsAmbiguousAndUnknownModels(t *testing.T) {
 
 	tests := []struct {
 		model string
-		code  int
-		text  string
+		want  string
 	}{
-		{model: "shared", code: http.StatusBadRequest, text: "ambiguous"},
-		{model: "missing", code: http.StatusNotFound, text: "does not exist"},
+		{model: "first/model", want: `{"model":"model","provider":"first"}`},
+		{model: "second/first/model", want: `{"model":"first/model","provider":"second"}`},
 	}
 	for _, test := range tests {
 		response := httptest.NewRecorder()
 		body := `{"model":` + mustJSON(t, test.model) + `}`
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body)))
-		if response.Code != test.code || !strings.Contains(response.Body.String(), test.text) {
-			t.Errorf("model %q got status %d body %s", test.model, response.Code, response.Body.String())
+		if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) != test.want {
+			t.Errorf("model %q got status %d body %s, want %s", test.model, response.Code, response.Body.String(), test.want)
 		}
+	}
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"model"}`)))
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), "does not exist") {
+		t.Errorf("unqualified model got status %d body %s", response.Code, response.Body.String())
 	}
 }
 

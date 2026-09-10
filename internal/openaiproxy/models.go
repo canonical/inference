@@ -81,9 +81,8 @@ type modelRoute struct {
 }
 
 type routingSnapshot struct {
-	models    []modelOutput
-	routes    map[string]modelRoute
-	ambiguous map[string]struct{}
+	models []modelOutput
+	routes map[string]modelRoute
 }
 
 func NewModelsHandler(
@@ -177,11 +176,6 @@ func (h *ModelsHandler) serveModel(w http.ResponseWriter, r *http.Request, logge
 	modelID := strings.TrimPrefix(r.URL.Path, "/v1/models/")
 	route, exists := snapshot.routes[modelID]
 	if !exists {
-		if _, ambiguous := snapshot.ambiguous[modelID]; ambiguous {
-			logger.Warn("rejecting model request", "reason", "model is ambiguous", "model", modelID)
-			writeError(w, http.StatusBadRequest, "Model ID is ambiguous; use a provider-qualified model ID.", "invalid_request_error")
-			return
-		}
 		logger.Warn("rejecting model request", "reason", "model does not exist", "model", modelID)
 		writeError(w, http.StatusNotFound, "The requested model does not exist.", "invalid_request_error")
 		return
@@ -216,10 +210,19 @@ func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, er
 		return nil, err
 	}
 	availableProviders := make([]providers.Provider, 0, len(allProviders))
+	providerNames := make(map[string]struct{}, len(allProviders))
 	for _, provider := range allProviders {
-		if provider.BaseURL != "" {
-			availableProviders = append(availableProviders, provider)
+		if provider.BaseURL == "" {
+			continue
 		}
+		if provider.Name == "" {
+			return nil, errors.New("provider with an API base URL has an empty name")
+		}
+		if _, exists := providerNames[provider.Name]; exists {
+			return nil, fmt.Errorf("duplicate provider name %q", provider.Name)
+		}
+		providerNames[provider.Name] = struct{}{}
+		availableProviders = append(availableProviders, provider)
 	}
 	if len(availableProviders) == 0 {
 		return nil, errors.New("no providers with an API base URL")
@@ -245,11 +248,9 @@ func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, er
 	close(results)
 
 	snapshot := &routingSnapshot{
-		models:    make([]modelOutput, 0),
-		routes:    make(map[string]modelRoute),
-		ambiguous: make(map[string]struct{}),
+		models: make([]modelOutput, 0),
+		routes: make(map[string]modelRoute),
 	}
-	unqualifiedRoutes := make(map[string][]modelRoute)
 	healthyProviders := 0
 	for result := range results {
 		if result.err != nil {
@@ -292,7 +293,6 @@ func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, er
 				model:         output,
 			}
 			snapshot.routes[publicID] = route
-			unqualifiedRoutes[model.ID] = append(unqualifiedRoutes[model.ID], route)
 			snapshot.models = append(snapshot.models, output)
 		}
 	}
@@ -300,13 +300,6 @@ func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, er
 		return nil, errors.New("all providers failed")
 	}
 
-	for modelID, routes := range unqualifiedRoutes {
-		if len(routes) == 1 {
-			snapshot.routes[modelID] = routes[0]
-			continue
-		}
-		snapshot.ambiguous[modelID] = struct{}{}
-	}
 	sort.Slice(snapshot.models, func(i, j int) bool { return snapshot.models[i].ID < snapshot.models[j].ID })
 	h.logger.Info(
 		"refreshed provider models",
@@ -314,7 +307,6 @@ func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, er
 		"providers_available", len(availableProviders),
 		"providers_healthy", healthyProviders,
 		"models", len(snapshot.models),
-		"ambiguous_models", len(snapshot.ambiguous),
 		"duration", time.Since(started),
 	)
 	return snapshot, nil
@@ -393,11 +385,6 @@ func (h *ModelsHandler) proxy(
 
 	route, exists := snapshot.routes[requestedModel]
 	if !exists {
-		if _, ambiguous := snapshot.ambiguous[requestedModel]; ambiguous {
-			logger.Warn("rejecting inference request", "reason", "model is ambiguous", "model", requestedModel)
-			writeError(w, http.StatusBadRequest, "Model ID is ambiguous; use a provider-qualified model ID.", "invalid_request_error")
-			return
-		}
 		logger.Warn("rejecting inference request", "reason", "model does not exist", "model", requestedModel)
 		writeError(w, http.StatusNotFound, "The requested model does not exist.", "invalid_request_error")
 		return
