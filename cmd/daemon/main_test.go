@@ -68,7 +68,7 @@ func TestRefreshCatalogPeriodically(t *testing.T) {
 	done := make(chan struct{})
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	go func() {
-		refreshCatalogPeriodically(ctx, time.Millisecond, func(context.Context) error {
+		refreshCatalogPeriodically(ctx, time.Hour, func(context.Context) error {
 			refreshed <- struct{}{}
 			return nil
 		}, logger)
