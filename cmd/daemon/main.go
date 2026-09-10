@@ -24,7 +24,7 @@ const (
 	bindHostEnvVar          = "INFERENCE_BIND_HOST"
 	bindPortEnvVar          = "INFERENCE_BIND_PORT"
 	defaultBindHost         = "127.0.0.1"
-	defaultBindPort         = 8000
+	defaultBindPort         = 8400
 	maxResponseHeaderBytes  = 1 << 20
 	serverReadHeaderTimeout = 10 * time.Second
 	serverIdleTimeout       = 2 * time.Minute
