@@ -2,4 +2,4 @@
 # snap command wrappers, so force Cobra to use its basic internal one.
 unset -f _init_completion
 
-source <($SNAP/bin/inference completion bash)
+source <($SNAP/bin/cli completion bash)

@@ -203,7 +203,9 @@ func (h *ModelsHandler) refresh(ctx context.Context) (*routingSnapshot, error) {
 	defer h.refreshMu.Unlock()
 
 	snapshot, err := h.refreshLocked(ctx)
-	h.snapshot.Store(snapshot)
+	if err == nil {
+		h.snapshot.Store(snapshot)
+	}
 	return snapshot, err
 }
 

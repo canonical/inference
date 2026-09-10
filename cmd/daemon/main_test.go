@@ -19,7 +19,7 @@ func TestListenAddress(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "defaults", want: "127.0.0.1:8000"},
+		{name: "defaults", want: "127.0.0.1:8400"},
 		{name: "configured", host: "::1", port: "9000", want: "[::1]:9000"},
 		{name: "invalid port", port: "invalid", wantErr: true},
 		{name: "port out of range", port: "65536", wantErr: true},

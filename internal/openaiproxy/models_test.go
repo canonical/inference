@@ -3,6 +3,7 @@ package openaiproxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -242,18 +243,24 @@ func TestModelsHandlerReturnsServiceUnavailableWithoutHealthyProviders(t *testin
 	}
 }
 
-func TestModelsHandlerClearsSnapshotWhenRefreshFails(t *testing.T) {
+func TestModelsHandlerPreservesSnapshotWhenRefreshFails(t *testing.T) {
 	var fail atomic.Bool
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		if fail.Load() {
-			http.Error(w, "unavailable", http.StatusServiceUnavailable)
-			return
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"ready"}]}`))
+		case "/v1/chat/completions":
+			_, _ = w.Write([]byte(`{"id":"completion"}`))
+		default:
+			http.NotFound(w, r)
 		}
-		_, _ = w.Write([]byte(`{"data":[{"id":"ready"}]}`))
 	}))
 	defer upstream.Close()
 
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
+		if fail.Load() {
+			return nil, errors.New("provider inventory unavailable")
+		}
 		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
 	}, upstream.Client(), discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
@@ -270,8 +277,8 @@ func TestModelsHandlerClearsSnapshotWhenRefreshFails(t *testing.T) {
 		response,
 		httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"provider/ready"}`)),
 	)
-	if response.Code != http.StatusServiceUnavailable {
-		t.Fatalf("got status %d body %s, want 503", response.Code, response.Body.String())
+	if response.Code != http.StatusOK {
+		t.Fatalf("got status %d body %s, want 200", response.Code, response.Body.String())
 	}
 }
 
