@@ -35,7 +35,6 @@ parts:
     source: snap/local
     organize:
       completion.bash: bin/completion.bash
-      refresh-snap-catalog.sh: bin/refresh-snap-catalog.sh
 
   providers:
     plugin: dump
@@ -60,11 +59,3 @@ apps:
       - network
       - network-bind
       - snapd-control
-
-  snap-catalog-refresh:
-    command: bin/refresh-snap-catalog.sh
-    daemon: oneshot
-    install-mode: enable
-    timer: 00:00-24:00/2
-    plugs:
-      - network

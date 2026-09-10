@@ -25,6 +25,8 @@ const (
 	bindPortEnvVar          = "INFERENCE_BIND_PORT"
 	defaultBindHost         = "127.0.0.1"
 	defaultBindPort         = 8400
+	catalogRefreshInterval  = 12 * time.Hour
+	catalogRequestTimeout   = 30 * time.Second
 	maxResponseHeaderBytes  = 1 << 20
 	serverReadHeaderTimeout = 10 * time.Second
 	serverIdleTimeout       = 2 * time.Minute
@@ -42,23 +44,30 @@ func main() {
 		logger.Error("configuring listen address", "error", err)
 		os.Exit(1)
 	}
+
 	providerRoot := providers.DefaultShareProvidersPath()
 	if providerRoot == "" {
 		logger.Error("provider directory is not configured", "environment", providers.ShareProvidersEnvVar)
 		os.Exit(1)
 	}
-	client := newUpstreamClient()
+
 	catalog := snapcatalog.NewReader()
+	catalogRefresher := snapcatalog.NewRefresher(newCatalogClient())
+	go refreshCatalogPeriodically(ctx, catalogRefreshInterval, catalogRefresher.Refresh, logger)
+
 	snapdClient := snapd.NewClient()
 	listProviders := func(ctx context.Context) ([]providers.Provider, error) {
 		return providers.List(ctx, catalog, snapdClient, providerRoot, providers.ListOptions{})
 	}
-	handler := openaiproxy.NewModelsHandler(listProviders, client, logger)
+
+	handler := openaiproxy.NewModelsHandler(listProviders, newUpstreamClient(), logger)
 	if err := handler.Refresh(ctx); err != nil {
 		logger.Warn("initializing provider models", "error", err)
 	}
+
 	serverContext, cancelRequests := context.WithCancelCause(context.Background())
 	defer cancelRequests(nil)
+
 	hijacked := newHijackedConnections()
 	server := &http.Server{
 		Addr:              address,
@@ -84,6 +93,42 @@ func newUpstreamClient() *http.Client {
 	transport.ResponseHeaderTimeout = 0
 	transport.MaxResponseHeaderBytes = maxResponseHeaderBytes
 	return &http.Client{Transport: transport}
+}
+
+func newCatalogClient() *http.Client {
+	return &http.Client{Timeout: catalogRequestTimeout}
+}
+
+func refreshCatalog(
+	ctx context.Context,
+	refresh func(context.Context) error,
+	logger *slog.Logger,
+) {
+	if err := refresh(ctx); err != nil {
+		logger.Warn("refreshing snap catalog", "error", err)
+		return
+	}
+	logger.Info("refreshed snap catalog")
+}
+
+func refreshCatalogPeriodically(
+	ctx context.Context,
+	interval time.Duration,
+	refresh func(context.Context) error,
+	logger *slog.Logger,
+) {
+	refreshCatalog(ctx, refresh, logger)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			refreshCatalog(ctx, refresh, logger)
+		}
+	}
 }
 
 func serve(
@@ -137,6 +182,9 @@ func shutdownServer(
 	return nil
 }
 
+// ReverseProxy hijacks downstream connections for WebSocket upgrades, and
+// http.Server.Shutdown does not close hijacked connections, so track them here
+// to ensure daemon shutdown also disconnects WebSocket clients.
 type hijackedConnections struct {
 	mu           sync.Mutex
 	connections  map[net.Conn]struct{}

@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -51,6 +53,88 @@ func TestUpstreamClientAllowsSlowInferenceHeaders(t *testing.T) {
 	}
 	if transport.MaxResponseHeaderBytes != maxResponseHeaderBytes {
 		t.Errorf("maximum response header bytes = %d, want %d", transport.MaxResponseHeaderBytes, maxResponseHeaderBytes)
+	}
+}
+
+func TestCatalogClientHasTimeout(t *testing.T) {
+	if got := newCatalogClient().Timeout; got != catalogRequestTimeout {
+		t.Fatalf("timeout=%v, want %v", got, catalogRequestTimeout)
+	}
+}
+
+func TestRefreshCatalogPeriodically(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	refreshed := make(chan struct{}, 1)
+	done := make(chan struct{})
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	go func() {
+		refreshCatalogPeriodically(ctx, time.Hour, func(context.Context) error {
+			refreshed <- struct{}{}
+			return nil
+		}, logger)
+		close(done)
+	}()
+
+	select {
+	case <-refreshed:
+	case <-time.After(time.Second):
+		t.Fatal("catalog was not refreshed")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("periodic refresh did not stop after cancellation")
+	}
+}
+
+func TestRefreshCatalogPeriodicallyDoesNotOverlap(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	done := make(chan struct{})
+	var active atomic.Int32
+	var maximum atomic.Int32
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	go func() {
+		refreshCatalogPeriodically(ctx, time.Millisecond, func(context.Context) error {
+			current := active.Add(1)
+			if current > maximum.Load() {
+				maximum.Store(current)
+			}
+			started <- struct{}{}
+			<-release
+			active.Add(-1)
+			return errors.New("refresh failed")
+		}, logger)
+		close(done)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("catalog refresh did not start")
+	}
+	select {
+	case <-started:
+		t.Fatal("second catalog refresh overlapped the first")
+	case <-time.After(10 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("second catalog refresh did not start")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("periodic refresh did not stop")
+	}
+	if got := maximum.Load(); got != 1 {
+		t.Fatalf("maximum concurrent refreshes=%d, want 1", got)
 	}
 }
 
