@@ -55,8 +55,7 @@ func main() {
 	}
 	handler := openaiproxy.NewModelsHandler(listProviders, client, logger)
 	if err := handler.Refresh(ctx); err != nil {
-		logger.Error("initializing provider models", "error", err)
-		os.Exit(1)
+		logger.Warn("initializing provider models", "error", err)
 	}
 	serverContext, cancelRequests := context.WithCancelCause(context.Background())
 	defer cancelRequests(nil)
