@@ -38,14 +38,10 @@ parts:
       refresh-snap-catalog.sh: bin/refresh-snap-catalog.sh
 
   providers:
-    plugin: nil
-    override-build: |
-        mkdir -p $SNAPCRAFT_PART_INSTALL/share/providers/smollm2
-        cat <<EOF > $SNAPCRAFT_PART_INSTALL/share/providers/smollm2/provider.env
-        # $(date)
-        OPENAI_BASE_URL=http://127.0.0.1:8344/v1
-        SNAP_NAME=smollm2
-        EOF
+    plugin: dump
+    source: test_data/share/providers
+    organize:
+      "*": share/providers/
 
 apps:
   inference:
