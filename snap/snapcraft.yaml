@@ -44,14 +44,14 @@ parts:
 
 apps:
   inference:
-    command: bin/cli
+    command: bin/inference
     completer: bin/completion.bash
     plugs:
       - network
       - snapd-control
 
   d:
-    command: bin/daemon
+    command: bin/inference_d
     daemon: simple
     install-mode: enable
     restart-condition: on-failure
