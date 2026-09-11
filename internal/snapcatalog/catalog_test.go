@@ -1,6 +1,11 @@
 package snapcatalog
 
 import (
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -155,5 +160,129 @@ func TestNewReaderUsesDefaultPath(t *testing.T) {
 
 	if reader := NewReader(); reader.Path != "/home/user/catalog.json" {
 		t.Fatalf("Path=%q", reader.Path)
+	}
+}
+
+func TestRefreshReplacesCatalog(t *testing.T) {
+	data := publishedCatalog(publishedEntry("qwen3", "Qwen 3", "canonical/qwen3-snap"))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, data)
+	}))
+	defer server.Close()
+
+	path := filepath.Join(t.TempDir(), Filename)
+	if err := os.WriteFile(path, []byte("old catalog"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	refresher := Refresher{Client: server.Client(), Path: path, URL: server.URL}
+	if err := refresher.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != data {
+		t.Fatalf("catalog=%q, want %q", got, data)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o644 {
+		t.Fatalf("mode=%o, want 644", got)
+	}
+}
+
+func TestRefreshPreservesCatalogOnInvalidResponse(t *testing.T) {
+	tests := []struct {
+		name    string
+		handler http.Handler
+	}{
+		{
+			name: "HTTP error",
+			handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			}),
+		},
+		{
+			name: "malformed JSON",
+			handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, "not json")
+			}),
+		},
+		{
+			name: "oversized response",
+			handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write(make([]byte, maxCatalogSizeBytes+1))
+			}),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(tt.handler)
+			defer server.Close()
+			path := filepath.Join(t.TempDir(), Filename)
+			const existing = `[{"snap":"existing"}]`
+			if err := os.WriteFile(path, []byte(existing), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			err := (Refresher{Client: server.Client(), Path: path, URL: server.URL}).Refresh(context.Background())
+			if err == nil {
+				t.Fatal("expected refresh error")
+			}
+			got, readErr := os.ReadFile(path)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if string(got) != existing {
+				t.Fatalf("catalog=%q, want existing catalog", got)
+			}
+		})
+	}
+}
+
+func TestRefreshHonorsCancellation(t *testing.T) {
+	started := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	path := filepath.Join(t.TempDir(), Filename)
+	go func() {
+		done <- (Refresher{
+			Client: server.Client(),
+			Path:   path,
+			URL:    server.URL,
+		}).Refresh(ctx)
+	}()
+	<-started
+	cancel()
+
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Refresh error=%v, want context canceled", err)
+	}
+}
+
+func TestRefreshFailsWithoutConfiguredPath(t *testing.T) {
+	err := (Refresher{URL: URL}).Refresh(context.Background())
+	if !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("Refresh error=%v, want ErrNotConfigured", err)
+	}
+}
+
+func TestNewRefresherUsesDefaults(t *testing.T) {
+	t.Setenv(EnvVar, "/home/user/catalog.json")
+	client := &http.Client{}
+	refresher := NewRefresher(client)
+	if refresher.Client != client || refresher.Path != "/home/user/catalog.json" || refresher.URL != URL {
+		t.Fatalf("refresher=%+v", refresher)
 	}
 }

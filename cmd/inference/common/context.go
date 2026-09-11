@@ -8,8 +8,9 @@ import (
 )
 
 type Context struct {
-	Stdout      io.Writer
-	Stderr      io.Writer
-	SnapdClient *snapd.Client
-	SnapCatalog *snapcatalog.Reader
+	Stdout             io.Writer
+	Stderr             io.Writer
+	SnapdClient        *snapd.Client
+	SnapCatalog        *snapcatalog.Reader
+	ShareProvidersPath string
 }

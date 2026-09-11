@@ -35,7 +35,12 @@ parts:
     source: snap/local
     organize:
       completion.bash: bin/completion.bash
-      refresh-snap-catalog.sh: bin/refresh-snap-catalog.sh
+
+  providers:
+    plugin: dump
+    source: test_data/share/providers
+    organize:
+      "*": share/providers/
 
 apps:
   inference:
@@ -45,10 +50,12 @@ apps:
       - network
       - snapd-control
 
-  snap-catalog-refresh:
-    command: bin/refresh-snap-catalog.sh
-    daemon: oneshot
+  d:
+    command: bin/inference_d
+    daemon: simple
     install-mode: enable
-    timer: 00:00-24:00/2
+    restart-condition: on-failure
     plugs:
       - network
+      - network-bind
+      - snapd-control
