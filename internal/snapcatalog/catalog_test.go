@@ -215,7 +215,7 @@ func TestRefreshPreservesCatalogOnInvalidResponse(t *testing.T) {
 		{
 			name: "oversized response",
 			handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				_, _ = w.Write(make([]byte, maxCatalogSize+1))
+				_, _ = w.Write(make([]byte, maxCatalogSizeBytes+1))
 			}),
 		},
 	}

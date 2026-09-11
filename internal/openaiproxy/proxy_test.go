@@ -436,7 +436,7 @@ func TestProxyErrorClassification(t *testing.T) {
 		recorder := httptest.NewRecorder()
 		writer := &loggingResponseWriter{ResponseWriter: recorder}
 
-		handleProxyError(writer, request, context.Canceled, discardLogger(), "provider", "model")
+		handleProxyError(writer, request, context.Canceled, discardLogger(), "provider", "http://provider.test/v1", "model")
 
 		if writer.statusCode() != statusClientClosed || writer.WroteHeader() || recorder.Body.Len() != 0 {
 			t.Fatalf("status = %d, wrote header = %v, body = %q", writer.statusCode(), writer.WroteHeader(), recorder.Body.String())
@@ -450,7 +450,7 @@ func TestProxyErrorClassification(t *testing.T) {
 		recorder := httptest.NewRecorder()
 		writer := &loggingResponseWriter{ResponseWriter: recorder}
 
-		handleProxyError(writer, request, context.Canceled, discardLogger(), "provider", "model")
+		handleProxyError(writer, request, context.Canceled, discardLogger(), "provider", "http://provider.test/v1", "model")
 
 		if recorder.Code != http.StatusServiceUnavailable {
 			t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
@@ -460,18 +460,29 @@ func TestProxyErrorClassification(t *testing.T) {
 	t.Run("upstream failure", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
 		writer := &loggingResponseWriter{ResponseWriter: recorder}
+		var logs bytes.Buffer
 
 		handleProxyError(
 			writer,
 			httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil),
 			errors.New("connection refused"),
-			discardLogger(),
+			slog.New(slog.NewTextHandler(&logs, nil)),
 			"provider",
+			"http://user:secret@provider.test/v1?token=secret#backend",
 			"model",
 		)
 
 		if recorder.Code != http.StatusBadGateway {
 			t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
+		}
+		logOutput := logs.String()
+		if !strings.Contains(logOutput, "provider_url=http://provider.test/v1") {
+			t.Errorf("logs do not contain provider URL:\n%s", logOutput)
+		}
+		for _, sensitive := range []string{"user", "secret", "token", "backend"} {
+			if strings.Contains(logOutput, sensitive) {
+				t.Errorf("logs contain sensitive provider URL value %q:\n%s", sensitive, logOutput)
+			}
 		}
 	})
 
@@ -487,6 +498,7 @@ func TestProxyErrorClassification(t *testing.T) {
 			errors.New("unexpected EOF"),
 			discardLogger(),
 			"provider",
+			"http://provider.test/v1",
 			"model",
 		)
 

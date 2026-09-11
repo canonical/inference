@@ -18,6 +18,7 @@ func handleProxyError(
 	err error,
 	logger *slog.Logger,
 	providerName string,
+	providerURL string,
 	model string,
 ) {
 	marker, _ := w.(responseStatusMarker)
@@ -56,6 +57,7 @@ func handleProxyError(
 		logger.Error(
 			"proxying inference request",
 			"provider", providerName,
+			"provider_url", loggableProviderURL(providerURL),
 			"model", model,
 			"error", redactURLError(err),
 		)

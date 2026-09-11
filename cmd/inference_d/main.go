@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"syscall"
@@ -21,17 +22,16 @@ import (
 )
 
 const (
-	bindHostEnvVar          = "INFERENCE_BIND_HOST"
-	bindPortEnvVar          = "INFERENCE_BIND_PORT"
-	defaultBindHost         = "127.0.0.1"
-	defaultBindPort         = 8400
-	catalogRefreshInterval  = 12 * time.Hour
-	catalogRequestTimeout   = 30 * time.Second
-	maxResponseHeaderBytes  = 1 << 20
-	serverReadHeaderTimeout = 10 * time.Second
-	serverIdleTimeout       = 2 * time.Minute
-	serverMaxHeaderBytes    = 1 << 20
-	shutdownTimeout         = 10 * time.Second
+	bindAddressEnvVar         = "SERVER_BIND_ADDRESS"
+	sharedProvidersPathEnvVar = "SHARED_PROVIDERS_PATH"
+	defaultBindAddress        = "127.0.0.1:8400"
+	catalogRefreshInterval    = 12 * time.Hour
+	catalogRequestTimeout     = 30 * time.Second
+	maxResponseHeaderBytes    = 1024 * 1024
+	serverReadHeaderTimeout   = 10 * time.Second
+	serverIdleTimeout         = 2 * time.Minute
+	serverMaxHeaderBytes      = 1024 * 1024
+	shutdownTimeout           = 10 * time.Second
 )
 
 func main() {
@@ -45,9 +45,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	providerRoot := providers.DefaultShareProvidersPath()
+	providerRoot := shareProvidersPath()
 	if providerRoot == "" {
-		logger.Error("provider directory is not configured", "environment", providers.ShareProvidersEnvVar)
+		logger.Error("provider directory is not configured", "environment", sharedProvidersPathEnvVar)
 		os.Exit(1)
 	}
 
@@ -81,7 +81,7 @@ func main() {
 		ConnState: hijacked.connState,
 	}
 
-	logger.Info("starting inference daemon", "address", server.Addr)
+	logger.Info("starting server", "address", server.Addr)
 	if err := serve(ctx, server, cancelRequests, hijacked.close, logger); err != nil {
 		logger.Error("serving requests", "error", err)
 		os.Exit(1)
@@ -223,17 +223,27 @@ func (h *hijackedConnections) close() {
 }
 
 func listenAddress() (string, error) {
-	host := os.Getenv(bindHostEnvVar)
-	if host == "" {
-		host = defaultBindHost
+	address := os.Getenv(bindAddressEnvVar)
+	if address == "" {
+		address = defaultBindAddress
 	}
-	port := defaultBindPort
-	if value := os.Getenv(bindPortEnvVar); value != "" {
-		parsed, err := strconv.Atoi(value)
-		if err != nil || parsed < 1 || parsed > 65535 {
-			return "", fmt.Errorf("%s must be an integer between 1 and 65535", bindPortEnvVar)
-		}
-		port = parsed
+	_, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return "", fmt.Errorf("%s must contain a host and port: %w", bindAddressEnvVar, err)
 	}
-	return net.JoinHostPort(host, strconv.Itoa(port)), nil
+	parsedPort, err := strconv.Atoi(port)
+	if err != nil || parsedPort < 1 || parsedPort > 65535 {
+		return "", fmt.Errorf("%s port must be an integer between 1 and 65535", bindAddressEnvVar)
+	}
+	return address, nil
+}
+
+func shareProvidersPath() string {
+	if path := os.Getenv(sharedProvidersPathEnvVar); path != "" {
+		return path
+	}
+	if snapRoot := os.Getenv("SNAP"); snapRoot != "" {
+		return filepath.Join(snapRoot, "share/providers")
+	}
+	return ""
 }

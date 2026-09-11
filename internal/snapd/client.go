@@ -40,7 +40,7 @@ const (
 )
 
 const (
-	maxResponseBytes = 4 << 20
+	maxResponseBytes = 4 * 1024 * 1024
 
 	DefaultSocketPath = "/run/snapd.socket"
 	EnvVar            = "SNAPD_SOCKET"

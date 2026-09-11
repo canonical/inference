@@ -11,18 +11,6 @@ import (
 	"github.com/joho/godotenv"
 )
 
-const ShareProvidersEnvVar = "INFERENCE_SHARE_PROVIDERS"
-
-func DefaultShareProvidersPath() string {
-	if path := os.Getenv(ShareProvidersEnvVar); path != "" {
-		return path
-	}
-	if snapRoot := os.Getenv("SNAP"); snapRoot != "" {
-		return filepath.Join(snapRoot, "share/providers")
-	}
-	return ""
-}
-
 func ConnectedSnapProviders(root string) ([]Provider, error) {
 	if root == "" {
 		return []Provider{}, nil

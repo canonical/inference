@@ -21,33 +21,6 @@ func writeProviderEnv(t *testing.T, root, name, contents string) {
 	}
 }
 
-func TestDefaultShareProvidersPath(t *testing.T) {
-	t.Run("override", func(t *testing.T) {
-		t.Setenv(ShareProvidersEnvVar, "/override/providers")
-		t.Setenv("SNAP", "/snap/inference/current")
-		if got := DefaultShareProvidersPath(); got != "/override/providers" {
-			t.Fatalf("got %q, want override path", got)
-		}
-	})
-
-	t.Run("snap default", func(t *testing.T) {
-		t.Setenv(ShareProvidersEnvVar, "")
-		t.Setenv("SNAP", "/snap/inference/current")
-		want := "/snap/inference/current/share/providers"
-		if got := DefaultShareProvidersPath(); got != want {
-			t.Fatalf("got %q, want %q", got, want)
-		}
-	})
-
-	t.Run("not configured", func(t *testing.T) {
-		t.Setenv(ShareProvidersEnvVar, "")
-		t.Setenv("SNAP", "")
-		if got := DefaultShareProvidersPath(); got != "" {
-			t.Fatalf("got %q, want empty path", got)
-		}
-	})
-}
-
 func TestConnectedSnapProviders(t *testing.T) {
 	root := t.TempDir()
 	writeProviderEnv(t, root, "custom", `

@@ -8,28 +8,55 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
+func TestShareProvidersPath(t *testing.T) {
+	t.Run("override", func(t *testing.T) {
+		t.Setenv(sharedProvidersPathEnvVar, "/override/providers")
+		t.Setenv("SNAP", "/snap/inference/current")
+		if got := shareProvidersPath(); got != "/override/providers" {
+			t.Fatalf("got %q, want override path", got)
+		}
+	})
+
+	t.Run("snap default", func(t *testing.T) {
+		t.Setenv(sharedProvidersPathEnvVar, "")
+		t.Setenv("SNAP", "/snap/inference/current")
+		want := filepath.Join("/snap/inference/current", "share/providers")
+		if got := shareProvidersPath(); got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("not configured", func(t *testing.T) {
+		t.Setenv(sharedProvidersPathEnvVar, "")
+		t.Setenv("SNAP", "")
+		if got := shareProvidersPath(); got != "" {
+			t.Fatalf("got %q, want empty path", got)
+		}
+	})
+}
+
 func TestListenAddress(t *testing.T) {
 	tests := []struct {
 		name    string
-		host    string
-		port    string
+		address string
 		want    string
 		wantErr bool
 	}{
 		{name: "defaults", want: "127.0.0.1:8400"},
-		{name: "configured", host: "::1", port: "9000", want: "[::1]:9000"},
-		{name: "invalid port", port: "invalid", wantErr: true},
-		{name: "port out of range", port: "65536", wantErr: true},
+		{name: "configured", address: "[::1]:9000", want: "[::1]:9000"},
+		{name: "missing port", address: "127.0.0.1", wantErr: true},
+		{name: "invalid port", address: "127.0.0.1:invalid", wantErr: true},
+		{name: "port out of range", address: "127.0.0.1:65536", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(bindHostEnvVar, tt.host)
-			t.Setenv(bindPortEnvVar, tt.port)
+			t.Setenv(bindAddressEnvVar, tt.address)
 
 			got, err := listenAddress()
 			if (err != nil) != tt.wantErr {

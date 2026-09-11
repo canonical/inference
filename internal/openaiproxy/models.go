@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	maxModelsResponseSize = 4 << 20
-	maxProxyRequestSize   = 16 << 20
+	maxModelsResponseSize = 4 * 1024 * 1024
+	maxProxyRequestSize   = 16 * 1024 * 1024
 	modelDiscoveryTimeout = 15 * time.Second
 	statusClientClosed    = 499
 )
@@ -257,6 +257,7 @@ func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, er
 			h.logger.Error(
 				"refreshing provider",
 				"provider", result.provider.Name,
+				"provider_url", loggableProviderURL(result.provider.BaseURL),
 				"duration", result.duration,
 				"error", result.err,
 			)
@@ -404,7 +405,12 @@ func (h *ModelsHandler) proxy(
 	}
 	target, err := url.Parse(route.baseURL)
 	if err != nil {
-		logger.Error("parsing provider URL", "provider", route.providerName, "error", redactURLError(err))
+		logger.Error(
+			"parsing provider URL",
+			"provider", route.providerName,
+			"provider_url", loggableProviderURL(route.baseURL),
+			"error", redactURLError(err),
+		)
 		writeError(w, http.StatusBadGateway, "The inference provider is unavailable.", "service_unavailable")
 		return
 	}
@@ -433,7 +439,15 @@ func (h *ModelsHandler) proxy(
 		return nil
 	}
 	proxy.ErrorHandler = func(responseWriter http.ResponseWriter, request *http.Request, proxyErr error) {
-		handleProxyError(responseWriter, request, proxyErr, logger, route.providerName, requestedModel)
+		handleProxyError(
+			responseWriter,
+			request,
+			proxyErr,
+			logger,
+			route.providerName,
+			route.baseURL,
+			requestedModel,
+		)
 	}
 	defer func() {
 		recovered := recover()
@@ -446,6 +460,7 @@ func (h *ModelsHandler) proxy(
 		logger.Info(
 			"upstream response stream terminated",
 			"provider", route.providerName,
+			"provider_url", loggableProviderURL(route.baseURL),
 			"model", requestedModel,
 		)
 	}()
@@ -504,6 +519,18 @@ func redactURLError(err error) error {
 		return fmt.Errorf("%s: %w", urlError.Op, urlError.Err)
 	}
 	return err
+}
+
+func loggableProviderURL(value string) string {
+	providerURL, err := url.Parse(value)
+	if err != nil {
+		return "<invalid>"
+	}
+	providerURL.User = nil
+	providerURL.RawQuery = ""
+	providerURL.ForceQuery = false
+	providerURL.Fragment = ""
+	return providerURL.String()
 }
 
 func proxyPath(baseURL, requestURL *url.URL) (string, string) {

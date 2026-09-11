@@ -174,12 +174,16 @@ func TestModelsHandlerSkipsUnavailableProvider(t *testing.T) {
 	root := t.TempDir()
 	writeProvider(t, root, "healthy", "healthy", healthy.URL+"/v1")
 	writeProvider(t, root, "broken", "broken", "http://127.0.0.1:1/v1")
-	handler := NewModelsHandler(connectedProviderLister(root), healthy.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	var logs strings.Builder
+	handler := NewModelsHandler(connectedProviderLister(root), healthy.Client(), slog.New(slog.NewTextHandler(&logs, nil)))
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":"healthy/ready"`) {
 		t.Fatalf("got status %d body %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(logs.String(), "provider_url=http://127.0.0.1:1/v1") {
+		t.Errorf("logs do not contain failed provider URL:\n%s", logs.String())
 	}
 }
 

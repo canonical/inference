@@ -20,7 +20,7 @@ const (
 	// EnvVar overrides the default catalog location under SNAP_COMMON.
 	EnvVar = "INFERENCE_SNAPS_CATALOG"
 
-	maxCatalogSize = 4 << 20
+	maxCatalogSizeBytes = 4 * 1024 * 1024
 )
 
 var ErrNotConfigured = errors.New("snap catalog path is not configured")
@@ -124,12 +124,12 @@ func (r Refresher) Refresh(ctx context.Context) error {
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("fetching snap catalog: HTTP %s", response.Status)
 	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, maxCatalogSize+1))
+	data, err := io.ReadAll(io.LimitReader(response.Body, maxCatalogSizeBytes+1))
 	if err != nil {
 		return fmt.Errorf("reading snap catalog response: %w", err)
 	}
-	if len(data) > maxCatalogSize {
-		return fmt.Errorf("snap catalog response exceeded %d bytes", maxCatalogSize)
+	if len(data) > maxCatalogSizeBytes {
+		return fmt.Errorf("snap catalog response exceeded %d bytes", maxCatalogSizeBytes)
 	}
 	if _, err := ParseEntries(data); err != nil {
 		return err

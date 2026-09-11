@@ -4,14 +4,16 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"path/filepath"
 
-	"github.com/canonical/inference/cmd/cli/commands"
-	"github.com/canonical/inference/cmd/cli/common"
-	"github.com/canonical/inference/internal/providers"
+	"github.com/canonical/inference/cmd/inference/commands"
+	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
 	"github.com/spf13/cobra"
 )
+
+const sharedProvidersPathEnvVar = "SHARED_PROVIDERS_PATH"
 
 func main() {
 	ctx := &common.Context{
@@ -19,7 +21,7 @@ func main() {
 		Stderr:             os.Stderr,
 		SnapdClient:        snapd.NewClient(),
 		SnapCatalog:        snapcatalog.NewReader(),
-		ShareProvidersPath: providers.DefaultShareProvidersPath(),
+		ShareProvidersPath: shareProvidersPath(),
 	}
 
 	commandCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -35,6 +37,16 @@ func main() {
 	if err := root(ctx).ExecuteContext(commandCtx); err != nil {
 		os.Exit(1)
 	}
+}
+
+func shareProvidersPath() string {
+	if path := os.Getenv(sharedProvidersPathEnvVar); path != "" {
+		return path
+	}
+	if snapRoot := os.Getenv("SNAP"); snapRoot != "" {
+		return filepath.Join(snapRoot, "share/providers")
+	}
+	return ""
 }
 
 func root(ctx *common.Context) *cobra.Command {
