@@ -48,28 +48,42 @@ func writeAsyncAccepted(w http.ResponseWriter, changeID string) {
 	fmt.Fprintf(w, `{"type":"async","status":"Accepted","status-code":202,"change":%q}`, changeID)
 }
 
-func TestProgressPrinter_NonTerminalSuppressesTransientProgress(t *testing.T) {
+func TestProgressPrinter_NonTerminalPrintsEachStartedTaskOnce(t *testing.T) {
 	var buf bytes.Buffer
 	progress := newProgressPrinter(&buf)
 
-	progress.Update(snapd.Change{Tasks: []snapd.Task{{
-		ID:      "1",
-		Summary: "Download component",
-		Status:  "Doing",
-		Progress: snapd.TaskProgress{
-			Done:  10,
-			Total: 100,
+	change := snapd.Change{Tasks: []snapd.Task{
+		{
+			ID:      "1",
+			Summary: "Mount snap",
+			Status:  "Done",
 		},
-	}}})
-	progress.Notify("snapd log message")
+		{
+			ID:      "2",
+			Summary: "Download component",
+			Status:  "Doing",
+			Progress: snapd.TaskProgress{
+				Done:  10,
+				Total: 100,
+			},
+		},
+		{
+			ID:      "3",
+			Summary: "Run install hook",
+			Status:  "Do",
+		},
+	}}
+	progress.Update(change)
+	change.Tasks[1].Progress.Done = 20
+	progress.Update(change)
 	progress.Finished()
 
-	if got, want := buf.String(), "snapd log message\n"; got != want {
+	if got, want := buf.String(), "Mount snap\nDownload component\n"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
 
-func TestProgressPrinter_NonTerminalFileSuppressesTransientProgress(t *testing.T) {
+func TestProgressPrinter_NonTerminalFilePrintsSpinnerMessageOnce(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("creating pipe: %v", err)
@@ -79,13 +93,14 @@ func TestProgressPrinter_NonTerminalFileSuppressesTransientProgress(t *testing.T
 
 	progress := newProgressPrinter(w)
 	progress.Spin("Download component")
+	progress.Spin("Download component")
 	progress.Finished()
 	w.Close()
 
 	buf := make([]byte, 4096)
 	n, _ := r.Read(buf)
-	if got := string(buf[:n]); got != "" {
-		t.Fatalf("non-terminal file received transient progress %q", got)
+	if got, want := string(buf[:n]), "Download component\n"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
 	}
 }
 
@@ -218,7 +233,7 @@ func TestProgressPrinter_PrintsEachTaskLogOnce(t *testing.T) {
 	progress.Update(change)
 	progress.Update(change)
 
-	if got, want := buf.String(), "download started\n"; got != want {
+	if got, want := buf.String(), "Download component\ndownload started\n"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }

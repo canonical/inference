@@ -1,3 +1,29 @@
+/*
+ * Copyright (C) 2017 Canonical Ltd
+ * Copyright (C) 2026 Canonical Ltd
+ *
+ * Portions of this file are adapted from snapd's progress/ansimeter.go and
+ * strutil/quantity/quantity.go:
+ * https://github.com/canonical/snapd
+ *
+ * snapd attributes its quantity formatting code to
+ * github.com/chipaca/quantity, used with permission.
+ *
+ * Modified in 2026 for the inference project.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 3 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package common
 
 import (
@@ -37,6 +63,7 @@ type progressPrinter struct {
 	lineOpen   bool
 	cursorHide bool
 	lastLog    map[string]string
+	reported   map[string]struct{}
 }
 
 func newProgressPrinter(w io.Writer) *progressPrinter {
@@ -44,10 +71,11 @@ func newProgressPrinter(w io.Writer) *progressPrinter {
 		w = io.Discard
 	}
 	p := &progressPrinter{
-		w:       w,
-		now:     time.Now,
-		width:   func() int { return defaultTermCols },
-		lastLog: make(map[string]string),
+		w:        w,
+		now:      time.Now,
+		width:    func() int { return defaultTermCols },
+		lastLog:  make(map[string]string),
+		reported: make(map[string]struct{}),
 	}
 	if file, ok := w.(*os.File); ok && isatty.IsTerminal(file.Fd()) {
 		p.file = file
@@ -64,6 +92,9 @@ func newProgressPrinter(w io.Writer) *progressPrinter {
 }
 
 func (p *progressPrinter) Update(change snapd.Change) {
+	if !p.terminal {
+		p.reportStartedTasks(change.Tasks)
+	}
 	for i := range change.Tasks {
 		if change.Tasks[i].Status == "Wait" {
 			p.notifyLastLog(change.Tasks[i])
@@ -80,6 +111,25 @@ func (p *progressPrinter) Update(change snapd.Change) {
 		p.setTaskProgress(*task)
 	}
 	p.notifyLastLog(*task)
+}
+
+func (p *progressPrinter) reportStartedTasks(tasks []snapd.Task) {
+	for _, task := range tasks {
+		switch task.Status {
+		case "Doing", "Done", "Wait", "Error", "Undoing", "Undone":
+		default:
+			continue
+		}
+		if task.Summary == "" {
+			continue
+		}
+		key := task.ID + "\x00" + task.Summary
+		if _, ok := p.reported[key]; ok {
+			continue
+		}
+		p.Notify(task.Summary)
+		p.reported[key] = struct{}{}
+	}
 }
 
 func activeTask(tasks []snapd.Task) *snapd.Task {
@@ -190,6 +240,14 @@ func (p *progressPrinter) notifyLastLog(task snapd.Task) {
 }
 
 func (p *progressPrinter) Spin(message string) {
+	if !p.terminal {
+		key := "\x00" + message
+		if _, ok := p.reported[key]; !ok {
+			p.Notify(message)
+			p.reported[key] = struct{}{}
+		}
+		return
+	}
 	p.spinTask(snapd.Task{ID: message, Summary: message, Status: "Doing"})
 }
 
