@@ -65,6 +65,30 @@ func (p Provider) Identity() ProviderIdentity {
 
 type ListOptions struct {
 	InstalledOnly bool
+	Name          string
+}
+
+func Find(
+	ctx context.Context,
+	catalog *snapcatalog.Reader,
+	snapdClient *snapd.Client,
+	shareProvidersPath string,
+	name string,
+) (Provider, error) {
+	matches, err := List(ctx, catalog, snapdClient, shareProvidersPath, ListOptions{Name: name})
+	if err != nil {
+		return Provider{}, err
+	}
+
+	switch len(matches) {
+	case 0:
+		return Provider{}, fmt.Errorf("unknown provider %q", name)
+	case 1:
+		return matches[0], nil
+	default:
+		// only to be hit when we add setup for types other than TypeInferenceSnap (e.g. TypeOpenAI)
+		return Provider{}, fmt.Errorf("ambiguous provider %q: matches multiple provider types", name)
+	}
 }
 
 func List(
@@ -114,6 +138,9 @@ func List(
 	// Add snap state and optionally filter for only installed providers
 	result := make([]Provider, 0, len(merged))
 	for _, provider := range merged {
+		if options.Name != "" && provider.Name != options.Name {
+			continue
+		}
 		if provider.Type == TypeInferenceSnap {
 			state, err := snapProviderLifecycleState(ctx, snapdClient, provider.Name)
 			if err != nil {

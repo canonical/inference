@@ -110,7 +110,7 @@ func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
 	root := t.TempDir()
 	writeProviderEnv(t, root, "published-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=published\n")
 	writeProviderEnv(t, root, "custom-mount", "OPENAI_BASE_URL=http://localhost:8081/v1\nSNAP_NAME=custom\n")
-	client := newSnapdServer(t, map[string]string{
+	client, _ := newSnapdServer(t, map[string]string{
 		"published": snapd.SnapStatusActive,
 		"custom":    snapd.SnapStatusInstalled,
 	})
@@ -172,7 +172,7 @@ func TestListFailsWhenSnapStatusCannotBeRead(t *testing.T) {
 func TestListFailsWhenCatalogFails(t *testing.T) {
 	root := t.TempDir()
 	writeProviderEnv(t, root, "custom-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=custom\n")
-	client := newSnapdServer(t, map[string]string{"custom": snapd.SnapStatusActive})
+	client, _ := newSnapdServer(t, map[string]string{"custom": snapd.SnapStatusActive})
 
 	_, err := List(
 		context.Background(),
@@ -193,10 +193,11 @@ func TestListFailsWhenConnectedSourceFails(t *testing.T) {
 	}
 
 	catalog := writeCatalog(t, `[]`)
+	client, _ := newSnapdServer(t, nil)
 	_, err := List(
 		context.Background(),
 		catalog,
-		newSnapdServer(t, nil),
+		client,
 		root,
 		ListOptions{},
 	)

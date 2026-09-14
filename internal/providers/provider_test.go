@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/canonical/inference/internal/snapcatalog"
@@ -48,7 +50,7 @@ func writeCatalog(t *testing.T, entries string) *snapcatalog.Reader {
 	return &snapcatalog.Reader{Path: path}
 }
 
-func newSnapdServer(t *testing.T, statuses map[string]string) *snapd.Client {
+func newSnapdServer(t *testing.T, statuses map[string]string) (*snapd.Client, *atomic.Int32) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -58,7 +60,9 @@ func newSnapdServer(t *testing.T, statuses map[string]string) *snapd.Client {
 		t.Fatalf("listening on unix socket: %v", err)
 	}
 
+	var requests atomic.Int32
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
 		name := r.URL.Path[len("/v2/snaps/"):]
 		status, ok := statuses[name]
 		if !ok {
@@ -76,7 +80,7 @@ func newSnapdServer(t *testing.T, statuses map[string]string) *snapd.Client {
 	server.Start()
 	t.Cleanup(server.Close)
 
-	return &snapd.Client{Socket: socket}
+	return &snapd.Client{Socket: socket}, &requests
 }
 
 func TestList(t *testing.T) {
@@ -85,7 +89,7 @@ func TestList(t *testing.T) {
 		{"snap":"qwen3","model_name":"Qwen 3","full_name":"canonical/qwen3","html_url":"https://example.com/qwen3"},
 		{"snap":"smollm2","model_name":"SmolLM2","full_name":"canonical/smollm2","html_url":"https://example.com/smollm2"}
 	]`)
-	client := newSnapdServer(t, map[string]string{
+	client, _ := newSnapdServer(t, map[string]string{
 		"gemma4": snapd.SnapStatusActive,
 		"qwen3":  snapd.SnapStatusInstalled,
 	})
@@ -128,10 +132,76 @@ func TestList(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("searching one provider doesn't querying others", func(t *testing.T) {
+		client, requests := newSnapdServer(t, map[string]string{
+			"gemma4": snapd.SnapStatusActive,
+			"qwen3":  snapd.SnapStatusInstalled,
+		})
+
+		got, err := List(context.Background(), catalog, client, "", ListOptions{Name: "gemma4"})
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+
+		want := []Provider{
+			{Name: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected},
+		}
+		if len(got) != len(want) {
+			t.Fatalf("got %d providers, want %d: %+v", len(got), len(want), got)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("provider %d: got %+v, want %+v", i, got[i], want[i])
+			}
+		}
+
+		// filtering happens before the snapd lookup
+		if n := requests.Load(); n != 1 {
+			t.Fatalf("expected exactly 1 snapd request, got %d", n)
+		}
+	})
+}
+
+func TestFind(t *testing.T) {
+	catalog := writeCatalog(t, `[
+		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"},
+		{"snap":"qwen3","model_name":"Qwen 3","full_name":"canonical/qwen3","html_url":"https://example.com/qwen3"}
+	]`)
+	client, requests := newSnapdServer(t, map[string]string{
+		"gemma4": snapd.SnapStatusActive,
+		"qwen3":  snapd.SnapStatusInstalled,
+	})
+
+	t.Run("matching provider", func(t *testing.T) {
+		got, err := Find(context.Background(), catalog, client, "", "gemma4")
+		if err != nil {
+			t.Fatalf("Find: %v", err)
+		}
+		want := Provider{Name: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected}
+		if got != want {
+			t.Fatalf("got %+v, want %+v", got, want)
+		}
+
+		// filtering happens before the snapd lookup
+		if n := requests.Load(); n != 1 {
+			t.Fatalf("expected exactly 1 snapd request, got %d", n)
+		}
+	})
+
+	t.Run("nothing matches", func(t *testing.T) {
+		_, err := Find(context.Background(), catalog, client, "", "oopsie-daisy")
+		if err == nil {
+			t.Fatal("expected an error for an unknown provider")
+		}
+		if !strings.Contains(err.Error(), "oopsie-daisy") {
+			t.Fatalf("expected error to mention the requested name, got: %v", err)
+		}
+	})
 }
 
 func TestListTreatsMissingCatalogAsEmpty(t *testing.T) {
-	client := newSnapdServer(t, nil)
+	client, _ := newSnapdServer(t, nil)
 
 	for _, catalog := range []*snapcatalog.Reader{
 		{},
@@ -149,7 +219,7 @@ func TestListTreatsMissingCatalogAsEmpty(t *testing.T) {
 
 func TestListReturnsMalformedCatalogError(t *testing.T) {
 	catalog := writeCatalog(t, "not json")
-	client := newSnapdServer(t, nil)
+	client, _ := newSnapdServer(t, nil)
 
 	if _, err := List(context.Background(), catalog, client, "", ListOptions{}); err == nil {
 		t.Fatal("expected malformed catalog error")
