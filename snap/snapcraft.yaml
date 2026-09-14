@@ -35,6 +35,7 @@ parts:
     source: snap/local
     organize:
       completion.bash: bin/completion.bash
+      inference.d.sh: bin/inference.d.sh
 
   providers:
     plugin: dump
@@ -51,7 +52,7 @@ apps:
       - snapd-control
 
   d:
-    command: bin/inference_d
+    command: bin/inference.d.sh
     daemon: simple
     install-mode: enable
     restart-condition: on-failure

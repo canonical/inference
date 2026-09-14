@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -22,9 +24,9 @@ import (
 )
 
 const (
-	bindAddressEnvVar         = "SERVER_BIND_ADDRESS"
 	sharedProvidersPathEnvVar = "SHARED_PROVIDERS_PATH"
-	defaultBindAddress        = "127.0.0.1:8400"
+	defaultHost               = "127.0.0.1"
+	defaultPort               = 8400
 	catalogRefreshInterval    = 12 * time.Hour
 	catalogRequestTimeout     = 30 * time.Second
 	maxResponseHeaderBytes    = 1024 * 1024
@@ -36,10 +38,19 @@ const (
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	options, err := parseServerOptions(os.Args[1:], os.Stderr)
+	if errors.Is(err, flag.ErrHelp) {
+		return
+	}
+	if err != nil {
+		logger.Error("parsing arguments", "error", err)
+		os.Exit(1)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	address, err := listenAddress()
+	address, err := listenAddress(options.host, options.port)
 	if err != nil {
 		logger.Error("configuring listen address", "error", err)
 		os.Exit(1)
@@ -222,20 +233,31 @@ func (h *hijackedConnections) close() {
 	}
 }
 
-func listenAddress() (string, error) {
-	address := os.Getenv(bindAddressEnvVar)
-	if address == "" {
-		address = defaultBindAddress
+type serverOptions struct {
+	host string
+	port int
+}
+
+func parseServerOptions(args []string, output io.Writer) (serverOptions, error) {
+	options := serverOptions{}
+	flags := flag.NewFlagSet("inference_d", flag.ContinueOnError)
+	flags.SetOutput(output)
+	flags.StringVar(&options.host, "host", defaultHost, "host to bind to")
+	flags.IntVar(&options.port, "port", defaultPort, "port to bind to")
+	if err := flags.Parse(args); err != nil {
+		return serverOptions{}, err
 	}
-	_, port, err := net.SplitHostPort(address)
-	if err != nil {
-		return "", fmt.Errorf("%s must contain a host and port: %w", bindAddressEnvVar, err)
+	if flags.NArg() != 0 {
+		return serverOptions{}, fmt.Errorf("unexpected arguments: %v", flags.Args())
 	}
-	parsedPort, err := strconv.Atoi(port)
-	if err != nil || parsedPort < 1 || parsedPort > 65535 {
-		return "", fmt.Errorf("%s port must be an integer between 1 and 65535", bindAddressEnvVar)
+	return options, nil
+}
+
+func listenAddress(host string, port int) (string, error) {
+	if port < 1 || port > 65535 {
+		return "", errors.New("port must be an integer between 1 and 65535")
 	}
-	return address, nil
+	return net.JoinHostPort(host, strconv.Itoa(port)), nil
 }
 
 func shareProvidersPath() string {

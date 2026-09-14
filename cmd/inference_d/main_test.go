@@ -44,26 +44,53 @@ func TestShareProvidersPath(t *testing.T) {
 func TestListenAddress(t *testing.T) {
 	tests := []struct {
 		name    string
-		address string
+		host    string
+		port    int
 		want    string
 		wantErr bool
 	}{
-		{name: "defaults", want: "127.0.0.1:8400"},
-		{name: "configured", address: "[::1]:9000", want: "[::1]:9000"},
-		{name: "missing port", address: "127.0.0.1", wantErr: true},
-		{name: "invalid port", address: "127.0.0.1:invalid", wantErr: true},
-		{name: "port out of range", address: "127.0.0.1:65536", wantErr: true},
+		{name: "defaults", host: defaultHost, port: defaultPort, want: defaultBindAddress},
+		{name: "configured", host: "::1", port: 9000, want: "[::1]:9000"},
+		{name: "port too low", host: "127.0.0.1", port: 0, wantErr: true},
+		{name: "port too high", host: "127.0.0.1", port: 65536, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(bindAddressEnvVar, tt.address)
-
-			got, err := listenAddress()
+			got, err := listenAddress(tt.host, tt.port)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("listenAddress() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if got != tt.want {
 				t.Fatalf("listenAddress() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseServerOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		want    serverOptions
+		wantErr bool
+	}{
+		{name: "defaults", want: serverOptions{host: defaultHost, port: defaultPort}},
+		{
+			name: "configured",
+			args: []string{"--host", "0.0.0.0", "--port", "9000"},
+			want: serverOptions{host: "0.0.0.0", port: 9000},
+		},
+		{name: "invalid port", args: []string{"--port", "invalid"}, wantErr: true},
+		{name: "positional argument", args: []string{"localhost"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseServerOptions(tt.args, io.Discard)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parseServerOptions() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Fatalf("parseServerOptions() = %#v, want %#v", got, tt.want)
 			}
 		})
 	}

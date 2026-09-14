@@ -1,4 +1,7 @@
 #!/bin/sh
 set -eu
 
+snapctl set http.port="8400"
+snapctl set http.host="127.0.0.1"
+
 cp "$SNAP/onboarded-snaps.json" "$SNAP_COMMON/onboarded-snaps.json"
