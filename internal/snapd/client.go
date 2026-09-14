@@ -34,9 +34,11 @@ const (
 	// StatusNotInstalled is returned by Client.Status when a snap is not
 	// installed. Unlike SnapStatusActive and SnapStatusInstalled, snapd itself
 	// has no such value: it simply omits the snap from its API responses.
-	StatusNotInstalled  = "not installed"
-	SnapStatusActive    = "active"
-	SnapStatusInstalled = "installed"
+	StatusNotInstalled    = "not installed"
+	SnapStatusActive      = "active"
+	SnapStatusInstalled   = "installed"
+	ServiceStatusActive   = "active"
+	ServiceStatusInactive = "inactive"
 )
 
 const (
@@ -71,6 +73,23 @@ func (c *Client) Status(ctx context.Context, name string) (string, error) {
 	}
 }
 
+func (c *Client) ServiceStatus(ctx context.Context, snapName, serviceName string) (string, error) {
+	apps, err := getServices(ctx, c.httpClient(), snapName+"."+serviceName)
+	if err != nil {
+		return "", err
+	}
+	if len(apps) != 1 {
+		return "", fmt.Errorf("snapd returned %d services for %q", len(apps), snapName+"."+serviceName)
+	}
+	if apps[0].Snap != snapName || apps[0].Name != serviceName {
+		return "", fmt.Errorf("snapd returned unexpected service %q", apps[0].Snap+"."+apps[0].Name)
+	}
+	if apps[0].Active {
+		return ServiceStatusActive, nil
+	}
+	return ServiceStatusInactive, nil
+}
+
 func (c *Client) httpClient() *http.Client {
 	socket := c.Socket
 	if socket == "" {
@@ -80,6 +99,40 @@ func (c *Client) httpClient() *http.Client {
 		return c.newClient(socket)
 	}
 	return newHTTPClient(socket)
+}
+
+func getServices(ctx context.Context, client *http.Client, name string) ([]appInfo, error) {
+	query := neturl.Values{
+		"names":  []string{name},
+		"select": []string{"service"},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost/v2/apps?"+query.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("building snapd service request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, wrapCallErr(err)
+	}
+	defer resp.Body.Close()
+
+	env, err := decodeEnvelope(resp)
+	if err != nil {
+		return nil, err
+	}
+	if env.Type != "sync" {
+		return nil, fmt.Errorf("snapd returned unexpected response type %q", env.Type)
+	}
+	if len(env.Result) == 0 || string(env.Result) == "null" {
+		return nil, fmt.Errorf("snapd response omitted the result")
+	}
+
+	var apps []appInfo
+	if err := json.Unmarshal(env.Result, &apps); err != nil {
+		return nil, fmt.Errorf("decoding snapd services: %w", err)
+	}
+	return apps, nil
 }
 
 func (c *Client) Install(ctx context.Context, name string) (changeID string, err error) {
@@ -384,6 +437,12 @@ type errorResult struct {
 type snapInfo struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
+}
+
+type appInfo struct {
+	Snap   string `json:"snap"`
+	Name   string `json:"name"`
+	Active bool   `json:"active"`
 }
 
 type Change struct {

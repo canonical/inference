@@ -62,6 +62,52 @@ func TestStatus_ActiveSnapIsEnabled(t *testing.T) {
 	}
 }
 
+func TestServiceStatus(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		active bool
+		want   string
+	}{
+		{name: "active", active: true, want: ServiceStatusActive},
+		{name: "inactive", active: false, want: ServiceStatusInactive},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/v2/apps" {
+					t.Errorf("unexpected path %q", r.URL.Path)
+				}
+				if got := r.URL.Query().Get("names"); got != "inference.d" {
+					t.Errorf("unexpected names query %q", got)
+				}
+				if got := r.URL.Query().Get("select"); got != "service" {
+					t.Errorf("unexpected select query %q", got)
+				}
+				fmt.Fprintf(w, `{"type":"sync","status":"OK","result":[{"snap":"inference","name":"d","daemon":"simple","active":%t}]}`, test.active)
+			})
+
+			client := &Client{Socket: socket}
+			got, err := client.ServiceStatus(context.Background(), "inference", "d")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("got %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestServiceStatusRejectsMissingService(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"type":"sync","status":"OK","result":[]}`)
+	})
+
+	client := &Client{Socket: socket}
+	if _, err := client.ServiceStatus(context.Background(), "inference", "d"); err == nil {
+		t.Fatal("expected missing service to be rejected")
+	}
+}
+
 func TestStatus_InstalledSnapIsDisabled(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"name":"qwen3","status":"installed"}}`)

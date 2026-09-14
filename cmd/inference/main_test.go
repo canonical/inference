@@ -35,15 +35,18 @@ func TestShareProvidersPath(t *testing.T) {
 	})
 }
 
-func TestRootIncludesProvidersCommand(t *testing.T) {
+func TestRootIncludesCommands(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	ctx := &common.Context{Stdout: &stdout, Stderr: &stderr}
 	rootCmd := root(ctx)
-	cmd, _, err := rootCmd.Find([]string{"providers"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cmd == rootCmd || cmd.Name() != "providers" {
-		t.Fatal("providers subcommand is not registered")
+
+	for _, name := range []string{"providers", "install", "remove", "status"} {
+		cmd, _, err := rootCmd.Find([]string{name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cmd == rootCmd || cmd.Name() != name {
+			t.Fatalf("%s subcommand is not registered", name)
+		}
 	}
 }
