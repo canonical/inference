@@ -1,11 +1,13 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -21,6 +23,9 @@ func statusSnapdClient(t *testing.T, active bool) *snapd.Client {
 		t.Fatal(err)
 	}
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/apps" {
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
 		fmt.Fprintf(w, `{"type":"sync","status":"OK","result":[{"snap":"inference","name":"d","active":%t}]}`, active)
 	}))
 	server.Listener.Close()
@@ -36,10 +41,18 @@ func TestStatusServicesOutput(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "yaml", want: "services:\n  proxy: active\n"},
-		{name: "json", args: []string{"--format=json"}, want: "{\n  \"services\": {\n    \"proxy\": \"active\"\n  }\n}\n"},
+		{
+			name: "yaml",
+			want: "services:\n  proxy: active\nproxy:\n  openai:\n    base-url: unavailable\n",
+		},
+		{
+			name: "json",
+			args: []string{"--format=json"},
+			want: "{\n  \"services\": {\n    \"proxy\": \"active\"\n  },\n  \"proxy\": {\n    \"openai\": {\n      \"base-url\": \"unavailable\"\n    }\n  }\n}\n",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("SNAP", "")
 			ctx, stdout, stderr := newTestContext()
 			ctx.SnapdClient = statusSnapdClient(t, true)
 			if err := execute(Status(ctx), test.args...); err != nil {
@@ -52,6 +65,65 @@ func TestStatusServicesOutput(t *testing.T) {
 				t.Fatalf("unexpected stderr: %q", stderr.String())
 			}
 		})
+	}
+}
+
+func TestProxyOpenAIBaseURL(t *testing.T) {
+	t.Setenv("SNAP", "/snap/inference/current")
+	binDir := t.TempDir()
+	snapctlPath := filepath.Join(binDir, "snapctl")
+	snapctl := `#!/bin/sh
+case "$2" in
+  http.host) printf '%s\n' '::1' ;;
+  http.port) printf '%s\n' '8401' ;;
+  *) exit 1 ;;
+esac
+`
+	if err := os.WriteFile(snapctlPath, []byte(snapctl), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	got, err := proxyOpenAIBaseURL(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "http://[::1]:8401/v1" {
+		t.Fatalf("got %q, want %q", got, "http://[::1]:8401/v1")
+	}
+}
+
+func TestProxyOpenAIBaseURLOutsideSnap(t *testing.T) {
+	t.Setenv("SNAP", "")
+
+	got, err := proxyOpenAIBaseURL(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "unavailable" {
+		t.Fatalf("got %q, want %q", got, "unavailable")
+	}
+}
+
+func TestSnapConfigurationValuePreservesSnapctlError(t *testing.T) {
+	binDir := t.TempDir()
+	snapctlPath := filepath.Join(binDir, "snapctl")
+	snapctl := `#!/bin/sh
+printf '%s\n' 'error: snapctl: cannot invoke snapctl operation commands (here "get") from outside of a snap' >&2
+exit 1
+`
+	if err := os.WriteFile(snapctlPath, []byte(snapctl), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	_, err := snapConfigurationValue(context.Background(), "http.host")
+	if err == nil {
+		t.Fatal("expected snapctl error")
+	}
+	want := `error: snapctl: cannot invoke snapctl operation commands (here "get") from outside of a snap`
+	if err.Error() != want {
+		t.Fatalf("got %q, want %q", err, want)
 	}
 }
 

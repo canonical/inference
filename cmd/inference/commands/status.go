@@ -4,7 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
+	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/snapd"
@@ -73,9 +78,54 @@ func buildStatus(ctx context.Context, snapdClient *snapd.Client) (statusOutput, 
 	if err != nil {
 		return statusOutput{}, common.FriendlySnapdError(err)
 	}
+
+	baseURL, err := proxyOpenAIBaseURL(ctx)
+	if err != nil {
+		return statusOutput{}, err
+	}
+
 	return statusOutput{
 		Services: map[string]string{"proxy": proxyStatus},
+		Proxy: &statusProxy{
+			OpenAI: statusOpenAIProxy{
+				BaseURL: baseURL,
+			},
+		},
 	}, nil
+}
+
+func proxyOpenAIBaseURL(ctx context.Context) (string, error) {
+	if os.Getenv("SNAP") == "" || os.Getenv("SNAP_NAME") != inferenceSnapName {
+		return "unavailable", nil
+	}
+
+	host, err := snapConfigurationValue(ctx, "http.host")
+	if err != nil {
+		return "", err
+	}
+	if host == "" {
+		return "", fmt.Errorf("inference snap configuration option http.host is empty")
+	}
+
+	port, err := snapConfigurationValue(ctx, "http.port")
+	if err != nil {
+		return "", err
+	}
+	if port == "" {
+		return "", fmt.Errorf("inference snap configuration option http.port is empty")
+	}
+	return "http://" + net.JoinHostPort(host, port) + "/v1", nil
+}
+
+func snapConfigurationValue(ctx context.Context, key string) (string, error) {
+	output, err := exec.CommandContext(ctx, "snapctl", "get", key).CombinedOutput()
+	if err != nil {
+		if message := strings.TrimSpace(string(output)); message != "" {
+			return "", errors.New(message)
+		}
+		return "", fmt.Errorf("reading inference snap configuration option %s: %w", key, err)
+	}
+	return strings.TrimSpace(string(output)), nil
 }
 
 func renderStatus(status statusOutput, format string) (string, error) {
