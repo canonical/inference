@@ -158,7 +158,7 @@ func waitForChange(ctx context.Context, client *snapd.Client, changeID string, p
 			if errors.Is(err, snapd.ErrTransient) && transientFailures < maxTransientPollRetries {
 				delay := pollInterval * time.Duration(1<<transientFailures)
 				transientFailures++
-				progress.Spin("Waiting for snapd to restart")
+				progress.Spin("Waiting for snapd to respond")
 				if err := waitForNextPoll(ctx, delay); err != nil {
 					return err
 				}
