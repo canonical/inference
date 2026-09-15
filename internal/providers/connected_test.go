@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/canonical/inference/internal/snapcatalog/snapcatalogtest"
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/snapd/snapdtest"
 )
 
 func writeProviderEnv(t *testing.T, root, name, contents string) {
@@ -103,14 +105,14 @@ func TestConnectedSnapProvidersRejectsDuplicateSnapName(t *testing.T) {
 }
 
 func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
-	catalog := writeCatalog(t, `[
+	catalog := snapcatalogtest.WriteCatalog(t, `[
 		{"snap":"published","model_name":"Published","full_name":"canonical/published","html_url":"https://example.com/published"},
 		{"snap":"disconnected","model_name":"Disconnected","full_name":"canonical/disconnected","html_url":"https://example.com/disconnected"}
 	]`)
 	root := t.TempDir()
 	writeProviderEnv(t, root, "published-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=published\n")
 	writeProviderEnv(t, root, "custom-mount", "OPENAI_BASE_URL=http://localhost:8081/v1\nSNAP_NAME=custom\n")
-	client, _ := newSnapdServer(t, map[string]string{
+	client, _ := snapdtest.NewFakeServer(t, map[string]string{
 		"published": snapd.SnapStatusActive,
 		"custom":    snapd.SnapStatusInstalled,
 	})
@@ -152,7 +154,7 @@ func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
 }
 
 func TestListFailsWhenSnapStatusCannotBeRead(t *testing.T) {
-	catalog := writeCatalog(t, `[]`)
+	catalog := snapcatalogtest.WriteCatalog(t, `[]`)
 	root := t.TempDir()
 	writeProviderEnv(t, root, "custom-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=custom\n")
 	client := &snapd.Client{Socket: filepath.Join(t.TempDir(), "missing.socket")}
@@ -172,11 +174,11 @@ func TestListFailsWhenSnapStatusCannotBeRead(t *testing.T) {
 func TestListFailsWhenCatalogFails(t *testing.T) {
 	root := t.TempDir()
 	writeProviderEnv(t, root, "custom-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=custom\n")
-	client, _ := newSnapdServer(t, map[string]string{"custom": snapd.SnapStatusActive})
+	client, _ := snapdtest.NewFakeServer(t, map[string]string{"custom": snapd.SnapStatusActive})
 
 	_, err := List(
 		context.Background(),
-		writeCatalog(t, "not json"),
+		snapcatalogtest.WriteCatalog(t, "not json"),
 		client,
 		root,
 		ListOptions{},
@@ -192,8 +194,8 @@ func TestListFailsWhenConnectedSourceFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	catalog := writeCatalog(t, `[]`)
-	client, _ := newSnapdServer(t, nil)
+	catalog := snapcatalogtest.WriteCatalog(t, `[]`)
+	client, _ := snapdtest.NewFakeServer(t, nil)
 	_, err := List(
 		context.Background(),
 		catalog,

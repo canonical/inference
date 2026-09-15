@@ -1,18 +1,13 @@
 package commands
 
 import (
-	"fmt"
-	"net"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/canonical/inference/internal/providers"
-	"github.com/canonical/inference/internal/snapcatalog"
+	"github.com/canonical/inference/internal/snapcatalog/snapcatalogtest"
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/snapd/snapdtest"
 )
 
 func TestInfoRendering(t *testing.T) {
@@ -99,54 +94,12 @@ func TestInfo_TooManyPositionalArgsAreRejected(t *testing.T) {
 	}
 }
 
-func writeCatalog(t *testing.T, entries string) *snapcatalog.Reader {
-	t.Helper()
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, snapcatalog.Filename)
-	if err := os.WriteFile(path, []byte(entries), 0o644); err != nil {
-		t.Fatalf("writing catalog: %v", err)
-	}
-	return &snapcatalog.Reader{Path: path}
-}
-
-func newSnapdServer(t *testing.T, statuses map[string]string) *snapd.Client {
-	t.Helper()
-
-	dir := t.TempDir()
-	socket := filepath.Join(dir, "snapd.socket")
-	listener, err := net.Listen("unix", socket)
-	if err != nil {
-		t.Fatalf("listening on unix socket: %v", err)
-	}
-
-	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		name := r.URL.Path[len("/v2/snaps/"):]
-		status, ok := statuses[name]
-		if !ok {
-			w.WriteHeader(http.StatusNotFound)
-			fmt.Fprintf(w, `{"type":"error","status":"Not Found","status-code":404,"result":{
-				"message":"snap \"%s\" not found",
-				"kind":"snap-not-found"
-			}}`, name)
-			return
-		}
-		fmt.Fprintf(w, `{"type":"sync","status":"OK","result":{"name":%q,"status":%q}}`, name, status)
-	}))
-	server.Listener.Close()
-	server.Listener = listener
-	server.Start()
-	t.Cleanup(server.Close)
-
-	return &snapd.Client{Socket: socket}
-}
-
 func TestInfo_PrintsProvider(t *testing.T) {
 	ctx, stdout, _ := newTestContext()
-	ctx.SnapCatalog = writeCatalog(t, `[
+	ctx.SnapCatalog = snapcatalogtest.WriteCatalog(t, `[
 		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"}
 	]`)
-	ctx.SnapdClient = newSnapdServer(t, map[string]string{"gemma4": snapd.SnapStatusActive})
+	ctx.SnapdClient, _ = snapdtest.NewFakeServer(t, map[string]string{"gemma4": snapd.SnapStatusActive})
 
 	if err := execute(Info(ctx), "gemma4"); err != nil {
 		t.Fatalf("Info: %v", err)
@@ -160,8 +113,8 @@ func TestInfo_PrintsProvider(t *testing.T) {
 
 func TestInfo_UnknownProvider(t *testing.T) {
 	ctx, stdout, _ := newTestContext()
-	ctx.SnapCatalog = writeCatalog(t, `[]`)
-	ctx.SnapdClient = newSnapdServer(t, nil)
+	ctx.SnapCatalog = snapcatalogtest.WriteCatalog(t, `[]`)
+	ctx.SnapdClient, _ = snapdtest.NewFakeServer(t, nil)
 
 	err := execute(Info(ctx), "some-imaginary-provider")
 	if err == nil {

@@ -2,18 +2,14 @@ package providers
 
 import (
 	"context"
-	"fmt"
-	"net"
-	"net/http"
-	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/canonical/inference/internal/snapcatalog"
+	"github.com/canonical/inference/internal/snapcatalog/snapcatalogtest"
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/snapd/snapdtest"
 )
 
 func TestProviderInstalled(t *testing.T) {
@@ -39,57 +35,13 @@ func TestProviderInstalled(t *testing.T) {
 	}
 }
 
-func writeCatalog(t *testing.T, entries string) *snapcatalog.Reader {
-	t.Helper()
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, snapcatalog.Filename)
-	if err := os.WriteFile(path, []byte(entries), 0o644); err != nil {
-		t.Fatalf("writing catalog: %v", err)
-	}
-	return &snapcatalog.Reader{Path: path}
-}
-
-func newSnapdServer(t *testing.T, statuses map[string]string) (*snapd.Client, *atomic.Int32) {
-	t.Helper()
-
-	dir := t.TempDir()
-	socket := filepath.Join(dir, "snapd.socket")
-	listener, err := net.Listen("unix", socket)
-	if err != nil {
-		t.Fatalf("listening on unix socket: %v", err)
-	}
-
-	var requests atomic.Int32
-	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests.Add(1)
-		name := r.URL.Path[len("/v2/snaps/"):]
-		status, ok := statuses[name]
-		if !ok {
-			w.WriteHeader(http.StatusNotFound)
-			fmt.Fprintf(w, `{"type":"error","status":"Not Found","status-code":404,"result":{
-				"message":"snap \"%s\" not found",
-				"kind":"snap-not-found"
-			}}`, name)
-			return
-		}
-		fmt.Fprintf(w, `{"type":"sync","status":"OK","result":{"name":%q,"status":%q}}`, name, status)
-	}))
-	server.Listener.Close()
-	server.Listener = listener
-	server.Start()
-	t.Cleanup(server.Close)
-
-	return &snapd.Client{Socket: socket}, &requests
-}
-
 func TestList(t *testing.T) {
-	catalog := writeCatalog(t, `[
+	catalog := snapcatalogtest.WriteCatalog(t, `[
 		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"},
 		{"snap":"qwen3","model_name":"Qwen 3","full_name":"canonical/qwen3","html_url":"https://example.com/qwen3"},
 		{"snap":"smollm2","model_name":"SmolLM2","full_name":"canonical/smollm2","html_url":"https://example.com/smollm2"}
 	]`)
-	client, _ := newSnapdServer(t, map[string]string{
+	client, _ := snapdtest.NewFakeServer(t, map[string]string{
 		"gemma4": snapd.SnapStatusActive,
 		"qwen3":  snapd.SnapStatusInstalled,
 	})
@@ -134,7 +86,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("searching one provider doesn't query others", func(t *testing.T) {
-		client, requests := newSnapdServer(t, map[string]string{
+		client, requests := snapdtest.NewFakeServer(t, map[string]string{
 			"gemma4": snapd.SnapStatusActive,
 			"qwen3":  snapd.SnapStatusInstalled,
 		})
@@ -164,11 +116,11 @@ func TestList(t *testing.T) {
 }
 
 func TestFind(t *testing.T) {
-	catalog := writeCatalog(t, `[
+	catalog := snapcatalogtest.WriteCatalog(t, `[
 		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"},
 		{"snap":"qwen3","model_name":"Qwen 3","full_name":"canonical/qwen3","html_url":"https://example.com/qwen3"}
 	]`)
-	client, requests := newSnapdServer(t, map[string]string{
+	client, requests := snapdtest.NewFakeServer(t, map[string]string{
 		"gemma4": snapd.SnapStatusActive,
 		"qwen3":  snapd.SnapStatusInstalled,
 	})
@@ -201,7 +153,7 @@ func TestFind(t *testing.T) {
 }
 
 func TestListTreatsMissingCatalogAsEmpty(t *testing.T) {
-	client, _ := newSnapdServer(t, nil)
+	client, _ := snapdtest.NewFakeServer(t, nil)
 
 	for _, catalog := range []*snapcatalog.Reader{
 		{},
@@ -218,8 +170,8 @@ func TestListTreatsMissingCatalogAsEmpty(t *testing.T) {
 }
 
 func TestListReturnsMalformedCatalogError(t *testing.T) {
-	catalog := writeCatalog(t, "not json")
-	client, _ := newSnapdServer(t, nil)
+	catalog := snapcatalogtest.WriteCatalog(t, "not json")
+	client, _ := snapdtest.NewFakeServer(t, nil)
 
 	if _, err := List(context.Background(), catalog, client, "", ListOptions{}); err == nil {
 		t.Fatal("expected malformed catalog error")
