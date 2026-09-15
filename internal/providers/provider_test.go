@@ -150,6 +150,13 @@ func TestFind(t *testing.T) {
 			t.Fatalf("expected error to mention the requested name, got: %v", err)
 		}
 	})
+
+	t.Run("empty provider", func(t *testing.T) {
+		_, err := Find(context.Background(), catalog, client, "", "")
+		if err == nil {
+			t.Fatal("expected an error for an empty provider")
+		}
+	})
 }
 
 func TestListTreatsMissingCatalogAsEmpty(t *testing.T) {

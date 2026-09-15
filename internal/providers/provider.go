@@ -75,6 +75,10 @@ func Find(
 	shareProvidersPath string,
 	name string,
 ) (Provider, error) {
+	if name == "" {
+		return Provider{}, fmt.Errorf("provider name can't be empty")
+	}
+
 	matches, err := List(ctx, catalog, snapdClient, shareProvidersPath, ListOptions{Name: name})
 	if err != nil {
 		return Provider{}, err
