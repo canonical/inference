@@ -27,9 +27,9 @@ func TestInfoRendering(t *testing.T) {
 			want: `name: gemma4
 type: inference-snap
 state: enabled
-api
-  openai
-    base-url: http://localhost:8336/v1
+api:
+    openai:
+        base-url: http://localhost:8336/v1
 `,
 		},
 		{
@@ -43,9 +43,9 @@ api
 			want: `name: gemma4
 type: inference-snap
 state: enabled
-api
-  openai
-    base-url: http://localhost:8336/v1
+api:
+    openai:
+        base-url: http://localhost:8336/v1
 `,
 		},
 		{
@@ -64,7 +64,10 @@ state: enabled
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := renderInfo(tt.provider)
+			got, err := renderInfo(tt.provider)
+			if err != nil {
+				t.Fatalf("error marshaling data: %q", err)
+			}
 			if got != tt.want {
 				t.Errorf("got:\n%q\nwant:\n%q", got, tt.want)
 			}
