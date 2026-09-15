@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/canonical/inference/cmd/inference/common"
-	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/providers"
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 )
@@ -61,7 +61,7 @@ func (cmd *statusCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	status, err := buildStatus(cobraCmd.Context(), cmd.SnapdClient)
+	status, err := buildStatus(cobraCmd.Context(), cmd.Context)
 	if err != nil {
 		return err
 	}
@@ -73,13 +73,18 @@ func (cmd *statusCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	return err
 }
 
-func buildStatus(ctx context.Context, snapdClient *snapd.Client) (statusOutput, error) {
-	proxyStatus, err := snapdClient.ServiceStatus(ctx, inferenceSnapName, proxyServiceName)
+func buildStatus(ctx context.Context, commandContext *common.Context) (statusOutput, error) {
+	proxyStatus, err := commandContext.SnapdClient.ServiceStatus(ctx, inferenceSnapName, proxyServiceName)
 	if err != nil {
 		return statusOutput{}, common.FriendlySnapdError(err)
 	}
 
 	baseURL, err := proxyOpenAIBaseURL(ctx)
+	if err != nil {
+		return statusOutput{}, err
+	}
+
+	health, err := statusProviderHealth(ctx, commandContext)
 	if err != nil {
 		return statusOutput{}, err
 	}
@@ -91,7 +96,31 @@ func buildStatus(ctx context.Context, snapdClient *snapd.Client) (statusOutput, 
 				BaseURL: baseURL,
 			},
 		},
+		Health: health,
 	}, nil
+}
+
+func statusProviderHealth(ctx context.Context, commandContext *common.Context) (map[string]string, error) {
+	list, err := providers.List(
+		ctx,
+		commandContext.SnapCatalog,
+		commandContext.SnapdClient,
+		commandContext.ShareProvidersPath,
+		providers.ListOptions{},
+	)
+	if err != nil {
+		return nil, common.FriendlySnapdError(err)
+	}
+
+	health := providers.CheckHealth(ctx, list)
+	if health == nil {
+		return nil, nil
+	}
+	output := make(map[string]string, len(health))
+	for name, status := range health {
+		output[name] = string(status)
+	}
+	return output, nil
 }
 
 func proxyOpenAIBaseURL(ctx context.Context) (string, error) {

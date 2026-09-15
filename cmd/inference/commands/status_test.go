@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/canonical/inference/cmd/inference/common"
+	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
 )
 
@@ -55,6 +56,7 @@ func TestStatusServicesOutput(t *testing.T) {
 			t.Setenv("SNAP", "")
 			ctx, stdout, stderr := newTestContext()
 			ctx.SnapdClient = statusSnapdClient(t, true)
+			ctx.SnapCatalog = &snapcatalog.Reader{}
 			if err := execute(Status(ctx), test.args...); err != nil {
 				t.Fatal(err)
 			}
@@ -70,6 +72,7 @@ func TestStatusServicesOutput(t *testing.T) {
 
 func TestProxyOpenAIBaseURL(t *testing.T) {
 	t.Setenv("SNAP", "/snap/inference/current")
+	t.Setenv("SNAP_NAME", inferenceSnapName)
 	binDir := t.TempDir()
 	snapctlPath := filepath.Join(binDir, "snapctl")
 	snapctl := `#!/bin/sh
