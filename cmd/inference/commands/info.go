@@ -14,21 +14,6 @@ type infoCommand struct {
 	*common.Context
 }
 
-type infoOutput struct {
-	Name  string
-	Type  string
-	State string
-	API   *apiOutput // nil when the provider has no base URL
-}
-
-type apiOutput struct {
-	OpenAI openAIOutput
-}
-
-type openAIOutput struct {
-	BaseURL string
-}
-
 func Info(ctx *common.Context) *cobra.Command {
 	cmd := infoCommand{Context: ctx}
 	cobraCmd := &cobra.Command{
@@ -60,19 +45,14 @@ func (cmd *infoCommand) run(cobraCmd *cobra.Command, args []string) error {
 }
 
 func renderInfo(p providers.Provider) string {
-	output := infoOutput{Name: p.Name, Type: string(p.Type), State: string(p.State)}
-	if p.BaseURL != "" {
-		output.API = &apiOutput{OpenAI: openAIOutput{BaseURL: redact.URL(p.BaseURL)}}
-	}
-
 	var b strings.Builder
-	fmt.Fprintf(&b, "name: %s\n", output.Name)
-	fmt.Fprintf(&b, "type: %s\n", output.Type)
-	fmt.Fprintf(&b, "state: %s\n", output.State)
-	if output.API != nil {
+	fmt.Fprintf(&b, "name: %s\n", p.Name)
+	fmt.Fprintf(&b, "type: %s\n", string(p.Type))
+	fmt.Fprintf(&b, "state: %s\n", string(p.State))
+	if p.BaseURL != "" {
 		b.WriteString("api\n")
 		b.WriteString("  openai\n")
-		fmt.Fprintf(&b, "    base-url: %s\n", output.API.OpenAI.BaseURL)
+		fmt.Fprintf(&b, "    base-url: %s\n", redact.URL(p.BaseURL))
 	}
 	return b.String()
 }
