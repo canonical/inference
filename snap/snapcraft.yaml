@@ -9,6 +9,10 @@ grade: stable
 confinement: strict
 adopt-info: version
 
+layout:
+  /usr/share/misc/pci.ids:
+    bind-file: $SNAP/usr/share/misc/pci.ids
+
 parts:
   version:
     plugin: dump
@@ -17,6 +21,13 @@ parts:
     source: .
     override-pull: |
       craftctl set version="$(git -C $SNAPCRAFT_PROJECT_DIR describe --always --dirty)"
+
+  pci-ids:
+    plugin: dump
+    source: https://pci-ids.ucw.cz/v2.2/pci.ids
+    source-type: file
+    organize:
+      pci.ids: usr/share/misc/pci.ids
 
   cli:
     plugin: go
@@ -50,6 +61,8 @@ apps:
       - network
       - snapd-control
       - hardware-observe
+      - mount-observe
+      - opengl
 
   d:
     command: bin/inference_d
