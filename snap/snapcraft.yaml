@@ -49,6 +49,7 @@ apps:
     plugs:
       - network
       - snapd-control
+      - hardware-observe
 
   d:
     command: bin/inference_d

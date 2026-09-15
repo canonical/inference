@@ -3,11 +3,14 @@ module github.com/canonical/inference
 go 1.26.7
 
 require (
+	github.com/briandowns/spinner v1.23.2
+	github.com/canonical/lscompute v1.0.0-alpha.0.20260915091709-bfc8aa1cadc1
 	github.com/fatih/color v1.18.0
 	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-isatty v0.0.20
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/spf13/cobra v1.10.2
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -22,4 +25,5 @@ require (
 	github.com/olekukonko/ll v0.1.6 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/term v0.1.0 // indirect
 )
