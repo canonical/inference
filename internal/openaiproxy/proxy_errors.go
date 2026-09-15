@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+
+	"github.com/canonical/inference/internal/redact"
 )
 
 type responseStatusMarker interface {
@@ -57,7 +59,7 @@ func handleProxyError(
 		logger.Error(
 			"proxying inference request",
 			"provider", providerName,
-			"provider_url", loggableProviderURL(providerURL),
+			"provider_url", redact.URL(providerURL),
 			"model", model,
 			"error", redactURLError(err),
 		)

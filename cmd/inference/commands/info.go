@@ -6,6 +6,7 @@ import (
 
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/providers"
+	"github.com/canonical/inference/internal/redact"
 	"github.com/spf13/cobra"
 )
 
@@ -61,7 +62,7 @@ func (cmd *infoCommand) run(cobraCmd *cobra.Command, args []string) error {
 func renderInfo(p providers.Provider) string {
 	output := infoOutput{Name: p.Name, Type: string(p.Type), State: string(p.State)}
 	if p.BaseURL != "" {
-		output.API = &apiOutput{OpenAI: openAIOutput{BaseURL: p.BaseURL}}
+		output.API = &apiOutput{OpenAI: openAIOutput{BaseURL: redact.URL(p.BaseURL)}}
 	}
 
 	var b strings.Builder

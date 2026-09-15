@@ -29,6 +29,22 @@ api
 `,
 		},
 		{
+			name: "redact BaseURL with credentials and query",
+			provider: providers.Provider{
+				Name:    "gemma4",
+				Type:    providers.TypeInferenceSnap,
+				State:   providers.StateEnabled,
+				BaseURL: "http://user:token@localhost:8336/v1?api_key=secret",
+			},
+			want: `name: gemma4
+type: inference-snap
+state: enabled
+api
+  openai
+    base-url: http://localhost:8336/v1
+`,
+		},
+		{
 			name: "provider without a BaseURL",
 			provider: providers.Provider{
 				Name:  "gemma4",

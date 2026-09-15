@@ -133,7 +133,7 @@ func TestList(t *testing.T) {
 		}
 	})
 
-	t.Run("searching one provider doesn't querying others", func(t *testing.T) {
+	t.Run("searching one provider doesn't query others", func(t *testing.T) {
 		client, requests := newSnapdServer(t, map[string]string{
 			"gemma4": snapd.SnapStatusActive,
 			"qwen3":  snapd.SnapStatusInstalled,
