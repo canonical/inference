@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -67,72 +68,57 @@ func checkHealth(ctx context.Context, baseURL string) HealthStatus {
 	if err != nil {
 		return HealthError
 	}
-	checkCtx, cancel := context.WithTimeout(ctx, healthCheckTimeout)
-	defer cancel()
-
-	port := endpoint.Port()
-	if port == "" {
-		if endpoint.Scheme == "https" {
-			port = "443"
-		} else {
-			port = "80"
-		}
-	}
-	connection, err := (&net.Dialer{}).DialContext(checkCtx, "tcp", net.JoinHostPort(endpoint.Hostname(), port))
-	if err != nil {
-		return HealthOffline
-	}
-	if err := connection.Close(); err != nil {
-		return HealthError
-	}
-
-	healthURL := *endpoint
-	healthURL.Path = "/health"
-	healthURL.RawPath = ""
-	healthURL.RawQuery = ""
-	healthURL.Fragment = ""
-	status, err := requestHealth(checkCtx, healthURL.String())
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return HealthNotResponsive
-		}
-		return HealthError
-	}
-	if status >= http.StatusOK && status < http.StatusMultipleChoices {
-		return HealthOK
-	}
-	// If the page is not found, fall through to testing the /models endpoint.
-	if status != http.StatusNotFound {
-		return HealthError
-	}
-
 	modelsURL := *endpoint
 	modelsURL.Path = strings.TrimRight(modelsURL.Path, "/") + "/models"
 	modelsURL.RawPath = ""
 	modelsURL.RawQuery = ""
 	modelsURL.Fragment = ""
-	status, err = requestHealth(checkCtx, modelsURL.String())
+
+	checkCtx, cancel := context.WithTimeout(ctx, healthCheckTimeout)
+	defer cancel()
+	status, models, err := requestModels(checkCtx, modelsURL.String())
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return HealthNotResponsive
 		}
+		var operationError *net.OpError
+		if errors.As(err, &operationError) {
+			if operationError.Timeout() {
+				return HealthNotResponsive
+			}
+			return HealthOffline
+		}
 		return HealthError
 	}
-	if status >= http.StatusOK && status < http.StatusMultipleChoices {
+	if status >= http.StatusOK && status < http.StatusMultipleChoices &&
+		(len(models.Data) > 0 || len(models.Models) > 0) {
 		return HealthOK
 	}
 	return HealthError
 }
 
-func requestHealth(ctx context.Context, endpoint string) (int, error) {
+type modelsResponse struct {
+	Data   []json.RawMessage `json:"data"`
+	Models []json.RawMessage `json:"models"`
+}
+
+func requestModels(ctx context.Context, endpoint string) (int, modelsResponse, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return 0, err
+		return 0, modelsResponse{}, err
 	}
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return 0, err
+		return 0, modelsResponse{}, err
 	}
 	defer response.Body.Close()
-	return response.StatusCode, nil
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return response.StatusCode, modelsResponse{}, nil
+	}
+
+	var models modelsResponse
+	if err := json.NewDecoder(response.Body).Decode(&models); err != nil {
+		return response.StatusCode, modelsResponse{}, err
+	}
+	return response.StatusCode, models, nil
 }
