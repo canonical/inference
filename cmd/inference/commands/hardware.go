@@ -265,6 +265,32 @@ type ApusysDeviceDetails struct {
 	Verbose    bool   `json:"-" yaml:"-"`
 }
 
+func (a ApusysDeviceDetails) MarshalYAML() (any, error) {
+	if a.Verbose {
+		return struct {
+			Bus        string `yaml:"bus"`
+			VendorName string `yaml:"vendor-name,omitempty"`
+		}{
+			Bus:        a.Bus,
+			VendorName: a.VendorName,
+		}, nil
+	}
+	return a.VendorName, nil
+}
+
+func (a ApusysDeviceDetails) MarshalJSON() ([]byte, error) {
+	if a.Verbose {
+		return json.Marshal(struct {
+			Bus        string `json:"bus"`
+			VendorName string `json:"vendor-name,omitempty"`
+		}{
+			Bus:        a.Bus,
+			VendorName: a.VendorName,
+		})
+	}
+	return json.Marshal(a.VendorName)
+}
+
 type PciAdditionalDeviceProperties struct {
 	Microarchitecture string `json:"microarchitecture,omitempty" yaml:"microarchitecture,omitempty"`
 	Vram              uint64 `json:"vram,omitempty" yaml:"vram,omitempty"`
@@ -456,6 +482,7 @@ func (cmd *hardwareCommand) newMachineDetails(info *machine.Machine) *MachineDet
 		v.Accelerators = append(v.Accelerators, ApusysDeviceDetails{
 			Bus:        d.Bus,
 			VendorName: d.VendorName,
+			Verbose:    cmd.verbose,
 		})
 	}
 
