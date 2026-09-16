@@ -74,7 +74,7 @@ func (cmd *statusCommand) run(cobraCmd *cobra.Command, _ []string) error {
 }
 
 func buildStatus(ctx context.Context, commandContext *common.Context) (statusOutput, error) {
-	proxyStatus, err := commandContext.SnapdClient.ServiceStatus(ctx, inferenceSnapName, proxyServiceName)
+	proxyStatus, err := commandContext.SnapdClient.ServiceStatus(ctx, inferenceSnapInstanceName(), proxyServiceName)
 	if err != nil {
 		return statusOutput{}, common.FriendlySnapdError(err)
 	}
@@ -98,6 +98,13 @@ func buildStatus(ctx context.Context, commandContext *common.Context) (statusOut
 		},
 		Health: health,
 	}, nil
+}
+
+func inferenceSnapInstanceName() string {
+	if name := os.Getenv("SNAP_INSTANCE_NAME"); name != "" {
+		return name
+	}
+	return inferenceSnapName
 }
 
 func statusProviderHealth(ctx context.Context, commandContext *common.Context) (map[string]string, error) {

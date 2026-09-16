@@ -254,6 +254,9 @@ func parseServerOptions(args []string, output io.Writer) (serverOptions, error) 
 }
 
 func listenAddress(host string, port int) (string, error) {
+	if host == "" {
+		return "", errors.New("host must not be empty")
+	}
 	if port < 1 || port > 65535 {
 		return "", errors.New("port must be an integer between 1 and 65535")
 	}

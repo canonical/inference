@@ -1,4 +1,27 @@
 #!/bin/sh
 set -eu
 
+host="$(snapctl get http.host)"
+port="$(snapctl get http.port)"
+
+if [ -z "$host" ]; then
+    echo "http.host must not be empty" >&2
+    exit 1
+fi
+
+case "$port" in
+    ''|*[!0-9]*)
+        echo "http.port must be an integer between 1 and 65535" >&2
+        exit 1
+        ;;
+esac
+
+normalized_port="$(printf '%s' "$port" | sed 's/^0*//')"
+if [ -z "$normalized_port" ] ||
+    [ "${#normalized_port}" -gt 5 ] ||
+    { [ "${#normalized_port}" -eq 5 ] && [ "$normalized_port" -gt 65535 ]; }; then
+    echo "http.port must be an integer between 1 and 65535" >&2
+    exit 1
+fi
+
 snapctl restart "$SNAP_INSTANCE_NAME"

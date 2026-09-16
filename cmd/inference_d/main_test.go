@@ -51,6 +51,7 @@ func TestListenAddress(t *testing.T) {
 	}{
 		{name: "defaults", host: defaultHost, port: defaultPort, want: "127.0.0.1:8400"},
 		{name: "configured", host: "::1", port: 9000, want: "[::1]:9000"},
+		{name: "empty host", port: 9000, wantErr: true},
 		{name: "port too low", host: "127.0.0.1", port: 0, wantErr: true},
 		{name: "port too high", host: "127.0.0.1", port: 65536, wantErr: true},
 	}

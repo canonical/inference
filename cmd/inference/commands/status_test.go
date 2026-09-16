@@ -16,7 +16,7 @@ import (
 	"github.com/canonical/inference/internal/snapd"
 )
 
-func statusSnapdClient(t *testing.T, active bool) *snapd.Client {
+func statusSnapdClient(t *testing.T, snapName string, active bool) *snapd.Client {
 	t.Helper()
 	socket := filepath.Join(t.TempDir(), "snapd.socket")
 	listener, err := net.Listen("unix", socket)
@@ -27,7 +27,10 @@ func statusSnapdClient(t *testing.T, active bool) *snapd.Client {
 		if r.URL.Path != "/v2/apps" {
 			t.Errorf("unexpected path %q", r.URL.Path)
 		}
-		fmt.Fprintf(w, `{"type":"sync","status":"OK","result":[{"snap":"inference","name":"d","active":%t}]}`, active)
+		if got := r.URL.Query().Get("names"); got != snapName+".d" {
+			t.Errorf("unexpected names query %q", got)
+		}
+		fmt.Fprintf(w, `{"type":"sync","status":"OK","result":[{"snap":%q,"name":"d","active":%t}]}`, snapName, active)
 	}))
 	server.Listener.Close()
 	server.Listener = listener
@@ -54,8 +57,9 @@ func TestStatusServicesOutput(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("SNAP", "")
+			t.Setenv("SNAP_INSTANCE_NAME", "")
 			ctx, stdout, stderr := newTestContext()
-			ctx.SnapdClient = statusSnapdClient(t, true)
+			ctx.SnapdClient = statusSnapdClient(t, inferenceSnapName, true)
 			ctx.SnapCatalog = &snapcatalog.Reader{}
 			if err := execute(Status(ctx), test.args...); err != nil {
 				t.Fatal(err)
@@ -67,6 +71,19 @@ func TestStatusServicesOutput(t *testing.T) {
 				t.Fatalf("unexpected stderr: %q", stderr.String())
 			}
 		})
+	}
+}
+
+func TestStatusUsesSnapInstanceName(t *testing.T) {
+	const instanceName = "inference_gpu"
+	t.Setenv("SNAP", "")
+	t.Setenv("SNAP_INSTANCE_NAME", instanceName)
+	ctx, _, _ := newTestContext()
+	ctx.SnapdClient = statusSnapdClient(t, instanceName, true)
+	ctx.SnapCatalog = &snapcatalog.Reader{}
+
+	if err := execute(Status(ctx)); err != nil {
+		t.Fatal(err)
 	}
 }
 
