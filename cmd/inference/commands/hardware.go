@@ -29,7 +29,7 @@ type MachineDetails struct {
 	Memory       MemoryDetails `json:"memory,omitempty" yaml:"memory,omitempty"`
 	Disk         []DiskDetails `json:"disks,omitempty" yaml:"disks,omitempty"`
 	Accelerators []any         `json:"accelerators,omitempty" yaml:"accelerators,omitempty"`
-	Verbose      bool         `json:"-" yaml:"-"`
+	Verbose      bool          `json:"-" yaml:"-"`
 }
 
 func (md MachineDetails) MarshalYAML() (any, error) {
@@ -80,10 +80,7 @@ func (cpu CpuDetails) MarshalJSON() ([]byte, error) {
 		})
 	}
 
-	if cpu.ModelName == nil {
-		return json.Marshal(fmt.Sprintf("%s %d threads", cpu.BrandString, cpu.Processor))
-	}
-	return json.Marshal(fmt.Sprintf("%s %d threads", *cpu.ModelName, cpu.Processor))
+	return json.Marshal(fmt.Sprintf("%s %d threads", cpu.name(), cpu.Processor))
 }
 
 func (cpu CpuDetails) MarshalYAML() (any, error) {
@@ -95,11 +92,18 @@ func (cpu CpuDetails) MarshalYAML() (any, error) {
 			Architecture:   cpu.Architecture,
 			ManufacturerId: cpu.ManufacturerId,
 		}, nil
-	} else if cpu.ModelName == nil {
-		return fmt.Sprintf("%s %d threads", cpu.BrandString, cpu.Processor), nil
-	} else {
-		return fmt.Sprintf("%s %d threads", *cpu.ModelName, cpu.Processor), nil
 	}
+	return fmt.Sprintf("%s %d threads", cpu.name(), cpu.Processor), nil
+}
+
+func (cpu CpuDetails) name() string {
+	if cpu.ModelName != nil && *cpu.ModelName != "" {
+		return *cpu.ModelName
+	}
+	if cpu.BrandString != "" {
+		return cpu.BrandString
+	}
+	return strings.TrimSpace(fmt.Sprintf("%s %s", cpu.ManufacturerId, cpu.Architecture))
 }
 
 type MemoryDetails struct {
@@ -118,7 +122,7 @@ func (m MemoryDetails) MarshalJSON() ([]byte, error) {
 			TotalSwap: FormatBytes(m.TotalSwap),
 		})
 	}
-	return json.Marshal(fmt.Sprintf("%s (%s)", FormatBytes(m.TotalRam), FormatBytes(m.TotalSwap)))
+	return json.Marshal(fmt.Sprintf("%v (Swap %v)", FormatBytes(m.TotalRam), FormatBytes(m.TotalSwap)))
 }
 
 func (m MemoryDetails) MarshalYAML() (any, error) {
@@ -132,7 +136,7 @@ func (m MemoryDetails) MarshalYAML() (any, error) {
 			TotalSwap: FormatBytes(m.TotalSwap),
 		}, nil
 	} else {
-		return fmt.Sprintf("%s (%s)", FormatBytes(m.TotalRam), FormatBytes(m.TotalSwap)), nil
+		return fmt.Sprintf("%v (Swap %v)", FormatBytes(m.TotalRam), FormatBytes(m.TotalSwap)), nil
 	}
 }
 
@@ -246,13 +250,13 @@ type UsbDeviceDetails struct {
 	VendorName           string            `json:"vendor-name,omitempty" yaml:"vendor-name,omitempty"`
 	ProductName          string            `json:"product-name,omitempty" yaml:"product-name,omitempty"`
 	AdditionalProperties map[string]string `json:"additional-properties,omitempty" yaml:"additional-properties,omitempty"`
-	Verbose              bool `json:"-" yaml:"-"`
+	Verbose              bool              `json:"-" yaml:"-"`
 }
 
 type FastRPCDeviceDetails struct {
 	Bus                  string            `json:"bus" yaml:"bus"`
 	AdditionalProperties map[string]string `json:"additional-properties,omitempty" yaml:"additional-properties,omitempty"`
-	Verbose              bool `json:"-" yaml:"-"`
+	Verbose              bool              `json:"-" yaml:"-"`
 }
 
 type ApusysDeviceDetails struct {
@@ -305,11 +309,11 @@ func Hardware(ctx *common.Context) *cobra.Command {
 	}
 
 	// flags
-	supportedFormats := []string{"json", "yaml"}
+	supportedFormats := []string{"json", "plain"}
 	cobraCmd.Flags().StringVar(
 		&cmd.format,
 		"format",
-		"yaml",
+		"plain",
 		fmt.Sprintf("output format (%s)", strings.Join(supportedFormats, ", ")),
 	)
 	cobraCmd.Flags().BoolVar(
@@ -335,8 +339,8 @@ func (cmd *hardwareCommand) printMachineInfo(info MachineDetails) error {
 	switch cmd.format {
 	case "json":
 		return cmd.printMachineInfoJson(info)
-	case "yaml":
-		return cmd.printMachineInfoYaml(info)
+	case "plain":
+		return cmd.printMachineInfoPlain(info)
 	default:
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
@@ -351,10 +355,10 @@ func (cmd *hardwareCommand) printMachineInfoJson(info MachineDetails) error {
 	return nil
 }
 
-func (cmd *hardwareCommand) printMachineInfoYaml(info MachineDetails) error {
+func (cmd *hardwareCommand) printMachineInfoPlain(info MachineDetails) error {
 	yamlString, err := yaml.Marshal(info)
 	if err != nil {
-		return fmt.Errorf("yaml: %s", err)
+		return fmt.Errorf("plain: %s", err)
 	}
 	fmt.Printf("%s", yamlString)
 	return nil
