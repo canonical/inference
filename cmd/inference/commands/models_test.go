@@ -26,15 +26,6 @@ func TestModelsOutput(t *testing.T) {
 				"gemma4-e2b  gemma4 snap\n",
 		},
 		{
-			name:   "yaml",
-			format: "yaml",
-			want: "models:\n" +
-				"  - name: gpt4.5\n" +
-				"    provider: openai (remote)\n" +
-				"  - name: gemma4-e2b\n" +
-				"    provider: gemma4 snap\n",
-		},
-		{
 			name:   "json",
 			format: "json",
 			want: "{\n" +
@@ -72,7 +63,6 @@ func TestModelsCommandOutputFormats(t *testing.T) {
 		want string
 	}{
 		{name: "table", want: "NAME  PROVIDER\n"},
-		{name: "yaml", args: []string{"--format=yaml"}, want: "models: []\n"},
 		{name: "json", args: []string{"--format=json"}, want: "{\n  \"models\": []\n}\n"},
 	}
 
@@ -100,21 +90,21 @@ func TestModelsRejectsArguments(t *testing.T) {
 }
 
 func TestModelsRejectsInvalidFormat(t *testing.T) {
-	if err := execute(Models(&common.Context{}), "--format=xml"); err == nil {
-		t.Fatal("expected invalid format to be rejected")
+	for _, format := range []string{"xml", "yaml"} {
+		if err := execute(Models(&common.Context{}), "--format="+format); err == nil {
+			t.Fatalf("expected %s format to be rejected", format)
+		}
 	}
 }
 
 func TestModelsEmptyOutput(t *testing.T) {
-	for _, format := range []string{"table", "yaml", "json"} {
+	for _, format := range []string{"table", "json"} {
 		got, err := renderModels(nil, format)
 		if err != nil {
 			t.Fatal(err)
 		}
 		want := "NAME  PROVIDER\n"
-		if format == "yaml" {
-			want = "models: []\n"
-		} else if format == "json" {
+		if format == "json" {
 			want = "{\n  \"models\": []\n}\n"
 		}
 		if got != want {

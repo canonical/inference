@@ -13,7 +13,6 @@ import (
 	"github.com/olekukonko/tablewriter/renderer"
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
 )
 
 type modelsCommand struct {
@@ -22,12 +21,12 @@ type modelsCommand struct {
 }
 
 type modelOutput struct {
-	Name     string `json:"name" yaml:"name"`
-	Provider string `json:"provider" yaml:"provider"`
+	Name     string `json:"name"`
+	Provider string `json:"provider"`
 }
 
 type modelsOutput struct {
-	Models []modelOutput `json:"models" yaml:"models"`
+	Models []modelOutput `json:"models"`
 }
 
 func Models(ctx *common.Context) *cobra.Command {
@@ -40,12 +39,12 @@ func Models(ctx *common.Context) *cobra.Command {
 		SilenceUsage:      true,
 		RunE:              cmd.run,
 	}
-	cobraCmd.Flags().StringVar(&cmd.format, "format", "table", "output format [table|yaml|json]")
+	cobraCmd.Flags().StringVar(&cmd.format, "format", "table", "output format [table|json]")
 	return cobraCmd
 }
 
 func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
-	if cmd.format != "table" && cmd.format != "yaml" && cmd.format != "json" {
+	if cmd.format != "table" && cmd.format != "json" {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
@@ -80,21 +79,9 @@ func renderModels(list []models.Model, format string) (string, error) {
 	}
 
 	var output bytes.Buffer
-	if format == "json" {
-		encoder := json.NewEncoder(&output)
-		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(result); err != nil {
-			return "", err
-		}
-		return output.String(), nil
-	}
-
-	encoder := yaml.NewEncoder(&output)
-	encoder.SetIndent(2)
+	encoder := json.NewEncoder(&output)
+	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(result); err != nil {
-		return "", err
-	}
-	if err := encoder.Close(); err != nil {
 		return "", err
 	}
 	return output.String(), nil
