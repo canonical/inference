@@ -222,7 +222,7 @@ func (p PciDeviceDetails) MarshalYAML() (any, error) {
 			AdditionalProperties: p.AdditionalProperties,
 		}, nil
 	} else {
-		return fmt.Sprintf("%s %s", p.VendorName, p.DeviceName), nil
+		return fmt.Sprintf("%s %s (VRAM: %v)", p.VendorName, p.DeviceName, p.AdditionalProperties.Vram), nil
 	}
 }
 
@@ -242,7 +242,7 @@ func (p PciDeviceDetails) MarshalJSON() ([]byte, error) {
 			AdditionalProperties: p.AdditionalProperties,
 		})
 	}
-	return json.Marshal(fmt.Sprintf("%s %s", p.VendorName, p.DeviceName))
+	return json.Marshal(fmt.Sprintf("%s %s (VRAM: %v)", p.VendorName, p.DeviceName, p.AdditionalProperties.Vram))
 }
 
 type UsbDeviceDetails struct {
