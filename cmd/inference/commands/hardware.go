@@ -492,9 +492,9 @@ func (cmd *hardwareCommand) newMachineDetails(info *machine.Machine) *MachineDet
 			v.CPUs[i] = CpuDetails{
 				Architecture:   c.Architecture,
 				ManufacturerId: c.ManufacturerId,
-				ModelName:      c.ModelName,
-				Processor:      c.Processor,
-				BrandString:    c.BrandString,
+				ModelName:      c.FriendlyNames.ModelName,
+				Processor:      c.FriendlyNames.Threads,
+				BrandString:    c.FriendlyNames.BrandString,
 				Verbose:        cmd.verbose,
 			}
 		}
