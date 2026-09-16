@@ -89,6 +89,8 @@ func buildStatus(ctx context.Context, commandContext *common.Context) (statusOut
 		return statusOutput{}, err
 	}
 
+	// TODO look up warnings like GPU not working
+
 	return statusOutput{
 		Services: map[string]string{"proxy": proxyStatus},
 		Proxy: &statusProxy{
@@ -113,12 +115,13 @@ func statusProviderHealth(ctx context.Context, commandContext *common.Context) (
 		commandContext.SnapCatalog,
 		commandContext.SnapdClient,
 		commandContext.ShareProvidersPath,
-		providers.ListOptions{},
+		providers.ListOptions{InstalledOnly: true},
 	)
 	if err != nil {
 		return nil, common.FriendlySnapdError(err)
 	}
 
+	// Check health only returns results for providers that are enabled and have an openai base url defined
 	health := providers.CheckHealth(ctx, list)
 	if health == nil {
 		return nil, nil

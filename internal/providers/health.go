@@ -28,6 +28,7 @@ func CheckHealth(ctx context.Context, providers []Provider) map[string]HealthSta
 		health HealthStatus
 	}
 
+	// Only check enabled providers that have a base URL configured.
 	enabled := make([]Provider, 0, len(providers))
 	for _, provider := range providers {
 		if provider.State == StateEnabled && provider.BaseURL != "" {
@@ -100,6 +101,7 @@ func checkHealth(ctx context.Context, baseURL string) HealthStatus {
 	if status >= http.StatusOK && status < http.StatusMultipleChoices {
 		return HealthOK
 	}
+	// If the page is not found, fall through to testing the /models endpoint.
 	if status != http.StatusNotFound {
 		return HealthError
 	}
