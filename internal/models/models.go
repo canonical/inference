@@ -29,17 +29,19 @@ type Model struct {
 }
 
 type upstreamResponse struct {
-	Data []upstreamModel `json:"data"`
+	Data []ProviderModel `json:"data"`
 }
 
-type upstreamModel struct {
-	ID string `json:"id"`
+type ProviderModel struct {
+	ID      string `json:"id"`
+	Created int64  `json:"created,omitempty"`
 }
 
-type providerResult struct {
-	provider providers.Provider
-	models   []upstreamModel
-	err      error
+type ProviderModels struct {
+	Provider providers.Provider
+	Models   []ProviderModel
+	Err      error
+	Duration time.Duration
 }
 
 func List(
@@ -76,28 +78,15 @@ func listProviderModels(ctx context.Context, list []providers.Provider, client *
 		return []Model{}, nil
 	}
 
-	results := make(chan providerResult, len(available))
-	var requests sync.WaitGroup
-	for _, provider := range available {
-		requests.Add(1)
-		go func() {
-			defer requests.Done()
-			models, err := fetchModels(ctx, client, provider.BaseURL)
-			results <- providerResult{provider: provider, models: models, err: err}
-		}()
-	}
-	requests.Wait()
-	close(results)
-
 	output := make([]Model, 0)
 	healthyProviders := 0
-	for result := range results {
-		if result.err != nil {
+	for _, result := range DiscoverProviderModels(ctx, available, client) {
+		if result.Err != nil {
 			continue
 		}
 		healthyProviders++
-		seen := make(map[string]struct{}, len(result.models))
-		for _, model := range result.models {
+		seen := make(map[string]struct{}, len(result.Models))
+		for _, model := range result.Models {
 			if model.ID == "" {
 				continue
 			}
@@ -107,7 +96,7 @@ func listProviderModels(ctx context.Context, list []providers.Provider, client *
 			seen[model.ID] = struct{}{}
 			output = append(output, Model{
 				Name:     model.ID,
-				Provider: providerLabel(result.provider),
+				Provider: providerLabel(result.Provider),
 			})
 		}
 	}
@@ -123,7 +112,38 @@ func listProviderModels(ctx context.Context, list []providers.Provider, client *
 	return output, nil
 }
 
-func fetchModels(ctx context.Context, client *http.Client, baseURL string) ([]upstreamModel, error) {
+func DiscoverProviderModels(ctx context.Context, list []providers.Provider, client *http.Client) []ProviderModels {
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	results := make(chan ProviderModels, len(list))
+	var requests sync.WaitGroup
+	for _, provider := range list {
+		requests.Add(1)
+		go func() {
+			defer requests.Done()
+			started := time.Now()
+			models, err := fetchModels(ctx, client, provider.BaseURL)
+			results <- ProviderModels{
+				Provider: provider,
+				Models:   models,
+				Err:      err,
+				Duration: time.Since(started),
+			}
+		}()
+	}
+	requests.Wait()
+	close(results)
+
+	output := make([]ProviderModels, 0, len(list))
+	for result := range results {
+		output = append(output, result)
+	}
+	return output
+}
+
+func fetchModels(ctx context.Context, client *http.Client, baseURL string) ([]ProviderModel, error) {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
@@ -139,7 +159,7 @@ func fetchModels(ctx context.Context, client *http.Client, baseURL string) ([]up
 
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("requesting models: %w", err)
+		return nil, fmt.Errorf("requesting models: %w", redactURLError(err))
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
@@ -173,6 +193,14 @@ func modelsURL(baseURL string) (string, error) {
 	endpoint.RawPath = ""
 	endpoint.Fragment = ""
 	return endpoint.String(), nil
+}
+
+func redactURLError(err error) error {
+	var urlError *url.Error
+	if errors.As(err, &urlError) {
+		return fmt.Errorf("%s: %w", urlError.Op, urlError.Err)
+	}
+	return err
 }
 
 func providerLabel(provider providers.Provider) string {
