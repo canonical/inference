@@ -30,7 +30,6 @@ parts:
       pci.ids: usr/share/misc/pci.ids
 
   # Used for NVIDIA vRAM and CUDA Capability detection.
-  # Only the binary is included to avoid staging libraries, which should instead be provided by the host through the opengl interface.
   nvidia-smi:
     plugin: nil
     build-packages:
@@ -38,6 +37,14 @@ parts:
         - nvidia-utils-580
       - to arm64:
         - nvidia-utils-580
+    stage-packages:
+      - to amd64:
+        - libnvidia-compute-580
+      - to arm64:
+        - libnvidia-compute-580
+    prime:
+      - usr/bin/nvidia-smi
+      - usr/lib/*/libnvidia-ml.so*
     override-build: |
       mkdir -p $CRAFT_PART_INSTALL/usr/bin
       
