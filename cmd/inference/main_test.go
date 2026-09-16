@@ -47,3 +47,16 @@ func TestRootIncludesProvidersCommand(t *testing.T) {
 		t.Fatal("providers subcommand is not registered")
 	}
 }
+
+func TestRootIncludesModelsCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	ctx := &common.Context{Stdout: &stdout, Stderr: &stderr}
+	rootCmd := root(ctx)
+	cmd, _, err := rootCmd.Find([]string{"models"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd == rootCmd || cmd.Name() != "models" {
+		t.Fatal("models subcommand is not registered")
+	}
+}
