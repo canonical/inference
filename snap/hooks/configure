@@ -10,16 +10,13 @@ if [ -z "$host" ]; then
 fi
 
 case "$port" in
-    ''|*[!0-9]*)
+    ''|*[!0-9]*|0|0*|??????*)
         echo "http.port must be an integer between 1 and 65535" >&2
         exit 1
         ;;
 esac
 
-normalized_port="$(printf '%s' "$port" | sed 's/^0*//')"
-if [ -z "$normalized_port" ] ||
-    [ "${#normalized_port}" -gt 5 ] ||
-    { [ "${#normalized_port}" -eq 5 ] && [ "$normalized_port" -gt 65535 ]; }; then
+if [ "$port" -gt 65535 ]; then
     echo "http.port must be an integer between 1 and 65535" >&2
     exit 1
 fi
