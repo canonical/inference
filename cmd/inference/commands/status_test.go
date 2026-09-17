@@ -104,7 +104,7 @@ esac
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	got, err := proxyOpenAIBaseURL(context.Background())
+	got, err := (&statusCommand{}).proxyOpenAIBaseURL(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ esac
 func TestProxyOpenAIBaseURLOutsideSnap(t *testing.T) {
 	t.Setenv("SNAP", "")
 
-	got, err := proxyOpenAIBaseURL(context.Background())
+	got, err := (&statusCommand{}).proxyOpenAIBaseURL(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ exit 1
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	_, err := snapConfigurationValue(context.Background(), "http.host")
+	_, err := (&statusCommand{}).snapConfigurationValue(context.Background(), "http.host")
 	if err == nil {
 		t.Fatal("expected snapctl error")
 	}
