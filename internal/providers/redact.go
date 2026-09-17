@@ -1,9 +1,9 @@
-package redact
+package providers
 
 import "net/url"
 
-func URL(value string) string {
-	parsed, err := url.Parse(value)
+func RedactedURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return "<invalid>"
 	}

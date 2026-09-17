@@ -1,8 +1,8 @@
-package redact
+package providers
 
 import "testing"
 
-func TestURL(t *testing.T) {
+func TestRedactedURL(t *testing.T) {
 	tests := []struct {
 		name  string
 		value string
@@ -27,8 +27,8 @@ func TestURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := URL(tt.value); got != tt.want {
-				t.Errorf("URL %q redacted to %q, want %q", tt.value, got, tt.want)
+			if got := RedactedURL(tt.value); got != tt.want {
+				t.Errorf("RedactedURL %q redacted to %q, want %q", tt.value, got, tt.want)
 			}
 		})
 	}

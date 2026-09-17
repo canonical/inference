@@ -17,7 +17,6 @@ import (
 
 	"github.com/canonical/inference/internal/models"
 	"github.com/canonical/inference/internal/providers"
-	"github.com/canonical/inference/internal/redact"
 )
 
 const (
@@ -271,7 +270,7 @@ func (h *ModelsHandler) proxy(
 		logger.Error(
 			"parsing provider URL",
 			"provider", route.providerName,
-			"provider_url", redact.URL(route.baseURL),
+			"provider_url", providers.RedactedURL(route.baseURL),
 			"error", redactURLError(err),
 		)
 		writeError(w, http.StatusBadGateway, "The inference provider is unavailable.", "service_unavailable")
@@ -323,7 +322,7 @@ func (h *ModelsHandler) proxy(
 		logger.Info(
 			"upstream response stream terminated",
 			"provider", route.providerName,
-			"provider_url", redact.URL(route.baseURL),
+			"provider_url", providers.RedactedURL(route.baseURL),
 			"model", requestedModel,
 		)
 	}()
