@@ -9,86 +9,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestCpuDetails_compactName(t *testing.T) {
-	emptyModelName := ""
-	modelName := "Ampere Altra Max"
-	tests := []struct {
-		name string
-		cpu  CpuDetails
-		want string
-	}{
-		{
-			name: "model name takes precedence",
-			cpu: CpuDetails{
-				ModelName:   &modelName,
-				BrandString: "fallback brand",
-				Processor:   128,
-			},
-			want: "Ampere Altra Max 128 threads",
-		},
-		{
-			name: "brand when model name is empty",
-			cpu: CpuDetails{
-				ModelName:   &emptyModelName,
-				BrandString: "Cortex-A78",
-				Processor:   4,
-			},
-			want: "Cortex-A78 4 threads",
-		},
-		{
-			name: "manufacturer and architecture when names are empty",
-			cpu: CpuDetails{
-				Architecture:   "arm64",
-				ManufacturerId: "mediatek",
-				Processor:      4,
-			},
-			want: "mediatek arm64 4 threads",
-		},
-		{
-			name: "ARM implementer and part lookup",
-			cpu: CpuDetails{
-				Architecture:  "arm64",
-				ImplementerId: 0x41,
-				PartNumber:    0xd0c,
-				Processor:     128,
-			},
-			want: "Neoverse-N1 128 threads",
-		},
-		{
-			name: "known ARM implementer with unknown part",
-			cpu: CpuDetails{
-				Architecture:  "arm64",
-				ImplementerId: 0x41,
-				PartNumber:    0x123,
-				Processor:     8,
-			},
-			want: "ARM arm64 (part 0x123) 8 threads",
-		},
-		{
-			name: "unknown ARM implementer",
-			cpu: CpuDetails{
-				Architecture:  "arm64",
-				ImplementerId: 0xff,
-				PartNumber:    0x123,
-				Processor:     8,
-			},
-			want: "arm64 (implementer 0xff, part 0x123) 8 threads",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got, err := json.Marshal(test.cpu)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(got) != `"`+test.want+`"` {
-				t.Errorf("expected %q, got %s", test.want, got)
-			}
-		})
-	}
-}
-
 func TestHexInt_marshaling(t *testing.T) {
 	value := HexInt(0xd0c)
 
@@ -109,6 +29,224 @@ func TestHexInt_marshaling(t *testing.T) {
 	}
 }
 
+func TestCpuDetails_marshaling(t *testing.T) {
+	tests := []struct {
+		name    string
+		cpu     CpuDetails
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "AMD",
+			cpu: CpuDetails{
+				Architecture:   cpu.Amd64,
+				ManufacturerId: "AuthenticAMD",
+			},
+			want: "amd64 (AuthenticAMD)",
+		},
+		{
+			name: "ARM",
+			cpu: CpuDetails{
+				Architecture:  cpu.Arm64,
+				ImplementerId: HexInt(0x41),
+			},
+			want: "arm64 (0x41)",
+		},
+		{
+			name: "unknown arch implementer",
+			cpu: CpuDetails{
+				Architecture: cpu.Ppc64,
+			},
+			want:    "unsupported architecture: ppc64",
+			wantErr: true,
+		},
+		{
+			name: "verbose",
+			cpu: CpuDetails{
+				Verbose:        true,
+				Architecture:   cpu.Amd64,
+				ManufacturerId: "GenuineIntel",
+			},
+			want: `{"architecture":"amd64","manufacturer-id":"GenuineIntel"}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := json.Marshal(test.cpu)
+			if test.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := `"` + test.want + `"`
+			if test.cpu.Verbose {
+				want = test.want
+			}
+			if string(got) != want {
+				t.Errorf("expected %q, got %s", test.want, got)
+			}
+		})
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := yaml.Marshal(test.cpu)
+			if test.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := test.want + "\n"
+			if test.cpu.Verbose {
+				want = "architecture: amd64\nmanufacturer-id: GenuineIntel\n"
+			}
+			if string(got) != want {
+				t.Errorf("expected %q, got %s", test.want, got)
+			}
+		})
+	}
+}
+
+func TestMemoryDetails_marshaling(t *testing.T) {
+	memoryZeroSwap := MemoryDetails{TotalRam: 8160437862, TotalSwap: 0}
+	memorySwap := MemoryDetails{TotalRam: 8160437862, TotalSwap: 1000000000, Verbose: true}
+
+	got, err := yaml.Marshal(memoryZeroSwap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "7.6G (Swap 0)\n" {
+		t.Errorf("expected zero swap, got %q", got)
+	}
+	got, err = yaml.Marshal(memorySwap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "total-ram: 7.6G\ntotal-swap: 953.7M\n" {
+		t.Errorf("expected non-zero swap, got %q", got)
+	}
+	got, err = json.Marshal(memoryZeroSwap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `"7.6G (Swap 0)"` {
+		t.Errorf("expected JSON for zero swap, got %q", got)
+	}
+	got, err = json.Marshal(memorySwap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `{"total-ram":"7.6G","total-swap":"953.7M"}` {
+		t.Errorf("expected JSON for non-zero swap, got %q", got)
+	}
+}
+
+func TestDiskDetails_marshaling(t *testing.T) {
+	disk1 := DiskDetails{Path: "/var/lib/snapd/snaps", MountPoint: new("/"), Total: 1000000000000, Avail: 5000000000}
+	disk2 := DiskDetails{Path: "/home", Total: 500000000000, MountPoint: new("/"), Avail: 5000000000, Verbose: true}
+
+	got, err := yaml.Marshal(disk1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "/ (Free 4.7G / 931.3G)\n" {
+		t.Errorf("expected YAML for disk, got %q", got)
+	}
+	got, err = json.Marshal(disk1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `"/ (Free 5000000000 / 1000000000000)"` {
+		t.Errorf("expected JSON for disk, got %q", got)
+	}
+	got, err = yaml.Marshal(disk2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "mount-point: /\npath: /home\ntotal: 465.7G\navail: 4.7G\n" {
+		t.Errorf("expected YAML for disk2, got %q", got)
+	}
+	got, err = json.Marshal(disk2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `{"mount-point":"/","path":"/home","total":500000000000,"avail":5000000000}` {
+		t.Errorf("expected JSON for disk2, got %q", got)
+	}
+}
+
+func TestPciDeviceDetails_marhsaling(t *testing.T) {
+	compact := PciDeviceDetails{
+		VendorName: "NVIDIA Corporation",
+		DeviceName: "GA102GL [RTX A5000]",
+		AdditionalProperties: &PciAdditionalDeviceProperties{
+			Vram: 24 * 1024 * 1024 * 1024,
+		},
+	}
+	compactNoAddProps := PciDeviceDetails{
+		VendorName: "NVIDIA Corporation",
+		DeviceName: "GA102GL [RTX A5000]",
+	}
+	verbose := PciDeviceDetails{
+		Bus:           "pci",
+		VendorName:    "NVIDIA Corporation",
+		DeviceName:    "GA102GL [RTX A5000]",
+		SubvendorName: "NVIDIA Corporation",
+		Verbose:       true,
+	}
+
+	got, err := yaml.Marshal(compact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "NVIDIA Corporation GA102GL [RTX A5000] (VRAM 24.0G)\n" {
+		t.Errorf("expected compact YAML for PCI device, got %q", got)
+	}
+	got, err = json.Marshal(compact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `"NVIDIA Corporation GA102GL [RTX A5000] (VRAM 24.0G)"` {
+		t.Errorf("expected compact JSON for PCI device, got %q", got)
+	}
+	got, err = yaml.Marshal(compactNoAddProps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "NVIDIA Corporation GA102GL [RTX A5000]\n" {
+		t.Errorf("expected compact YAML for PCI device, got %q", got)
+	}
+	got, err = json.Marshal(compactNoAddProps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `"NVIDIA Corporation GA102GL [RTX A5000]"` {
+		t.Errorf("expected compact JSON for PCI device, got %q", got)
+	}
+	got, err = yaml.Marshal(verbose)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "bus: pci\nvendor-name: NVIDIA Corporation\ndevice-name: GA102GL [RTX A5000]\nsubvendor-name: NVIDIA Corporation\n" {
+		t.Errorf("expected verbose YAML for PCI device, got %q", got)
+	}
+	got, err = json.Marshal(verbose)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `{"bus":"pci","vendor-name":"NVIDIA Corporation","device-name":"GA102GL [RTX A5000]","subvendor-name":"NVIDIA Corporation"}` {
+		t.Errorf("expected verbose JSON for PCI device, got %q", got)
+	}
+
+}
 func TestApusysDeviceDetails_marshaling(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -157,7 +295,6 @@ func TestHardwareCommand_newMachineDetails_resolvesARMCPU(t *testing.T) {
 		Architecture:  "arm64",
 		ImplementerId: 0x41,
 		PartNumber:    0xd0c,
-		FriendlyNames: cpu.FriendlyNames{Threads: 128},
 	}}}
 
 	details := cmd.newMachineDetails(info)
@@ -165,20 +302,8 @@ func TestHardwareCommand_newMachineDetails_resolvesARMCPU(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != `"Neoverse-N1 128 threads"` {
+	if string(got) != `"arm64 (0x41)"` {
 		t.Errorf("expected resolved ARM CPU, got %s", got)
-	}
-}
-
-func TestMemoryDetails_compactZeroSwap(t *testing.T) {
-	memory := MemoryDetails{TotalRam: 8160437862}
-
-	got, err := yaml.Marshal(memory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != "7.6G (Swap 0)\n" {
-		t.Errorf("expected zero swap, got %q", got)
 	}
 }
 
@@ -209,8 +334,8 @@ func Example_hardwareCommand_printMachineInfo_json() {
 	//   "disks": [
 	//     {
 	//       "path": "/var/lib/snapd/snaps",
-	//       "total": "937.3G",
-	//       "avail": "878.7G"
+	//       "total": 1006451294208,
+	//       "avail": 943543738368
 	//     }
 	//   ],
 	//   "accelerators": [
@@ -285,14 +410,14 @@ func Example_hardwareCommand_printMachineInfo_jsonCompact() {
 	// Output:
 	// {
 	//   "cpus": [
-	//     "GenuineIntel amd64 0 threads"
+	//     "amd64 (GenuineIntel)"
 	//   ],
 	//   "memory": "62.4G (Swap 0)",
 	//   "disks": [
-	//     "/var/lib/snapd/snaps (Free 878.7G / 937.3G)"
+	//     "/var/lib/snapd/snaps (Free 943543738368 / 1006451294208)"
 	//   ],
 	//   "accelerators": [
-	//     "Intel Corporation (VRAM: 0)",
+	//     "Intel Corporation (VRAM 0)",
 	//     {
 	//       "bus": "usb",
 	//       "vendor-name": "Example Vendor",
@@ -316,9 +441,9 @@ func Example_hardwareCommand_printMachineInfo_plainCompact() {
 
 	// Output:
 	// cpus:
-	//     - GenuineIntel amd64 0 threads
+	//     - amd64 (GenuineIntel)
 	// accelerators:
-	//     - 'Intel Corporation (VRAM: 0)'
+	//     - Intel Corporation (VRAM 0)
 	//     - bus: usb
 	//       vendor-name: Example Vendor
 	//       product-name: Example Product

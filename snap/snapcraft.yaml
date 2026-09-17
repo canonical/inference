@@ -108,7 +108,7 @@ apps:
     completer: bin/completion.bash
     plugs:
       - network
-      #- snapd-control
+      - snapd-control
       - hardware-observe
       - mount-observe
       - opengl
@@ -121,4 +121,4 @@ apps:
     plugs:
       - network
       - network-bind
-      #- snapd-control
+      - snapd-control

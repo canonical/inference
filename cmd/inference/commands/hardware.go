@@ -9,6 +9,7 @@ import (
 
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/lscompute/pkg/machine"
+	"github.com/canonical/lscompute/pkg/machine/cpu"
 	"github.com/canonical/lscompute/pkg/machine/host"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -72,57 +73,58 @@ type CpuDetails struct {
 	Architecture   string `json:"architecture" yaml:"architecture"`
 	ManufacturerId string `json:"manufacturer-id,omitempty" yaml:"manufacturer-id,omitempty"`
 	ImplementerId  HexInt `json:"implementer-id,omitempty" yaml:"implementer-id,omitempty"`
-	PartNumber     HexInt `json:"part-number,omitempty" yaml:"part-number,omitempty"`
-	BrandString    string
-	ModelName      *string
-	Processor      int64
 	Verbose        bool
 }
 
-func (cpu CpuDetails) MarshalJSON() ([]byte, error) {
-	if cpu.Verbose {
+func (c CpuDetails) MarshalJSON() ([]byte, error) {
+	if c.Verbose {
 		return json.Marshal(struct {
 			Architecture   string `json:"architecture,omitempty"`
 			ManufacturerId string `json:"manufacturer-id,omitempty"`
+			ImplementerId  HexInt `json:"implementer-id,omitempty"`
 		}{
-			Architecture:   cpu.Architecture,
-			ManufacturerId: cpu.ManufacturerId,
+			Architecture:   c.Architecture,
+			ManufacturerId: c.ManufacturerId,
+			ImplementerId:  c.ImplementerId,
 		})
 	}
+	switch c.Architecture {
 
-	return json.Marshal(fmt.Sprintf("%s %d threads", cpu.name(), cpu.Processor))
+	case cpu.Amd64:
+		return json.Marshal(fmt.Sprintf("%s (%s)", c.Architecture, c.ManufacturerId))
+
+	case cpu.Arm64:
+		return json.Marshal(fmt.Sprintf("%s (0x%x)", c.Architecture, c.ImplementerId))
+
+	default:
+		return nil, fmt.Errorf("unsupported architecture: %s", c.Architecture)
+	}
+
 }
 
-func (cpu CpuDetails) MarshalYAML() (any, error) {
-	if cpu.Verbose {
+func (c CpuDetails) MarshalYAML() (any, error) {
+	if c.Verbose {
 		return struct {
 			Architecture   string `yaml:"architecture,omitempty"`
 			ManufacturerId string `yaml:"manufacturer-id,omitempty"`
+			ImplementerId  HexInt `yaml:"implementer-id,omitempty"`
 		}{
-			Architecture:   cpu.Architecture,
-			ManufacturerId: cpu.ManufacturerId,
+			Architecture:   c.Architecture,
+			ManufacturerId: c.ManufacturerId,
+			ImplementerId:  c.ImplementerId,
 		}, nil
 	}
-	return fmt.Sprintf("%s %d threads", cpu.name(), cpu.Processor), nil
-}
+	switch c.Architecture {
 
-func (cpu CpuDetails) name() string {
-	if cpu.ModelName != nil && *cpu.ModelName != "" {
-		return *cpu.ModelName
+	case cpu.Amd64:
+		return fmt.Sprintf("%s (%s)", c.Architecture, c.ManufacturerId), nil
+
+	case cpu.Arm64:
+		return fmt.Sprintf("%s (0x%x)", c.Architecture, c.ImplementerId), nil
+
+	default:
+		return nil, fmt.Errorf("unsupported architecture: %s", c.Architecture)
 	}
-	if cpu.BrandString != "" {
-		return cpu.BrandString
-	}
-	if name, ok := armCPUName(cpu.ImplementerId, cpu.PartNumber); ok {
-		return name
-	}
-	if cpu.ImplementerId != 0 || cpu.PartNumber != 0 {
-		if implementer, ok := armImplementerName(cpu.ImplementerId); ok {
-			return fmt.Sprintf("%s %s (part 0x%x)", implementer, cpu.Architecture, cpu.PartNumber)
-		}
-		return fmt.Sprintf("%s (implementer 0x%x, part 0x%x)", cpu.Architecture, cpu.ImplementerId, cpu.PartNumber)
-	}
-	return strings.TrimSpace(fmt.Sprintf("%s %s", cpu.ManufacturerId, cpu.Architecture))
 }
 
 type MemoryDetails struct {
@@ -177,8 +179,8 @@ func (d DiskDetails) MarshalJSON() ([]byte, error) {
 		}{
 			MountPoint: d.MountPoint,
 			Path:       d.Path,
-			Total:      FormatBytes(d.Total),
-			Avail:      FormatBytes(d.Avail),
+			Total:      d.Total,
+			Avail:      d.Avail,
 		})
 	}
 
@@ -188,7 +190,7 @@ func (d DiskDetails) MarshalJSON() ([]byte, error) {
 	} else {
 		diskPath = d.Path
 	}
-	return json.Marshal(fmt.Sprintf("%s (Free %s / %s)", diskPath, FormatBytes(d.Avail), FormatBytes(d.Total)))
+	return json.Marshal(fmt.Sprintf("%s (Free %d / %d)", diskPath, d.Avail, d.Total))
 }
 
 func (d DiskDetails) MarshalYAML() (any, error) {
@@ -271,6 +273,36 @@ func (p PciDeviceDetails) compactName() string {
 	return fmt.Sprintf("%s (VRAM %v)", name, FormatBytes(p.AdditionalProperties.Vram))
 }
 
+type PciAdditionalDeviceProperties struct {
+	Microarchitecture string `json:"microarchitecture,omitempty" yaml:"microarchitecture,omitempty"`
+	Vram              uint64 `json:"vram,omitempty" yaml:"vram,omitempty"`
+	ComputeCapability string `json:"compute-capability,omitempty" yaml:"compute-capability,omitempty"`
+}
+
+func (a PciAdditionalDeviceProperties) MarshalYAML() (any, error) {
+	return struct {
+		Microarchitecture string `yaml:"microarchitecture,omitempty"`
+		Vram              any    `yaml:"vram,omitempty"`
+		ComputeCapability string `yaml:"compute-capability,omitempty"`
+	}{
+		Microarchitecture: a.Microarchitecture,
+		Vram:              FormatBytes(a.Vram),
+		ComputeCapability: a.ComputeCapability,
+	}, nil
+}
+
+func (a PciAdditionalDeviceProperties) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Microarchitecture string `json:"microarchitecture,omitempty"`
+		Vram              any    `json:"vram,omitempty"`
+		ComputeCapability string `json:"compute-capability,omitempty"`
+	}{
+		Microarchitecture: a.Microarchitecture,
+		Vram:              FormatBytes(a.Vram),
+		ComputeCapability: a.ComputeCapability,
+	})
+}
+
 type UsbDeviceDetails struct {
 	Bus                  string            `json:"bus" yaml:"bus"`
 	VendorName           string            `json:"vendor-name,omitempty" yaml:"vendor-name,omitempty"`
@@ -315,36 +347,6 @@ func (a ApusysDeviceDetails) MarshalJSON() ([]byte, error) {
 		})
 	}
 	return json.Marshal(a.VendorName)
-}
-
-type PciAdditionalDeviceProperties struct {
-	Microarchitecture string `json:"microarchitecture,omitempty" yaml:"microarchitecture,omitempty"`
-	Vram              uint64 `json:"vram,omitempty" yaml:"vram,omitempty"`
-	ComputeCapability string `json:"compute-capability,omitempty" yaml:"compute-capability,omitempty"`
-}
-
-func (a PciAdditionalDeviceProperties) MarshalYAML() (any, error) {
-	return struct {
-		Microarchitecture string `yaml:"microarchitecture,omitempty"`
-		Vram              any    `yaml:"vram,omitempty"`
-		ComputeCapability string `yaml:"compute-capability,omitempty"`
-	}{
-		Microarchitecture: a.Microarchitecture,
-		Vram:              FormatBytes(a.Vram),
-		ComputeCapability: a.ComputeCapability,
-	}, nil
-}
-
-func (a PciAdditionalDeviceProperties) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Microarchitecture string `json:"microarchitecture,omitempty"`
-		Vram              any    `json:"vram,omitempty"`
-		ComputeCapability string `json:"compute-capability,omitempty"`
-	}{
-		Microarchitecture: a.Microarchitecture,
-		Vram:              FormatBytes(a.Vram),
-		ComputeCapability: a.ComputeCapability,
-	})
 }
 
 func Hardware(ctx *common.Context) *cobra.Command {
@@ -519,10 +521,6 @@ func (cmd *hardwareCommand) newMachineDetails(info *machine.Machine) *MachineDet
 				Architecture:   c.Architecture,
 				ManufacturerId: c.ManufacturerId,
 				ImplementerId:  HexInt(c.ImplementerId),
-				PartNumber:     HexInt(c.PartNumber),
-				ModelName:      c.FriendlyNames.ModelName,
-				Processor:      c.FriendlyNames.Threads,
-				BrandString:    c.FriendlyNames.BrandString,
 				Verbose:        cmd.verbose,
 			}
 		}
