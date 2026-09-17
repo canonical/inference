@@ -4,22 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
-	"os"
-	"os/exec"
-	"strings"
 
+	"github.com/canonical/go-snapctl"
+	snapctlenv "github.com/canonical/go-snapctl/env"
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/providers"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
-)
-
-const (
-	inferenceSnapName = "inference"
-	proxyServiceName  = "d"
+	"go.yaml.in/yaml/v4"
 )
 
 type statusCommand struct {
@@ -74,12 +67,17 @@ func (cmd *statusCommand) run(cobraCmd *cobra.Command, _ []string) error {
 }
 
 func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error) {
-	proxyStatus, err := cmd.SnapdClient.ServiceStatus(ctx, inferenceSnapInstanceName(), proxyServiceName)
+	snapInstanceName := snapctlenv.SnapInstanceName()
+	if snapInstanceName == "" {
+		// Fall back to snap name when not inside a snap
+		snapInstanceName = common.InferenceSnapName
+	}
+	serviceStatus, err := cmd.SnapdClient.ServiceStatus(ctx, snapInstanceName, common.InferenceService)
 	if err != nil {
 		return statusOutput{}, common.FriendlySnapdError(err)
 	}
 
-	baseURL, err := cmd.proxyOpenAIBaseURL(ctx)
+	baseURL, err := cmd.proxyOpenAIBaseURL()
 	if err != nil {
 		return statusOutput{}, err
 	}
@@ -92,7 +90,7 @@ func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error)
 	// TODO look up warnings like GPU not working
 
 	return statusOutput{
-		Services: map[string]string{"proxy": proxyStatus},
+		Services: map[string]string{snapInstanceName + "." + common.InferenceService: serviceStatus},
 		Proxy: &statusProxy{
 			OpenAI: statusOpenAIProxy{
 				BaseURL: baseURL,
@@ -100,13 +98,6 @@ func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error)
 		},
 		Health: health,
 	}, nil
-}
-
-func inferenceSnapInstanceName() string {
-	if name := os.Getenv("SNAP_INSTANCE_NAME"); name != "" {
-		return name
-	}
-	return inferenceSnapName
 }
 
 func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string, error) {
@@ -133,12 +124,13 @@ func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string
 	return output, nil
 }
 
-func (cmd *statusCommand) proxyOpenAIBaseURL(ctx context.Context) (string, error) {
-	if os.Getenv("SNAP") == "" || os.Getenv("SNAP_NAME") != inferenceSnapName {
-		return "unavailable", nil
+func (cmd *statusCommand) proxyOpenAIBaseURL() (string, error) {
+	if !common.IsSnap() {
+		// Proxy url can not be looked up outside the snap. Rather than error, omit it.
+		return "", nil
 	}
 
-	host, err := cmd.snapConfigurationValue(ctx, "http.host")
+	host, err := snapctl.Get("http.host").Run()
 	if err != nil {
 		return "", err
 	}
@@ -146,7 +138,7 @@ func (cmd *statusCommand) proxyOpenAIBaseURL(ctx context.Context) (string, error
 		return "", fmt.Errorf("inference snap configuration option http.host is empty")
 	}
 
-	port, err := cmd.snapConfigurationValue(ctx, "http.port")
+	port, err := snapctl.Get("http.port").Run()
 	if err != nil {
 		return "", err
 	}
@@ -154,17 +146,6 @@ func (cmd *statusCommand) proxyOpenAIBaseURL(ctx context.Context) (string, error
 		return "", fmt.Errorf("inference snap configuration option http.port is empty")
 	}
 	return "http://" + net.JoinHostPort(host, port) + "/v1", nil
-}
-
-func (cmd *statusCommand) snapConfigurationValue(ctx context.Context, key string) (string, error) {
-	output, err := exec.CommandContext(ctx, "snapctl", "get", key).CombinedOutput()
-	if err != nil {
-		if message := strings.TrimSpace(string(output)); message != "" {
-			return "", errors.New(message)
-		}
-		return "", fmt.Errorf("reading inference snap configuration option %s: %w", key, err)
-	}
-	return strings.TrimSpace(string(output)), nil
 }
 
 func (cmd *statusCommand) renderStatus(status statusOutput, format string) (string, error) {

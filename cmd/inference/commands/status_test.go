@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -47,19 +46,19 @@ func TestStatusServicesOutput(t *testing.T) {
 	}{
 		{
 			name: "yaml",
-			want: "services:\n  proxy: active\nproxy:\n  openai:\n    base-url: unavailable\n",
+			want: "services:\n  inference.d: active\nproxy:\n  openai:\n    base-url: \"\"\n",
 		},
 		{
 			name: "json",
 			args: []string{"--format=json"},
-			want: "{\n  \"services\": {\n    \"proxy\": \"active\"\n  },\n  \"proxy\": {\n    \"openai\": {\n      \"base-url\": \"unavailable\"\n    }\n  }\n}\n",
+			want: "{\n  \"services\": {\n    \"inference.d\": \"active\"\n  },\n  \"proxy\": {\n    \"openai\": {\n      \"base-url\": \"\"\n    }\n  }\n}\n",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("SNAP", "")
 			t.Setenv("SNAP_INSTANCE_NAME", "")
 			ctx, stdout, stderr := newTestContext()
-			ctx.SnapdClient = statusSnapdClient(t, inferenceSnapName, true)
+			ctx.SnapdClient = statusSnapdClient(t, common.InferenceSnapName, true)
 			ctx.SnapCatalog = &snapcatalog.Reader{}
 			if err := execute(Status(ctx), test.args...); err != nil {
 				t.Fatal(err)
@@ -78,22 +77,28 @@ func TestStatusUsesSnapInstanceName(t *testing.T) {
 	const instanceName = "inference_gpu"
 	t.Setenv("SNAP", "")
 	t.Setenv("SNAP_INSTANCE_NAME", instanceName)
-	ctx, _, _ := newTestContext()
+	ctx, stdout, _ := newTestContext()
 	ctx.SnapdClient = statusSnapdClient(t, instanceName, true)
 	ctx.SnapCatalog = &snapcatalog.Reader{}
 
 	if err := execute(Status(ctx)); err != nil {
 		t.Fatal(err)
 	}
+	want := "services:\n  inference_gpu.d: active\nproxy:\n  openai:\n    base-url: \"\"\n"
+	if stdout.String() != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", stdout.String(), want)
+	}
 }
 
 func TestProxyOpenAIBaseURL(t *testing.T) {
 	t.Setenv("SNAP", "/snap/inference/current")
-	t.Setenv("SNAP_NAME", inferenceSnapName)
+	t.Setenv("SNAP_NAME", common.InferenceSnapName)
+	t.Setenv("SNAP_INSTANCE_NAME", common.InferenceSnapName)
 	binDir := t.TempDir()
 	snapctlPath := filepath.Join(binDir, "snapctl")
 	snapctl := `#!/bin/sh
 case "$2" in
+  debug) printf '%s\n' 'false' ;;
   http.host) printf '%s\n' '::1' ;;
   http.port) printf '%s\n' '8401' ;;
   *) exit 1 ;;
@@ -104,7 +109,7 @@ esac
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	got, err := (&statusCommand{}).proxyOpenAIBaseURL(context.Background())
+	got, err := (&statusCommand{}).proxyOpenAIBaseURL()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,19 +121,26 @@ esac
 func TestProxyOpenAIBaseURLOutsideSnap(t *testing.T) {
 	t.Setenv("SNAP", "")
 
-	got, err := (&statusCommand{}).proxyOpenAIBaseURL(context.Background())
+	got, err := (&statusCommand{}).proxyOpenAIBaseURL()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "unavailable" {
-		t.Fatalf("got %q, want %q", got, "unavailable")
+	if got != "" {
+		t.Fatalf("got %q, want empty string", got)
 	}
 }
 
-func TestSnapConfigurationValuePreservesSnapctlError(t *testing.T) {
+func TestProxyOpenAIBaseURLPreservesSnapctlError(t *testing.T) {
+	t.Setenv("SNAP", "/snap/inference/current")
+	t.Setenv("SNAP_NAME", common.InferenceSnapName)
+	t.Setenv("SNAP_INSTANCE_NAME", common.InferenceSnapName)
 	binDir := t.TempDir()
 	snapctlPath := filepath.Join(binDir, "snapctl")
 	snapctl := `#!/bin/sh
+if [ "$2" = debug ]; then
+  printf '%s\n' 'false'
+  exit 0
+fi
 printf '%s\n' 'error: snapctl: cannot invoke snapctl operation commands (here "get") from outside of a snap' >&2
 exit 1
 `
@@ -137,11 +149,11 @@ exit 1
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	_, err := (&statusCommand{}).snapConfigurationValue(context.Background(), "http.host")
+	_, err := (&statusCommand{}).proxyOpenAIBaseURL()
 	if err == nil {
 		t.Fatal("expected snapctl error")
 	}
-	want := `error: snapctl: cannot invoke snapctl operation commands (here "get") from outside of a snap`
+	want := "exit status 1: error: snapctl: cannot invoke snapctl operation commands (here \"get\") from outside of a snap\n"
 	if err.Error() != want {
 		t.Fatalf("got %q, want %q", err, want)
 	}
