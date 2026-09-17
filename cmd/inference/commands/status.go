@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/canonical/go-snapctl"
 	snapctlenv "github.com/canonical/go-snapctl/env"
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/providers"
@@ -77,11 +76,6 @@ func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error)
 		return statusOutput{}, common.FriendlySnapdError(err)
 	}
 
-	baseURL, err := cmd.proxyOpenAIBaseURL()
-	if err != nil {
-		return statusOutput{}, err
-	}
-
 	health, err := cmd.providerHealth(ctx)
 	if err != nil {
 		return statusOutput{}, err
@@ -93,7 +87,7 @@ func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error)
 		Services: map[string]string{snapInstanceName + "." + common.InferenceService: serviceStatus},
 		Proxy: &statusProxy{
 			OpenAI: statusOpenAIProxy{
-				BaseURL: baseURL,
+				BaseURL: cmd.proxyOpenAIBaseURL(),
 			},
 		},
 		Health: health,
@@ -124,28 +118,8 @@ func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string
 	return output, nil
 }
 
-func (cmd *statusCommand) proxyOpenAIBaseURL() (string, error) {
-	if !common.IsSnap() {
-		// Proxy url can not be looked up outside the snap. Rather than error, omit it.
-		return "", nil
-	}
-
-	host, err := snapctl.Get("http.host").Run()
-	if err != nil {
-		return "", err
-	}
-	if host == "" {
-		return "", fmt.Errorf("inference snap configuration option http.host is empty")
-	}
-
-	port, err := snapctl.Get("http.port").Run()
-	if err != nil {
-		return "", err
-	}
-	if port == "" {
-		return "", fmt.Errorf("inference snap configuration option http.port is empty")
-	}
-	return "http://" + net.JoinHostPort(host, port) + "/v1", nil
+func (cmd *statusCommand) proxyOpenAIBaseURL() string {
+	return "http://" + net.JoinHostPort(cmd.HTTPHost, cmd.HTTPPort) + "/v1"
 }
 
 func (cmd *statusCommand) renderStatus(status statusOutput, format string) (string, error) {

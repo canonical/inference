@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -9,9 +10,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"sync/atomic"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/canonical/inference/internal/snapcatalog"
 )
 
 func TestShareProvidersPath(t *testing.T) {
@@ -68,30 +71,33 @@ func TestListenAddress(t *testing.T) {
 	}
 }
 
-func TestParseServerOptions(t *testing.T) {
+func TestServerOptionsFromEnvironment(t *testing.T) {
 	tests := []struct {
 		name    string
-		args    []string
+		host    string
+		port    string
 		want    serverOptions
 		wantErr bool
 	}{
 		{name: "defaults", want: serverOptions{host: defaultHost, port: defaultPort}},
 		{
 			name: "configured",
-			args: []string{"--host", "0.0.0.0", "--port", "9000"},
+			host: "0.0.0.0",
+			port: "9000",
 			want: serverOptions{host: "0.0.0.0", port: 9000},
 		},
-		{name: "invalid port", args: []string{"--port", "invalid"}, wantErr: true},
-		{name: "positional argument", args: []string{"localhost"}, wantErr: true},
+		{name: "invalid port", port: "invalid", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseServerOptions(tt.args, io.Discard)
+			t.Setenv(httpHostEnvVar, tt.host)
+			t.Setenv(httpPortEnvVar, tt.port)
+			got, err := serverOptionsFromEnvironment()
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("parseServerOptions() error = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("serverOptionsFromEnvironment() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if got != tt.want {
-				t.Fatalf("parseServerOptions() = %#v, want %#v", got, tt.want)
+				t.Fatalf("serverOptionsFromEnvironment() = %#v, want %#v", got, tt.want)
 			}
 		})
 	}
@@ -117,79 +123,40 @@ func TestCatalogClientHasTimeout(t *testing.T) {
 	}
 }
 
-func TestRefreshCatalogPeriodically(t *testing.T) {
+func TestRefreshCatalogLogsConfigurationError(t *testing.T) {
+	t.Setenv(snapcatalog.EnvVar, "")
+	t.Setenv("SNAP_COMMON", "")
+	var output bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&output, nil))
+
+	refreshCatalog(context.Background(), logger)
+
+	if got := output.String(); !strings.Contains(got, snapcatalog.ErrNotConfigured.Error()) {
+		t.Fatalf("log output = %q, want catalog configuration error", got)
+	}
+}
+
+func TestRefreshCatalogPeriodicallyRefreshesBeforeStopping(t *testing.T) {
+	t.Setenv(snapcatalog.EnvVar, "")
+	t.Setenv("SNAP_COMMON", "")
 	ctx, cancel := context.WithCancel(context.Background())
-	refreshed := make(chan struct{}, 1)
+	cancel()
+
+	var output bytes.Buffer
 	done := make(chan struct{})
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.NewTextHandler(&output, nil))
 	go func() {
-		refreshCatalogPeriodically(ctx, time.Hour, func(context.Context) error {
-			refreshed <- struct{}{}
-			return nil
-		}, logger)
+		refreshCatalogPeriodically(ctx, time.Hour, logger)
 		close(done)
 	}()
 
-	select {
-	case <-refreshed:
-	case <-time.After(time.Second):
-		t.Fatal("catalog was not refreshed")
-	}
-	cancel()
 	select {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("periodic refresh did not stop after cancellation")
 	}
-}
-
-func TestRefreshCatalogPeriodicallyDoesNotOverlap(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	started := make(chan struct{}, 2)
-	release := make(chan struct{})
-	done := make(chan struct{})
-	var active atomic.Int32
-	var maximum atomic.Int32
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	go func() {
-		refreshCatalogPeriodically(ctx, time.Millisecond, func(context.Context) error {
-			current := active.Add(1)
-			if current > maximum.Load() {
-				maximum.Store(current)
-			}
-			started <- struct{}{}
-			<-release
-			active.Add(-1)
-			return errors.New("refresh failed")
-		}, logger)
-		close(done)
-	}()
-
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("catalog refresh did not start")
-	}
-	select {
-	case <-started:
-		t.Fatal("second catalog refresh overlapped the first")
-	case <-time.After(10 * time.Millisecond):
-	}
-	close(release)
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("second catalog refresh did not start")
-	}
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("periodic refresh did not stop")
-	}
-	if got := maximum.Load(); got != 1 {
-		t.Fatalf("maximum concurrent refreshes=%d, want 1", got)
+	if got := output.String(); !strings.Contains(got, "refreshing snap catalog") {
+		t.Fatalf("log output = %q, want initial catalog refresh", got)
 	}
 }
 

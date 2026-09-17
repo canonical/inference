@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -46,12 +45,12 @@ func TestStatusServicesOutput(t *testing.T) {
 	}{
 		{
 			name: "yaml",
-			want: "services:\n  inference.d: active\nproxy:\n  openai:\n    base-url: \"\"\n",
+			want: "services:\n  inference.d: active\nproxy:\n  openai:\n    base-url: http://127.0.0.1:8400/v1\n",
 		},
 		{
 			name: "json",
 			args: []string{"--format=json"},
-			want: "{\n  \"services\": {\n    \"inference.d\": \"active\"\n  },\n  \"proxy\": {\n    \"openai\": {\n      \"base-url\": \"\"\n    }\n  }\n}\n",
+			want: "{\n  \"services\": {\n    \"inference.d\": \"active\"\n  },\n  \"proxy\": {\n    \"openai\": {\n      \"base-url\": \"http://127.0.0.1:8400/v1\"\n    }\n  }\n}\n",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -84,78 +83,19 @@ func TestStatusUsesSnapInstanceName(t *testing.T) {
 	if err := execute(Status(ctx)); err != nil {
 		t.Fatal(err)
 	}
-	want := "services:\n  inference_gpu.d: active\nproxy:\n  openai:\n    base-url: \"\"\n"
+	want := "services:\n  inference_gpu.d: active\nproxy:\n  openai:\n    base-url: http://127.0.0.1:8400/v1\n"
 	if stdout.String() != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", stdout.String(), want)
 	}
 }
 
 func TestProxyOpenAIBaseURL(t *testing.T) {
-	t.Setenv("SNAP", "/snap/inference/current")
-	t.Setenv("SNAP_NAME", common.InferenceSnapName)
-	t.Setenv("SNAP_INSTANCE_NAME", common.InferenceSnapName)
-	binDir := t.TempDir()
-	snapctlPath := filepath.Join(binDir, "snapctl")
-	snapctl := `#!/bin/sh
-case "$2" in
-  debug) printf '%s\n' 'false' ;;
-  http.host) printf '%s\n' '::1' ;;
-  http.port) printf '%s\n' '8401' ;;
-  *) exit 1 ;;
-esac
-`
-	if err := os.WriteFile(snapctlPath, []byte(snapctl), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	got, err := (&statusCommand{}).proxyOpenAIBaseURL()
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := (&statusCommand{Context: &common.Context{
+		HTTPHost: "::1",
+		HTTPPort: "8401",
+	}}).proxyOpenAIBaseURL()
 	if got != "http://[::1]:8401/v1" {
 		t.Fatalf("got %q, want %q", got, "http://[::1]:8401/v1")
-	}
-}
-
-func TestProxyOpenAIBaseURLOutsideSnap(t *testing.T) {
-	t.Setenv("SNAP", "")
-
-	got, err := (&statusCommand{}).proxyOpenAIBaseURL()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "" {
-		t.Fatalf("got %q, want empty string", got)
-	}
-}
-
-func TestProxyOpenAIBaseURLPreservesSnapctlError(t *testing.T) {
-	t.Setenv("SNAP", "/snap/inference/current")
-	t.Setenv("SNAP_NAME", common.InferenceSnapName)
-	t.Setenv("SNAP_INSTANCE_NAME", common.InferenceSnapName)
-	binDir := t.TempDir()
-	snapctlPath := filepath.Join(binDir, "snapctl")
-	snapctl := `#!/bin/sh
-if [ "$2" = debug ]; then
-  printf '%s\n' 'false'
-  exit 0
-fi
-printf '%s\n' 'error: snapctl: cannot invoke snapctl operation commands (here "get") from outside of a snap' >&2
-exit 1
-`
-	if err := os.WriteFile(snapctlPath, []byte(snapctl), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	_, err := (&statusCommand{}).proxyOpenAIBaseURL()
-	if err == nil {
-		t.Fatal("expected snapctl error")
-	}
-	want := "exit status 1: error: snapctl: cannot invoke snapctl operation commands (here \"get\") from outside of a snap\n"
-	if err.Error() != want {
-		t.Fatalf("got %q, want %q", err, want)
 	}
 }
 

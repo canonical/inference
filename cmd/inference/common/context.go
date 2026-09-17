@@ -13,4 +13,6 @@ type Context struct {
 	SnapdClient        *snapd.Client
 	SnapCatalog        *snapcatalog.Reader
 	ShareProvidersPath string
+	HTTPHost           string
+	HTTPPort           string
 }

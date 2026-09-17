@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -25,6 +23,8 @@ import (
 
 const (
 	sharedProvidersPathEnvVar = "SHARED_PROVIDERS_PATH"
+	httpHostEnvVar            = "HTTP_HOST"
+	httpPortEnvVar            = "HTTP_PORT"
 	defaultHost               = "127.0.0.1"
 	defaultPort               = 8400
 	catalogRefreshInterval    = 12 * time.Hour
@@ -38,17 +38,15 @@ const (
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	options, err := parseServerOptions(os.Args[1:], os.Stderr)
-	if errors.Is(err, flag.ErrHelp) {
-		return
-	}
-	if err != nil {
-		logger.Error("parsing arguments", "error", err)
-		os.Exit(1)
-	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	options, err := serverOptionsFromEnvironment()
+	if err != nil {
+		logger.Error("reading server configuration", "error", err)
+		os.Exit(1)
+	}
 
 	address, err := listenAddress(options.host, options.port)
 	if err != nil {
@@ -63,8 +61,7 @@ func main() {
 	}
 
 	catalog := snapcatalog.NewReader()
-	catalogRefresher := snapcatalog.NewRefresher(newCatalogClient())
-	go refreshCatalogPeriodically(ctx, catalogRefreshInterval, catalogRefresher.Refresh, logger)
+	go refreshCatalogPeriodically(ctx, catalogRefreshInterval, logger)
 
 	snapdClient := snapd.NewClient()
 	listProviders := func(ctx context.Context) ([]providers.Provider, error) {
@@ -112,10 +109,10 @@ func newCatalogClient() *http.Client {
 
 func refreshCatalog(
 	ctx context.Context,
-	refresh func(context.Context) error,
 	logger *slog.Logger,
 ) {
-	if err := refresh(ctx); err != nil {
+	catalogRefresher := snapcatalog.NewRefresher(newCatalogClient())
+	if err := catalogRefresher.Refresh(ctx); err != nil {
 		logger.Warn("refreshing snap catalog", "error", err)
 		return
 	}
@@ -125,10 +122,9 @@ func refreshCatalog(
 func refreshCatalogPeriodically(
 	ctx context.Context,
 	interval time.Duration,
-	refresh func(context.Context) error,
 	logger *slog.Logger,
 ) {
-	refreshCatalog(ctx, refresh, logger)
+	refreshCatalog(ctx, logger)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -137,7 +133,7 @@ func refreshCatalogPeriodically(
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			refreshCatalog(ctx, refresh, logger)
+			refreshCatalog(ctx, logger)
 		}
 	}
 }
@@ -238,19 +234,21 @@ type serverOptions struct {
 	port int
 }
 
-func parseServerOptions(args []string, output io.Writer) (serverOptions, error) {
-	options := serverOptions{}
-	flags := flag.NewFlagSet("inference_d", flag.ContinueOnError)
-	flags.SetOutput(output)
-	flags.StringVar(&options.host, "host", defaultHost, "host to bind to")
-	flags.IntVar(&options.port, "port", defaultPort, "port to bind to")
-	if err := flags.Parse(args); err != nil {
-		return serverOptions{}, err
+func serverOptionsFromEnvironment() (serverOptions, error) {
+	host := os.Getenv(httpHostEnvVar)
+	if host == "" {
+		host = defaultHost
 	}
-	if flags.NArg() != 0 {
-		return serverOptions{}, fmt.Errorf("unexpected arguments: %v", flags.Args())
+
+	portValue := os.Getenv(httpPortEnvVar)
+	if portValue == "" {
+		return serverOptions{host: host, port: defaultPort}, nil
 	}
-	return options, nil
+	port, err := strconv.Atoi(portValue)
+	if err != nil {
+		return serverOptions{}, fmt.Errorf("%s must be an integer: %w", httpPortEnvVar, err)
+	}
+	return serverOptions{host: host, port: port}, nil
 }
 
 func listenAddress(host string, port int) (string, error) {

@@ -41,18 +41,22 @@ parts:
     source: snap/local
     organize:
       completion.bash: bin/completion.bash
-      inference.d.sh: bin/inference.d.sh
+      seed-env.sh: bin/seed-env.sh
 
 apps:
   inference:
     command: bin/inference
+    command-chain:
+      - bin/seed-env.sh
     completer: bin/completion.bash
     plugs:
       - network
       - snapd-control
 
   d:
-    command: bin/inference.d.sh
+    command: bin/inference_d
+    command-chain:
+      - bin/seed-env.sh
     daemon: simple
     install-mode: enable
     restart-condition: on-failure
