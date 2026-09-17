@@ -460,12 +460,18 @@ type Maintenance struct {
 }
 
 type Task struct {
-	Summary  string       `json:"summary"`
-	Status   string       `json:"status"`
-	Progress TaskProgress `json:"progress"`
+	ID        string       `json:"id"`
+	Kind      string       `json:"kind"`
+	Summary   string       `json:"summary"`
+	Status    string       `json:"status"`
+	Log       []string     `json:"log"`
+	Progress  TaskProgress `json:"progress"`
+	SpawnTime time.Time    `json:"spawn-time"`
+	ReadyTime time.Time    `json:"ready-time"`
 }
 
 type TaskProgress struct {
-	Done  int `json:"done"`
-	Total int `json:"total"`
+	Label string `json:"label"`
+	Done  int    `json:"done"`
+	Total int    `json:"total"`
 }
