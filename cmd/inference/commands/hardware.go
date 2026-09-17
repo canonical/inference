@@ -268,7 +268,7 @@ func (p PciDeviceDetails) compactName() string {
 	if p.AdditionalProperties == nil {
 		return name
 	}
-	return fmt.Sprintf("%s (VRAM: %v)", name, FormatBytes(p.AdditionalProperties.Vram))
+	return fmt.Sprintf("%s (VRAM %v)", name, FormatBytes(p.AdditionalProperties.Vram))
 }
 
 type UsbDeviceDetails struct {
