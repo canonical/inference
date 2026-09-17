@@ -7,7 +7,7 @@ import (
 	"github.com/canonical/inference/internal/providers"
 	"github.com/canonical/inference/internal/redact"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 type infoCommand struct {
