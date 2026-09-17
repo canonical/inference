@@ -2,7 +2,7 @@ package providers
 
 import "net/url"
 
-func RedactedURL(rawURL string) string {
+func RedactURL(rawURL string) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return "<invalid>"

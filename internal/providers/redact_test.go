@@ -2,7 +2,7 @@ package providers
 
 import "testing"
 
-func TestRedactedURL(t *testing.T) {
+func TestRedactURL(t *testing.T) {
 	tests := []struct {
 		name  string
 		value string
@@ -27,8 +27,8 @@ func TestRedactedURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := RedactedURL(tt.value); got != tt.want {
-				t.Errorf("RedactedURL %q redacted to %q, want %q", tt.value, got, tt.want)
+			if got := RedactURL(tt.value); got != tt.want {
+				t.Errorf("RedactURL %q redacted to %q, want %q", tt.value, got, tt.want)
 			}
 		})
 	}

@@ -270,7 +270,7 @@ func (h *ModelsHandler) proxy(
 		logger.Error(
 			"parsing provider URL",
 			"provider", route.providerName,
-			"provider_url", providers.RedactedURL(route.baseURL),
+			"provider_url", providers.RedactURL(route.baseURL),
 			"error", redactURLError(err),
 		)
 		writeError(w, http.StatusBadGateway, "The inference provider is unavailable.", "service_unavailable")
@@ -322,7 +322,7 @@ func (h *ModelsHandler) proxy(
 		logger.Info(
 			"upstream response stream terminated",
 			"provider", route.providerName,
-			"provider_url", providers.RedactedURL(route.baseURL),
+			"provider_url", providers.RedactURL(route.baseURL),
 			"model", requestedModel,
 		)
 	}()

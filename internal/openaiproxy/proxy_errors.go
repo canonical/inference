@@ -59,7 +59,7 @@ func handleProxyError(
 		logger.Error(
 			"proxying inference request",
 			"provider", providerName,
-			"provider_url", providers.RedactedURL(providerURL),
+			"provider_url", providers.RedactURL(providerURL),
 			"model", model,
 			"error", redactURLError(err),
 		)
