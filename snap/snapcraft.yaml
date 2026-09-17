@@ -12,6 +12,12 @@ adopt-info: version
 layout:
   /usr/share/misc/pci.ids:
     bind-file: $SNAP/usr/share/misc/pci.ids
+    
+plugs:
+  provider:
+    interface: content
+    content: inference-provider
+    target: $SNAP/share/providers
 
 parts:
   version:
@@ -95,12 +101,6 @@ parts:
     source: snap/local
     organize:
       completion.bash: bin/completion.bash
-
-  providers:
-    plugin: dump
-    source: test_data/share/providers
-    organize:
-      "*": share/providers/
 
 apps:
   inference:
