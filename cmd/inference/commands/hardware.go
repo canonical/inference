@@ -14,7 +14,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type HexInt uint16
+type HexInt uint64
+
+func (h HexInt) MarshalJSON() ([]byte, error) {
+	return json.Marshal(fmt.Sprintf("0x%x", uint64(h)))
+}
+
+func (h HexInt) MarshalYAML() (any, error) {
+	return fmt.Sprintf("0x%x", uint64(h)), nil
+}
 
 type hardwareCommand struct {
 	*common.Context
@@ -63,6 +71,8 @@ func (md MachineDetails) MarshalYAML() (any, error) {
 type CpuDetails struct {
 	Architecture   string `json:"architecture" yaml:"architecture"`
 	ManufacturerId string `json:"manufacturer-id,omitempty" yaml:"manufacturer-id,omitempty"`
+	ImplementerId  HexInt `json:"implementer-id,omitempty" yaml:"implementer-id,omitempty"`
+	PartNumber     HexInt `json:"part-number,omitempty" yaml:"part-number,omitempty"`
 	BrandString    string
 	ModelName      *string
 	Processor      int64
@@ -102,6 +112,15 @@ func (cpu CpuDetails) name() string {
 	}
 	if cpu.BrandString != "" {
 		return cpu.BrandString
+	}
+	if name, ok := armCPUName(cpu.ImplementerId, cpu.PartNumber); ok {
+		return name
+	}
+	if cpu.ImplementerId != 0 || cpu.PartNumber != 0 {
+		if implementer, ok := armImplementerName(cpu.ImplementerId); ok {
+			return fmt.Sprintf("%s %s (part 0x%x)", implementer, cpu.Architecture, cpu.PartNumber)
+		}
+		return fmt.Sprintf("%s (implementer 0x%x, part 0x%x)", cpu.Architecture, cpu.ImplementerId, cpu.PartNumber)
 	}
 	return strings.TrimSpace(fmt.Sprintf("%s %s", cpu.ManufacturerId, cpu.Architecture))
 }
@@ -499,6 +518,8 @@ func (cmd *hardwareCommand) newMachineDetails(info *machine.Machine) *MachineDet
 			v.CPUs[i] = CpuDetails{
 				Architecture:   c.Architecture,
 				ManufacturerId: c.ManufacturerId,
+				ImplementerId:  HexInt(c.ImplementerId),
+				PartNumber:     HexInt(c.PartNumber),
 				ModelName:      c.FriendlyNames.ModelName,
 				Processor:      c.FriendlyNames.Threads,
 				BrandString:    c.FriendlyNames.BrandString,
