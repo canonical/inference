@@ -33,8 +33,8 @@ func Info(ctx *common.Context) *cobra.Command {
 	cmd := infoCommand{Context: ctx}
 	cobraCmd := &cobra.Command{
 		Use:               "info <provider>",
-		Short:             "Display details of a provider",
-		Long:              "Display details of an installed or installable inference provider.",
+        Short:             "Show information about a provider",  
+        Long:              "Show information about an inference provider, including its state and API details.",  
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: common.CompleteSnapNames,
 		SilenceUsage:      true,
