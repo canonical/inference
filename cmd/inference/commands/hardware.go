@@ -234,12 +234,14 @@ func (p PciDeviceDetails) MarshalYAML() (any, error) {
 			VendorName           string                         `yaml:"vendor-name,omitempty"`
 			DeviceName           string                         `yaml:"device-name,omitempty"`
 			SubvendorName        string                         `yaml:"subvendor-name,omitempty"`
+			SubdeviceName        string                         `yaml:"subdevice-name,omitempty"`
 			AdditionalProperties *PciAdditionalDeviceProperties `yaml:"additional-properties,omitempty"`
 		}{
 			Bus:                  p.Bus,
 			VendorName:           p.VendorName,
 			DeviceName:           p.DeviceName,
 			SubvendorName:        p.SubvendorName,
+			SubdeviceName:        p.SubdeviceName,
 			AdditionalProperties: p.AdditionalProperties,
 		}, nil
 	}
@@ -253,12 +255,14 @@ func (p PciDeviceDetails) MarshalJSON() ([]byte, error) {
 			VendorName           string                         `json:"vendor-name,omitempty"`
 			DeviceName           string                         `json:"device-name,omitempty"`
 			SubvendorName        string                         `json:"subvendor-name,omitempty"`
+			SubdeviceName        string                         `json:"subdevice-name,omitempty"`
 			AdditionalProperties *PciAdditionalDeviceProperties `json:"additional-properties,omitempty"`
 		}{
 			Bus:                  p.Bus,
 			VendorName:           p.VendorName,
 			DeviceName:           p.DeviceName,
 			SubvendorName:        p.SubvendorName,
+			SubdeviceName:        p.SubdeviceName,
 			AdditionalProperties: p.AdditionalProperties,
 		})
 	}
@@ -368,7 +372,7 @@ func Hardware(ctx *common.Context) *cobra.Command {
 		&cmd.format,
 		"format",
 		"plain",
-		fmt.Sprintf("output format (%s)", strings.Join(supportedFormats, ", ")),
+		fmt.Sprintf("output format [%s]", strings.Join(supportedFormats, "|")),
 	)
 	cobraCmd.Flags().BoolVar(
 		&cmd.verbose,
@@ -381,6 +385,10 @@ func Hardware(ctx *common.Context) *cobra.Command {
 }
 
 func (cmd *hardwareCommand) run(_ *cobra.Command, _ []string) error {
+	if cmd.format != "json" && cmd.format != "plain" {
+		return fmt.Errorf("unknown format %q", cmd.format)
+	}
+
 	info, err := cmd.fetchMachineInfoWithSpinner()
 	if err != nil {
 		return err

@@ -183,7 +183,7 @@ func TestDiskDetails_marshaling(t *testing.T) {
 	}
 }
 
-func TestPciDeviceDetails_marhsaling(t *testing.T) {
+func TestPciDeviceDetails_marshaling(t *testing.T) {
 	compact := PciDeviceDetails{
 		VendorName: "NVIDIA Corporation",
 		DeviceName: "GA102GL [RTX A5000]",
@@ -200,6 +200,7 @@ func TestPciDeviceDetails_marhsaling(t *testing.T) {
 		VendorName:    "NVIDIA Corporation",
 		DeviceName:    "GA102GL [RTX A5000]",
 		SubvendorName: "NVIDIA Corporation",
+		SubdeviceName: "RTX A5000",
 		Verbose:       true,
 	}
 
@@ -235,14 +236,14 @@ func TestPciDeviceDetails_marhsaling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "bus: pci\nvendor-name: NVIDIA Corporation\ndevice-name: GA102GL [RTX A5000]\nsubvendor-name: NVIDIA Corporation\n" {
+	if string(got) != "bus: pci\nvendor-name: NVIDIA Corporation\ndevice-name: GA102GL [RTX A5000]\nsubvendor-name: NVIDIA Corporation\nsubdevice-name: RTX A5000\n" {
 		t.Errorf("expected verbose YAML for PCI device, got %q", got)
 	}
 	got, err = json.Marshal(verbose)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != `{"bus":"pci","vendor-name":"NVIDIA Corporation","device-name":"GA102GL [RTX A5000]","subvendor-name":"NVIDIA Corporation"}` {
+	if string(got) != `{"bus":"pci","vendor-name":"NVIDIA Corporation","device-name":"GA102GL [RTX A5000]","subvendor-name":"NVIDIA Corporation","subdevice-name":"RTX A5000"}` {
 		t.Errorf("expected verbose JSON for PCI device, got %q", got)
 	}
 
@@ -345,7 +346,7 @@ func Example_hardwareCommand_printMachineInfo_json() {
 	//       "subvendor-name": "Hewlett-Packard Company",
 	//       "additional-properties": {
 	//         "microarchitecture": "gfx1010",
-	//         "vram": 0,
+	//         "vram": "15.3M",
 	//         "compute-capability": "7.5"
 	//       }
 	//     },
@@ -388,7 +389,7 @@ func Example_hardwareCommand_printMachineInfo_plain() {
 	//       subvendor-name: Hewlett-Packard Company
 	//       additional-properties:
 	//         microarchitecture: gfx1010
-	//         vram: 0
+	//         vram: 15.3M
 	//         compute-capability: "7.5"
 	//     - bus: usb
 	//       vendor-name: Example Vendor
@@ -417,7 +418,7 @@ func Example_hardwareCommand_printMachineInfo_jsonCompact() {
 	//     "/var/lib/snapd/snaps (Free 943543738368 / 1006451294208)"
 	//   ],
 	//   "accelerators": [
-	//     "Intel Corporation (VRAM 0)",
+	//     "Intel Corporation (VRAM 15.3M)",
 	//     {
 	//       "bus": "usb",
 	//       "vendor-name": "Example Vendor",
@@ -443,7 +444,7 @@ func Example_hardwareCommand_printMachineInfo_plainCompact() {
 	// cpus:
 	//     - amd64 (GenuineIntel)
 	// accelerators:
-	//     - Intel Corporation (VRAM 0)
+	//     - Intel Corporation (VRAM 15.3M)
 	//     - bus: usb
 	//       vendor-name: Example Vendor
 	//       product-name: Example Product

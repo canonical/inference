@@ -39,7 +39,7 @@ func hardwareInfoFixture(name string) (*machine.Machine, error) {
 				SubdeviceId:          new(uint16(0x89C6)),
 				AdditionalProperties: map[string]string{
 					"compute-capability": "7.5",
-					"vram":               "16G",
+					"vram":               "16000000",
 					"microarchitecture":  "gfx1010",
 				},
 				FriendlyNames: pci.FriendlyNames{
