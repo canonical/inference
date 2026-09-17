@@ -1,15 +1,38 @@
 package common
 
 import (
+	"os"
 	"time"
-
-	"github.com/briandowns/spinner"
 )
 
-func StartProgressSpinner(prefix string) (stop func()) {
-	s := spinner.New(spinner.CharSets[9], time.Millisecond*200)
-	s.Prefix = prefix + " "
-	s.Start()
+const spinnerTick = 150 * time.Millisecond
 
-	return s.Stop
+// Reuses progressPrinter so ad-hoc spinners share the same animation and
+// terminal-detection behavior as snapd change tracking.
+func StartProgressSpinner(prefix string) (stop func()) {
+	p := newProgressPrinter(os.Stdout)
+	done := make(chan struct{})
+	stopped := make(chan struct{})
+
+	go func() {
+		defer close(stopped)
+		ticker := time.NewTicker(spinnerTick)
+		defer ticker.Stop()
+
+		p.Spin(prefix)
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				p.Spin(prefix)
+			}
+		}
+	}()
+
+	return func() {
+		close(done)
+		<-stopped
+		p.Finished()
+	}
 }

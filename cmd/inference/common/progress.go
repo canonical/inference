@@ -170,7 +170,8 @@ func (p *progressPrinter) spinTask(task snapd.Task) {
 		suffix = " " + spinnerFrames[p.spin]
 		p.spin = (p.spin + 1) % len(spinnerFrames)
 	}
-	fmt.Fprintf(p.w, "\r%s%s", fitText(task.Summary, labelWidth), suffix)
+	label := strings.TrimRight(fitText(task.Summary, labelWidth), " ")
+	fmt.Fprintf(p.w, "\r%s%s", label, suffix)
 	p.lineOpen = true
 }
 

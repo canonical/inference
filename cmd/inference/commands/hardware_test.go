@@ -2,12 +2,73 @@ package commands
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/canonical/lscompute/pkg/machine"
 	"github.com/canonical/lscompute/pkg/machine/cpu"
+	"github.com/canonical/lscompute/pkg/machine/device/pci"
+	"github.com/canonical/lscompute/pkg/machine/device/usb"
+	"github.com/canonical/lscompute/pkg/machine/disk"
+	"github.com/canonical/lscompute/pkg/machine/memory"
 	"gopkg.in/yaml.v3"
 )
+
+// hardwareInfoFixture returns a small, hand-built MachineInfo fixture for the named machine.
+func hardwareInfoFixture(name string) (*machine.Machine, error) {
+	switch name {
+	case "dummy-machine":
+		return &machine.Machine{
+			CPUs: []cpu.CPU{{
+				Architecture:   "amd64",
+				ManufacturerId: "GenuineIntel",
+				Flags:          []string{"fpu", "vme", "de"},
+			}},
+			Memory: memory.Memory{TotalRam: 67012501504, TotalSwap: 0},
+			Disk: []disk.Disk{{
+				Path:      "/var/lib/snapd/snaps",
+				Total:     1006451294208,
+				Available: 943543738368,
+			}},
+			PCIDevices: []pci.Device{{
+				Bus:                  "pci",
+				Slot:                 "0000:00:00.0",
+				BusNumber:            0x0,
+				DeviceClass:          0x600,
+				ProgrammingInterface: new(uint8(0)),
+				VendorId:             0x8086,
+				DeviceId:             0x4637,
+				SubvendorId:          new(uint16(0x103C)),
+				SubdeviceId:          new(uint16(0x89C6)),
+				AdditionalProperties: map[string]string{
+					"compute-capability": "7.5",
+					"vram":               "16000000",
+					"microarchitecture":  "gfx1010",
+				},
+				FriendlyNames: pci.FriendlyNames{
+					VendorName:    "Intel Corporation",
+					SubvendorName: "Hewlett-Packard Company",
+				},
+			}},
+			USBDevices: []usb.Device{
+				{
+					Bus:          "usb",
+					BusNumber:    1,
+					DeviceNumber: 1,
+					VendorId:     0x1234,
+					ProductId:    0x5678,
+					FriendlyNames: usb.FriendlyNames{
+						VendorName:  "Example Vendor",
+						ProductName: "Example Product",
+					},
+				},
+			},
+		}, nil
+
+	default:
+		return nil, fmt.Errorf("no machine fixture for %q", name)
+	}
+}
 
 func TestHexInt_marshaling(t *testing.T) {
 	value := HexInt(0xd0c)
@@ -32,21 +93,21 @@ func TestHexInt_marshaling(t *testing.T) {
 func TestCpuDetails_marshaling(t *testing.T) {
 	tests := []struct {
 		name    string
-		cpu     CpuDetails
+		cpu     cpuDetails
 		want    string
 		wantErr bool
 	}{
 		{
 			name: "AMD",
-			cpu: CpuDetails{
+			cpu: cpuDetails{
 				Architecture:   cpu.Amd64,
 				ManufacturerId: "AuthenticAMD",
 			},
-			want: "AuthenticAMD amd64",
+			want: "amd64 (AuthenticAMD)",
 		},
 		{
 			name: "ARM",
-			cpu: CpuDetails{
+			cpu: cpuDetails{
 				Architecture:  cpu.Arm64,
 				ImplementerId: HexInt(0x41),
 			},
@@ -54,7 +115,7 @@ func TestCpuDetails_marshaling(t *testing.T) {
 		},
 		{
 			name: "RISCV64",
-			cpu: CpuDetails{
+			cpu: cpuDetails{
 				Architecture:  cpu.Riscv64,
 				ImplementerId: HexInt(0x41),
 			},
@@ -62,7 +123,7 @@ func TestCpuDetails_marshaling(t *testing.T) {
 		},
 		{
 			name: "unknown arch implementer",
-			cpu: CpuDetails{
+			cpu: cpuDetails{
 				Architecture: cpu.Ppc64,
 			},
 			want:    "unsupported architecture: ppc64",
@@ -70,12 +131,12 @@ func TestCpuDetails_marshaling(t *testing.T) {
 		},
 		{
 			name: "verbose",
-			cpu: CpuDetails{
+			cpu: cpuDetails{
 				Verbose:        true,
 				Architecture:   cpu.Amd64,
 				ManufacturerId: "GenuineIntel",
 			},
-			want: `{"architecture":"amd64","manufacturer-id":"GenuineIntel"}`,
+			want: `"GenuineIntel amd64"`,
 		},
 	}
 
@@ -93,7 +154,7 @@ func TestCpuDetails_marshaling(t *testing.T) {
 			}
 			want := `"` + test.want + `"`
 			if test.cpu.Verbose {
-				want = test.want
+				want = `{"architecture":"amd64","manufacturer-id":"GenuineIntel"}`
 			}
 			if string(got) != want {
 				t.Errorf("expected %q, got %s", test.want, got)
@@ -124,8 +185,8 @@ func TestCpuDetails_marshaling(t *testing.T) {
 }
 
 func TestMemoryDetails_marshaling(t *testing.T) {
-	memoryZeroSwap := MemoryDetails{TotalRam: 8160437862, TotalSwap: 0}
-	memorySwap := MemoryDetails{TotalRam: 8160437862, TotalSwap: 1000000000, Verbose: true}
+	memoryZeroSwap := memoryDetails{TotalRam: 8160437862, TotalSwap: 0}
+	memorySwap := memoryDetails{TotalRam: 8160437862, TotalSwap: 1000000000, Verbose: true}
 
 	got, err := yaml.Marshal(memoryZeroSwap)
 	if err != nil {
@@ -158,8 +219,8 @@ func TestMemoryDetails_marshaling(t *testing.T) {
 }
 
 func TestDiskDetails_marshaling(t *testing.T) {
-	disk1 := DiskDetails{Path: "/var/lib/snapd/snaps", MountPoint: new("/"), Total: 1000000000000, Avail: 5000000000}
-	disk2 := DiskDetails{Path: "/home", Total: 500000000000, MountPoint: new("/"), Avail: 5000000000, Verbose: true}
+	disk1 := diskDetails{Path: "/var/lib/snapd/snaps", MountPoint: new("/"), Total: 1000000000000, Avail: 5000000000}
+	disk2 := diskDetails{Path: "/home", Total: 500000000000, MountPoint: new("/"), Avail: 5000000000, Verbose: true}
 
 	got, err := yaml.Marshal(disk1)
 	if err != nil {
@@ -192,18 +253,18 @@ func TestDiskDetails_marshaling(t *testing.T) {
 }
 
 func TestPciDeviceDetails_marshaling(t *testing.T) {
-	compact := PciDeviceDetails{
+	compact := pciDeviceDetails{
 		VendorName: "NVIDIA Corporation",
 		DeviceName: "GA102GL [RTX A5000]",
-		AdditionalProperties: &PciAdditionalDeviceProperties{
+		AdditionalProperties: &pciAdditionalDeviceProperties{
 			Vram: 24 * 1024 * 1024 * 1024,
 		},
 	}
-	compactNoAddProps := PciDeviceDetails{
+	compactNoAddProps := pciDeviceDetails{
 		VendorName: "NVIDIA Corporation",
 		DeviceName: "GA102GL [RTX A5000]",
 	}
-	verbose := PciDeviceDetails{
+	verbose := pciDeviceDetails{
 		Bus:           "pci",
 		VendorName:    "NVIDIA Corporation",
 		DeviceName:    "GA102GL [RTX A5000]",
@@ -252,26 +313,26 @@ func TestPciDeviceDetails_marshaling(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(got) != `{"bus":"pci","vendor-name":"NVIDIA Corporation","device-name":"GA102GL [RTX A5000]","subvendor-name":"NVIDIA Corporation","subdevice-name":"RTX A5000"}` {
-		t.Errorf("expected verbose JSON for PCI device, got %q", got)
+		t.Errorf("expected compact JSON for PCI device, got %q", got)
 	}
 
 }
 func TestApusysDeviceDetails_marshaling(t *testing.T) {
 	tests := []struct {
 		name     string
-		device   ApusysDeviceDetails
+		device   apuSysDeviceDetails
 		wantJSON string
 		wantYAML string
 	}{
 		{
 			name:     "compact",
-			device:   ApusysDeviceDetails{Bus: "apusys", VendorName: "MediaTek"},
+			device:   apuSysDeviceDetails{Bus: "apusys", VendorName: "MediaTek"},
 			wantJSON: `"MediaTek"`,
 			wantYAML: "MediaTek\n",
 		},
 		{
 			name:     "verbose",
-			device:   ApusysDeviceDetails{Bus: "apusys", VendorName: "MediaTek", Verbose: true},
+			device:   apuSysDeviceDetails{Bus: "apusys", VendorName: "MediaTek", Verbose: true},
 			wantJSON: `{"bus":"apusys","vendor-name":"MediaTek"}`,
 			wantYAML: "bus: apusys\nvendor-name: MediaTek\n",
 		},
@@ -419,7 +480,7 @@ func Example_hardwareCommand_printMachineInfo_jsonCompact() {
 	// Output:
 	// {
 	//   "cpus": [
-	//     "GenuineIntel amd64"
+	//     "amd64 (GenuineIntel)"
 	//   ],
 	//   "memory": "67012501504 (Swap 0)",
 	//   "disks": [
@@ -450,7 +511,7 @@ func Example_hardwareCommand_printMachineInfo_plainCompact() {
 
 	// Output:
 	// cpus:
-	//     - GenuineIntel amd64
+	//     - amd64 (GenuineIntel)
 	// accelerators:
 	//     - Intel Corporation (VRAM 15.3M)
 	//     - bus: usb
@@ -463,7 +524,7 @@ func Example_hardwareCommand_printMachineInfo_plainCompact() {
 
 func Test_printMachineInfo_unknownFormat(t *testing.T) {
 	cmd := hardwareCommand{format: "xml"}
-	info := MachineDetails{}
+	info := machineDetails{}
 
 	err := cmd.printMachineInfo(info)
 	if err == nil || err.Error() != `unknown format "xml"` {
