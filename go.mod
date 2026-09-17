@@ -4,7 +4,7 @@ go 1.26.7
 
 require (
 	github.com/briandowns/spinner v1.23.2
-	github.com/canonical/lscompute v1.0.0-alpha.0.20260828110043-855dc200261c
+	github.com/canonical/lscompute v1.0.0-beta
 	github.com/fatih/color v1.18.0
 	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-isatty v0.0.20
