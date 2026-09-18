@@ -35,15 +35,49 @@ func TestShareProvidersPath(t *testing.T) {
 	})
 }
 
-func TestRootIncludesProvidersCommand(t *testing.T) {
+func TestHTTPHost(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		host string
+		want string
+	}{
+		{name: "configured", host: "::1", want: "::1"},
+		{name: "default", want: defaultHTTPHost},
+		{name: "wildcard", host: "0.0.0.0", want: defaultHTTPHost},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(httpHostEnvVar, test.host)
+			if got := httpHost(); got != test.want {
+				t.Fatalf("got %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestHTTPPort(t *testing.T) {
+	t.Setenv(httpPortEnvVar, "")
+	if got := httpPort(); got != defaultHTTPPort {
+		t.Fatalf("got %q, want %q", got, defaultHTTPPort)
+	}
+
+	t.Setenv(httpPortEnvVar, "8401")
+	if got := httpPort(); got != "8401" {
+		t.Fatalf("got %q, want %q", got, "8401")
+	}
+}
+
+func TestRootIncludesCommands(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	ctx := &common.Context{Stdout: &stdout, Stderr: &stderr}
 	rootCmd := root(ctx)
-	cmd, _, err := rootCmd.Find([]string{"providers"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cmd == rootCmd || cmd.Name() != "providers" {
-		t.Fatal("providers subcommand is not registered")
+
+	for _, name := range []string{"providers", "install", "remove", "status"} {
+		cmd, _, err := rootCmd.Find([]string{name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cmd == rootCmd || cmd.Name() != name {
+			t.Fatalf("%s subcommand is not registered", name)
+		}
 	}
 }

@@ -22,9 +22,11 @@ import (
 )
 
 const (
-	bindAddressEnvVar         = "SERVER_BIND_ADDRESS"
 	sharedProvidersPathEnvVar = "SHARED_PROVIDERS_PATH"
-	defaultBindAddress        = "127.0.0.1:8400"
+	httpHostEnvVar            = "HTTP_HOST"
+	httpPortEnvVar            = "HTTP_PORT"
+	defaultHost               = "127.0.0.1"
+	defaultPort               = 8400
 	catalogRefreshInterval    = 12 * time.Hour
 	catalogRequestTimeout     = 30 * time.Second
 	maxResponseHeaderBytes    = 1024 * 1024
@@ -36,10 +38,17 @@ const (
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	address, err := listenAddress()
+	options, err := serverOptionsFromEnvironment()
+	if err != nil {
+		logger.Error("reading server configuration", "error", err)
+		os.Exit(1)
+	}
+
+	address, err := listenAddress(options.host, options.port)
 	if err != nil {
 		logger.Error("configuring listen address", "error", err)
 		os.Exit(1)
@@ -52,8 +61,7 @@ func main() {
 	}
 
 	catalog := snapcatalog.NewReader()
-	catalogRefresher := snapcatalog.NewRefresher(newCatalogClient())
-	go refreshCatalogPeriodically(ctx, catalogRefreshInterval, catalogRefresher.Refresh, logger)
+	go refreshCatalogPeriodically(ctx, catalogRefreshInterval, logger)
 
 	snapdClient := snapd.NewClient()
 	listProviders := func(ctx context.Context) ([]providers.Provider, error) {
@@ -101,10 +109,10 @@ func newCatalogClient() *http.Client {
 
 func refreshCatalog(
 	ctx context.Context,
-	refresh func(context.Context) error,
 	logger *slog.Logger,
 ) {
-	if err := refresh(ctx); err != nil {
+	catalogRefresher := snapcatalog.NewRefresher(newCatalogClient())
+	if err := catalogRefresher.Refresh(ctx); err != nil {
 		logger.Warn("refreshing snap catalog", "error", err)
 		return
 	}
@@ -114,10 +122,9 @@ func refreshCatalog(
 func refreshCatalogPeriodically(
 	ctx context.Context,
 	interval time.Duration,
-	refresh func(context.Context) error,
 	logger *slog.Logger,
 ) {
-	refreshCatalog(ctx, refresh, logger)
+	refreshCatalog(ctx, logger)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -126,7 +133,7 @@ func refreshCatalogPeriodically(
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			refreshCatalog(ctx, refresh, logger)
+			refreshCatalog(ctx, logger)
 		}
 	}
 }
@@ -222,20 +229,36 @@ func (h *hijackedConnections) close() {
 	}
 }
 
-func listenAddress() (string, error) {
-	address := os.Getenv(bindAddressEnvVar)
-	if address == "" {
-		address = defaultBindAddress
+type serverOptions struct {
+	host string
+	port int
+}
+
+func serverOptionsFromEnvironment() (serverOptions, error) {
+	host := os.Getenv(httpHostEnvVar)
+	if host == "" {
+		host = defaultHost
 	}
-	_, port, err := net.SplitHostPort(address)
+
+	portValue := os.Getenv(httpPortEnvVar)
+	if portValue == "" {
+		return serverOptions{host: host, port: defaultPort}, nil
+	}
+	port, err := strconv.Atoi(portValue)
 	if err != nil {
-		return "", fmt.Errorf("%s must contain a host and port: %w", bindAddressEnvVar, err)
+		return serverOptions{}, fmt.Errorf("%s must be an integer: %w", httpPortEnvVar, err)
 	}
-	parsedPort, err := strconv.Atoi(port)
-	if err != nil || parsedPort < 1 || parsedPort > 65535 {
-		return "", fmt.Errorf("%s port must be an integer between 1 and 65535", bindAddressEnvVar)
+	return serverOptions{host: host, port: port}, nil
+}
+
+func listenAddress(host string, port int) (string, error) {
+	if host == "" {
+		return "", errors.New("host must not be empty")
 	}
-	return address, nil
+	if port < 1 || port > 65535 {
+		return "", errors.New("port must be an integer between 1 and 65535")
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port)), nil
 }
 
 func shareProvidersPath() string {

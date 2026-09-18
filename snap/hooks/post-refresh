@@ -1,4 +1,11 @@
 #!/bin/sh
 set -eu
 
+if [ -z "$(snapctl get http.port)" ]; then
+    snapctl set http.port="8400"
+fi
+if [ -z "$(snapctl get http.host)" ]; then
+    snapctl set http.host="127.0.0.1"
+fi
+
 cp "$SNAP/onboarded-snaps.json" "$SNAP_COMMON/onboarded-snaps.json"
