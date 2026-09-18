@@ -5,26 +5,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"mime"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/canonical/inference/internal/models"
 	"github.com/canonical/inference/internal/providers"
 )
 
 const (
-	maxModelsResponseSize = 4 * 1024 * 1024
-	maxProxyRequestSize   = 16 * 1024 * 1024
-	modelDiscoveryTimeout = 15 * time.Second
-	statusClientClosed    = 499
+	maxProxyRequestSize = 16 * 1024 * 1024
+	statusClientClosed  = 499
 )
 
 type ModelsHandler struct {
@@ -34,15 +31,6 @@ type ModelsHandler struct {
 	refreshMu     sync.Mutex
 	snapshot      atomic.Pointer[routingSnapshot]
 	requestID     atomic.Uint64
-}
-
-type upstreamModelsResponse struct {
-	Data []upstreamModel `json:"data"`
-}
-
-type upstreamModel struct {
-	ID      string `json:"id"`
-	Created int64  `json:"created,omitempty"`
 }
 
 type modelsResponse struct {
@@ -66,13 +54,6 @@ type errorOutput struct {
 	Type    string `json:"type"`
 }
 
-type providerModels struct {
-	provider providers.Provider
-	models   []upstreamModel
-	err      error
-	duration time.Duration
-}
-
 type modelRoute struct {
 	providerName  string
 	baseURL       string
@@ -80,10 +61,7 @@ type modelRoute struct {
 	model         modelOutput
 }
 
-type routingSnapshot struct {
-	models []modelOutput
-	routes map[string]modelRoute
-}
+type routingSnapshot []modelRoute
 
 func NewModelsHandler(
 	listProviders func(context.Context) ([]providers.Provider, error),
@@ -153,8 +131,12 @@ func (h *ModelsHandler) serveModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	models := make([]modelOutput, len(*snapshot))
+	for i, route := range *snapshot {
+		models[i] = route.model
+	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(modelsResponse{Object: "list", Data: snapshot.models}); err != nil {
+	if err := json.NewEncoder(w).Encode(modelsResponse{Object: "list", Data: models}); err != nil {
 		h.logger.Error("writing models response", "error", err)
 	}
 }
@@ -174,7 +156,7 @@ func (h *ModelsHandler) serveModel(w http.ResponseWriter, r *http.Request, logge
 	}
 
 	modelID := strings.TrimPrefix(r.URL.Path, "/v1/models/")
-	route, exists := snapshot.routes[modelID]
+	route, exists := snapshot.route(modelID)
 	if !exists {
 		logger.Warn("rejecting model request", "reason", "model does not exist", "model", modelID)
 		writeError(w, http.StatusNotFound, "The requested model does not exist.", "invalid_request_error")
@@ -209,161 +191,41 @@ func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, er
 	if err != nil {
 		return nil, err
 	}
-	availableProviders := make([]providers.Provider, 0, len(allProviders))
-	providerNames := make(map[string]struct{}, len(allProviders))
-	for _, provider := range allProviders {
-		if provider.BaseURL == "" {
-			continue
-		}
-		if provider.Name == "" {
-			return nil, errors.New("provider with an API base URL has an empty name")
-		}
-		if _, exists := providerNames[provider.Name]; exists {
-			return nil, fmt.Errorf("duplicate provider name %q", provider.Name)
-		}
-		providerNames[provider.Name] = struct{}{}
-		availableProviders = append(availableProviders, provider)
-	}
-	if len(availableProviders) == 0 {
-		return nil, errors.New("no providers with an API base URL")
-	}
-
-	results := make(chan providerModels, len(availableProviders))
-	var requests sync.WaitGroup
-	for _, provider := range availableProviders {
-		requests.Add(1)
-		go func() {
-			defer requests.Done()
-			started := time.Now()
-			models, err := h.fetchModels(ctx, provider.BaseURL)
-			results <- providerModels{
-				provider: provider,
-				models:   models,
-				err:      err,
-				duration: time.Since(started),
-			}
-		}()
-	}
-	requests.Wait()
-	close(results)
-
-	snapshot := &routingSnapshot{
-		models: make([]modelOutput, 0),
-		routes: make(map[string]modelRoute),
-	}
-	healthyProviders := 0
-	for result := range results {
-		if result.err != nil {
-			h.logger.Error(
-				"refreshing provider",
-				"provider", result.provider.Name,
-				"provider_url", loggableProviderURL(result.provider.BaseURL),
-				"duration", result.duration,
-				"error", result.err,
-			)
-			continue
-		}
-		h.logger.Info(
-			"refreshed provider",
-			"provider", result.provider.Name,
-			"models", len(result.models),
-			"duration", result.duration,
-		)
-		healthyProviders++
-		seen := make(map[string]struct{}, len(result.models))
-		for _, model := range result.models {
-			if model.ID == "" {
-				h.logger.Warn("ignoring model with empty ID", "provider", result.provider.Name)
-				continue
-			}
-			publicID := result.provider.Name + "/" + model.ID
-			if _, exists := seen[publicID]; exists {
-				continue
-			}
-			seen[publicID] = struct{}{}
-			output := modelOutput{
-				ID:      publicID,
-				Object:  "model",
-				Created: model.Created,
-				OwnedBy: result.provider.Name,
-			}
-			route := modelRoute{
-				providerName:  result.provider.Name,
-				baseURL:       result.provider.BaseURL,
-				nativeModelID: model.ID,
-				model:         output,
-			}
-			snapshot.routes[publicID] = route
-			snapshot.models = append(snapshot.models, output)
-		}
-	}
-	if healthyProviders == 0 {
-		return nil, errors.New("all providers failed")
-	}
-
-	sort.Slice(snapshot.models, func(i, j int) bool { return snapshot.models[i].ID < snapshot.models[j].ID })
-	h.logger.Info(
-		"refreshed provider models",
-		"providers_discovered", len(allProviders),
-		"providers_available", len(availableProviders),
-		"providers_healthy", healthyProviders,
-		"models", len(snapshot.models),
-		"duration", time.Since(started),
-	)
-	return snapshot, nil
-}
-
-func (h *ModelsHandler) fetchModels(ctx context.Context, baseURL string) ([]upstreamModel, error) {
-	ctx, cancel := context.WithTimeout(ctx, modelDiscoveryTimeout)
-	defer cancel()
-
-	endpoint, err := modelsURL(baseURL)
+	discoveredModels, err := models.Discover(ctx, allProviders, h.client)
 	if err != nil {
 		return nil, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+	snapshot := make(routingSnapshot, 0, len(discoveredModels))
+	for _, model := range discoveredModels {
+		output := modelOutput{
+			ID:      model.PublicID,
+			Object:  "model",
+			Created: model.Created,
+			OwnedBy: model.ProviderName,
+		}
+		route := modelRoute{
+			providerName:  model.ProviderName,
+			baseURL:       model.ProviderBaseURL,
+			nativeModelID: model.NativeID,
+			model:         output,
+		}
+		snapshot = append(snapshot, route)
 	}
-	request.Header.Set("Accept", "application/json")
-
-	response, err := h.client.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("requesting models: %w", redactURLError(err))
-	}
-	defer response.Body.Close()
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("requesting models: upstream returned %s", response.Status)
-	}
-
-	body := io.LimitReader(response.Body, maxModelsResponseSize+1)
-	data, err := io.ReadAll(body)
-	if err != nil {
-		return nil, fmt.Errorf("reading models: %w", err)
-	}
-	if len(data) > maxModelsResponseSize {
-		return nil, fmt.Errorf("reading models: response exceeds %d bytes", maxModelsResponseSize)
-	}
-
-	var result upstreamModelsResponse
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, fmt.Errorf("decoding models: %w", err)
-	}
-	if result.Data == nil {
-		return nil, errors.New("decoding models: missing data array")
-	}
-	return result.Data, nil
+	h.logger.Info(
+		"refreshed provider models",
+		"models", len(snapshot),
+		"duration", time.Since(started),
+	)
+	return &snapshot, nil
 }
 
-func modelsURL(baseURL string) (string, error) {
-	endpoint, err := url.Parse(baseURL)
-	if err != nil {
-		return "", fmt.Errorf("parsing provider URL: %w", err)
+func (s *routingSnapshot) route(modelID string) (modelRoute, bool) {
+	for _, route := range *s {
+		if route.model.ID == modelID {
+			return route, true
+		}
 	}
-	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + "/models"
-	endpoint.RawPath = ""
-	endpoint.Fragment = ""
-	return endpoint.String(), nil
+	return modelRoute{}, false
 }
 
 func (h *ModelsHandler) proxy(
@@ -384,7 +246,7 @@ func (h *ModelsHandler) proxy(
 	}
 	requestedModel := modelRequest.model
 
-	route, exists := snapshot.routes[requestedModel]
+	route, exists := snapshot.route(requestedModel)
 	if !exists {
 		logger.Warn("rejecting inference request", "reason", "model does not exist", "model", requestedModel)
 		writeError(w, http.StatusNotFound, "The requested model does not exist.", "invalid_request_error")

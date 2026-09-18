@@ -88,6 +88,7 @@ func root(ctx *common.Context) *cobra.Command {
 		commands.Providers(ctx),
 		commands.Install(ctx),
 		commands.Remove(ctx),
+		commands.Models(ctx),
 		commands.Status(ctx),
 	)
 	return cmd
