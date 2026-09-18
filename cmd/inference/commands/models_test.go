@@ -41,9 +41,10 @@ func TestModelsOutput(t *testing.T) {
 		},
 	}
 
+	cmd := &modelsCommand{}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := renderModels(list, test.format)
+			got, err := cmd.outputJSON(list, test.format)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -96,8 +97,9 @@ func TestModelsRejectsInvalidFormat(t *testing.T) {
 }
 
 func TestModelsEmptyOutput(t *testing.T) {
+	cmd := &modelsCommand{}
 	for _, format := range []string{"table", "json"} {
-		got, err := renderModels(nil, format)
+		got, err := cmd.outputJSON(nil, format)
 		if err != nil {
 			t.Fatal(err)
 		}

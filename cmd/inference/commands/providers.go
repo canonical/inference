@@ -65,9 +65,9 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 
 	var output string
 	if cmd.format == "json" {
-		output, err = renderProvidersJSON(list)
+		output, err = cmd.outputJSON(list)
 	} else {
-		output, err = renderProvidersTable(list)
+		output, err = cmd.outputTable(list)
 	}
 	if err != nil {
 		return err
@@ -76,7 +76,7 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	return err
 }
 
-func renderProvidersJSON(list []providers.Provider) (string, error) {
+func (cmd *providersCommand) outputJSON(list []providers.Provider) (string, error) {
 	if list == nil {
 		list = []providers.Provider{}
 	}
@@ -97,7 +97,7 @@ func renderProvidersJSON(list []providers.Provider) (string, error) {
 	return output.String(), nil
 }
 
-func renderProvidersTable(list []providers.Provider) (string, error) {
+func (cmd *providersCommand) outputTable(list []providers.Provider) (string, error) {
 	var output bytes.Buffer
 	table := tablewriter.NewTable(
 		&output,

@@ -56,7 +56,7 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	output, err := renderModels(list, cmd.format)
+	output, err := cmd.outputJSON(list, cmd.format)
 	if err != nil {
 		return err
 	}
@@ -64,9 +64,9 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	return err
 }
 
-func renderModels(list []models.Model, format string) (string, error) {
+func (cmd *modelsCommand) outputJSON(list []models.Model, format string) (string, error) {
 	if format == "table" {
-		return renderModelsTable(list)
+		return cmd.outputTable(list)
 	}
 
 	result := modelsOutput{Models: make([]modelOutput, len(list))}
@@ -85,7 +85,7 @@ func renderModels(list []models.Model, format string) (string, error) {
 	return output.String(), nil
 }
 
-func renderModelsTable(list []models.Model) (string, error) {
+func (cmd *modelsCommand) outputTable(list []models.Model) (string, error) {
 	var output bytes.Buffer
 	table := tablewriter.NewTable(
 		&output,
