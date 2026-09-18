@@ -56,7 +56,12 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	output, err := cmd.outputJSON(list, cmd.format)
+	var output string
+	if cmd.format == "json" {
+		output, err = cmd.outputJSON(list)
+	} else {
+		output, err = cmd.outputTable(list)
+	}
 	if err != nil {
 		return err
 	}
@@ -64,11 +69,7 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	return err
 }
 
-func (cmd *modelsCommand) outputJSON(list []models.Model, format string) (string, error) {
-	if format == "table" {
-		return cmd.outputTable(list)
-	}
-
+func (cmd *modelsCommand) outputJSON(list []models.Model) (string, error) {
 	result := modelsOutput{Models: make([]modelOutput, len(list))}
 	for i, model := range list {
 		result.Models[i] = modelOutput{
