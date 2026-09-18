@@ -57,7 +57,12 @@ func (cmd *statusCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	output, err := cmd.renderStatus(status, cmd.format)
+	var output string
+	if cmd.format == "json" {
+		output, err = cmd.outputJSON(status)
+	} else {
+		output, err = cmd.outputYAML(status)
+	}
 	if err != nil {
 		return err
 	}
@@ -122,17 +127,18 @@ func (cmd *statusCommand) proxyOpenAIBaseURL() string {
 	return "http://" + net.JoinHostPort(cmd.HTTPHost, cmd.HTTPPort) + "/v1"
 }
 
-func (cmd *statusCommand) renderStatus(status statusOutput, format string) (string, error) {
+func (cmd *statusCommand) outputJSON(status statusOutput) (string, error) {
 	var output bytes.Buffer
-	if format == "json" {
-		encoder := json.NewEncoder(&output)
-		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(status); err != nil {
-			return "", err
-		}
-		return output.String(), nil
+	encoder := json.NewEncoder(&output)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(status); err != nil {
+		return "", err
 	}
+	return output.String(), nil
+}
 
+func (cmd *statusCommand) outputYAML(status statusOutput) (string, error) {
+	var output bytes.Buffer
 	encoder := yaml.NewEncoder(&output)
 	encoder.SetIndent(2)
 	if err := encoder.Encode(status); err != nil {
