@@ -10,8 +10,8 @@ import (
 
 func TestModelsOutput(t *testing.T) {
 	list := []models.Model{
-		{Name: "gpt4.5", Provider: "openai (remote)"},
-		{Name: "gemma4-e2b", Provider: "gemma4 snap"},
+		{PublicID: "openai/gpt4.5"},
+		{PublicID: "gemma4/gemma4-e2b"},
 	}
 	tests := []struct {
 		name   string
@@ -21,9 +21,9 @@ func TestModelsOutput(t *testing.T) {
 		{
 			name:   "table",
 			format: "table",
-			want: "NAME        PROVIDER\n" +
-				"gpt4.5      openai (remote)\n" +
-				"gemma4-e2b  gemma4 snap\n",
+			want: "ID\n" +
+				"openai/gpt4.5\n" +
+				"gemma4/gemma4-e2b\n",
 		},
 		{
 			name:   "json",
@@ -31,12 +31,10 @@ func TestModelsOutput(t *testing.T) {
 			want: "{\n" +
 				"  \"models\": [\n" +
 				"    {\n" +
-				"      \"name\": \"gpt4.5\",\n" +
-				"      \"provider\": \"openai (remote)\"\n" +
+				"      \"id\": \"openai/gpt4.5\"\n" +
 				"    },\n" +
 				"    {\n" +
-				"      \"name\": \"gemma4-e2b\",\n" +
-				"      \"provider\": \"gemma4 snap\"\n" +
+				"      \"id\": \"gemma4/gemma4-e2b\"\n" +
 				"    }\n" +
 				"  ]\n" +
 				"}\n",
@@ -62,7 +60,7 @@ func TestModelsCommandOutputFormats(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "table", want: "NAME  PROVIDER\n"},
+		{name: "table", want: "ID\n"},
 		{name: "json", args: []string{"--format=json"}, want: "{\n  \"models\": []\n}\n"},
 	}
 
@@ -103,7 +101,7 @@ func TestModelsEmptyOutput(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := "NAME  PROVIDER\n"
+		want := "ID\n"
 		if format == "json" {
 			want = "{\n  \"models\": []\n}\n"
 		}

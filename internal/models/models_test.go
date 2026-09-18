@@ -34,14 +34,14 @@ func TestListProviderModelsAggregatesHealthyProviders(t *testing.T) {
 		{Name: "unavailable", Type: providers.TypeInferenceSnap},
 		{Name: "disabled", Type: providers.TypeInferenceSnap, State: providers.StateDisabled, BaseURL: second.URL + "/v1"},
 	}
-	got, err := listProviderModels(context.Background(), list, first.Client())
+	got, err := Discover(context.Background(), list, first.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []Model{
-		{Name: "gemma4-e2b", Provider: "gemma4 snap"},
-		{Name: "gemma4-e4b", Provider: "gemma4 snap"},
-		{Name: "gpt4.5", Provider: "openai (remote)"},
+		{PublicID: "gemma4/gemma4-e2b", NativeID: "gemma4-e2b", ProviderName: "gemma4", ProviderBaseURL: first.URL + "/v1"},
+		{PublicID: "gemma4/gemma4-e4b", NativeID: "gemma4-e4b", ProviderName: "gemma4", ProviderBaseURL: first.URL + "/v1"},
+		{PublicID: "openai/gpt4.5", NativeID: "gpt4.5", ProviderName: "openai", ProviderBaseURL: third.URL + "/v1"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %+v, want %+v", got, want)
@@ -54,7 +54,7 @@ func TestListProviderModelsAggregatesHealthyProviders(t *testing.T) {
 }
 
 func TestListProviderModelsReturnsEmptyWithoutAvailableProviders(t *testing.T) {
-	got, err := listProviderModels(context.Background(), nil, http.DefaultClient)
+	got, err := Discover(context.Background(), nil, http.DefaultClient)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestListProviderModelsFailsWhenEveryProviderIsBroken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := listProviderModels(context.Background(), []providers.Provider{
+	_, err := Discover(context.Background(), []providers.Provider{
 		{Name: "broken", Type: providers.TypeOpenAI, BaseURL: server.URL + "/v1"},
 	}, server.Client())
 	if err == nil || !strings.Contains(err.Error(), "all providers failed") {

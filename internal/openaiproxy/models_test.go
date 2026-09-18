@@ -174,16 +174,12 @@ func TestModelsHandlerSkipsUnavailableProvider(t *testing.T) {
 	root := t.TempDir()
 	writeProvider(t, root, "healthy", "healthy", healthy.URL+"/v1")
 	writeProvider(t, root, "broken", "broken", "http://127.0.0.1:1/v1")
-	var logs strings.Builder
-	handler := NewModelsHandler(connectedProviderLister(root), healthy.Client(), slog.New(slog.NewTextHandler(&logs, nil)))
+	handler := NewModelsHandler(connectedProviderLister(root), healthy.Client(), discardLogger())
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":"healthy/ready"`) {
 		t.Fatalf("got status %d body %s", response.Code, response.Body.String())
-	}
-	if !strings.Contains(logs.String(), "provider_url=http://127.0.0.1:1/v1") {
-		t.Errorf("logs do not contain failed provider URL:\n%s", logs.String())
 	}
 }
 
@@ -233,8 +229,8 @@ func TestModelsHandlerRefreshesProviderFiles(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
-	if response.Code != http.StatusServiceUnavailable {
-		t.Fatalf("got status %d before provider was added, want 503", response.Code)
+	if response.Code != http.StatusOK || response.Body.String() != "{\"object\":\"list\",\"data\":[]}\n" {
+		t.Fatalf("got status %d body %s before provider was added, want empty model list", response.Code, response.Body.String())
 	}
 
 	writeProvider(t, root, "new-provider", "new-provider", upstream.URL+"/v1")
@@ -245,17 +241,20 @@ func TestModelsHandlerRefreshesProviderFiles(t *testing.T) {
 	}
 }
 
-func TestModelsHandlerReturnsServiceUnavailableWithoutHealthyProviders(t *testing.T) {
+func TestModelsHandlerReturnsEmptyListWithoutAvailableProviders(t *testing.T) {
 	handler := NewModelsHandler(connectedProviderLister(t.TempDir()), http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
 
-	if response.Code != http.StatusServiceUnavailable {
-		t.Fatalf("got status %d, want 503", response.Code)
+	if response.Code != http.StatusOK {
+		t.Fatalf("got status %d, want 200", response.Code)
 	}
 	if got := response.Header().Get("Content-Type"); got != "application/json" {
 		t.Fatalf("got content type %q", got)
+	}
+	if response.Body.String() != "{\"object\":\"list\",\"data\":[]}\n" {
+		t.Fatalf("got body %s, want empty model list", response.Body.String())
 	}
 }
 
@@ -328,6 +327,10 @@ func writeProvider(t *testing.T, root, directory, name, baseURL string) {
 
 func connectedProviderLister(root string) func(context.Context) ([]providers.Provider, error) {
 	return func(context.Context) ([]providers.Provider, error) {
-		return providers.ConnectedSnapProviders(root)
+		list, err := providers.ConnectedSnapProviders(root)
+		for i := range list {
+			list[i].State = providers.StateEnabled
+		}
+		return list, err
 	}
 }

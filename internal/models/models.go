@@ -24,24 +24,16 @@ const (
 )
 
 type Model struct {
-	Name     string
-	Provider string
+	PublicID        string
+	NativeID        string
+	Created         int64
+	ProviderName    string
+	ProviderBaseURL string
 }
 
-type upstreamResponse struct {
-	Data []ProviderModel `json:"data"`
-}
-
-type ProviderModel struct {
+type upstreamModel struct {
 	ID      string `json:"id"`
-	Created int64  `json:"created,omitempty"`
-}
-
-type ProviderModels struct {
-	Provider providers.Provider
-	Models   []ProviderModel
-	Err      error
-	Duration time.Duration
+	Created int64  `json:"created"`
 }
 
 func List(
@@ -50,7 +42,7 @@ func List(
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
 ) ([]Model, error) {
-	list, err := providers.List(
+	allProviders, err := providers.List(
 		ctx,
 		catalog,
 		snapdClient,
@@ -60,90 +52,98 @@ func List(
 	if err != nil {
 		return nil, err
 	}
-	return listProviderModels(ctx, list, http.DefaultClient)
+	return Discover(ctx, allProviders, http.DefaultClient)
 }
 
-func listProviderModels(ctx context.Context, list []providers.Provider, client *http.Client) ([]Model, error) {
-	available := make([]providers.Provider, 0, len(list))
-	for _, provider := range list {
+func Discover(
+	ctx context.Context,
+	allProviders []providers.Provider,
+	client *http.Client,
+) ([]Model, error) {
+	availableProviders := make([]providers.Provider, 0, len(allProviders))
+	providerNames := make(map[string]struct{}, len(allProviders))
+	for _, provider := range allProviders {
 		if provider.BaseURL == "" {
 			continue
 		}
 		if provider.Type == providers.TypeInferenceSnap && provider.State != providers.StateEnabled {
 			continue
 		}
-		available = append(available, provider)
-	}
-	if len(available) == 0 {
-		return []Model{}, nil
+		if provider.Name == "" {
+			return nil, errors.New("provider with an API base URL has an empty name")
+		}
+		if _, exists := providerNames[provider.Name]; exists {
+			return nil, fmt.Errorf("duplicate provider name %q", provider.Name)
+		}
+		providerNames[provider.Name] = struct{}{}
+		availableProviders = append(availableProviders, provider)
 	}
 
-	output := make([]Model, 0)
+	if len(availableProviders) == 0 {
+		return []Model{}, nil
+	}
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	type providerModels struct {
+		models []Model
+		err    error
+	}
+	results := make(chan providerModels, len(availableProviders))
+	var requests sync.WaitGroup
+	for _, provider := range availableProviders {
+		requests.Go(func() {
+			upstreamModels, err := fetchModels(ctx, client, provider.BaseURL)
+			results <- providerModels{
+				models: normalizeModels(provider, upstreamModels),
+				err:    err,
+			}
+		})
+	}
+	requests.Wait()
+	close(results)
+
+	models := make([]Model, 0)
 	healthyProviders := 0
-	for _, result := range DiscoverProviderModels(ctx, available, client) {
-		if result.Err != nil {
-			continue
-		}
-		healthyProviders++
-		seen := make(map[string]struct{}, len(result.Models))
-		for _, model := range result.Models {
-			if model.ID == "" {
-				continue
-			}
-			if _, exists := seen[model.ID]; exists {
-				continue
-			}
-			seen[model.ID] = struct{}{}
-			output = append(output, Model{
-				Name:     model.ID,
-				Provider: providerLabel(result.Provider),
-			})
+	for result := range results {
+		if result.err == nil {
+			healthyProviders++
+			models = append(models, result.models...)
 		}
 	}
 	if healthyProviders == 0 {
 		return nil, errors.New("all providers failed")
 	}
-	sort.Slice(output, func(i, j int) bool {
-		if output[i].Provider == output[j].Provider {
-			return output[i].Name < output[j].Name
-		}
-		return output[i].Provider < output[j].Provider
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].PublicID < models[j].PublicID
 	})
-	return output, nil
+	return models, nil
 }
 
-func DiscoverProviderModels(ctx context.Context, list []providers.Provider, client *http.Client) []ProviderModels {
-	if client == nil {
-		client = http.DefaultClient
-	}
-
-	results := make(chan ProviderModels, len(list))
-	var requests sync.WaitGroup
-	for _, provider := range list {
-		requests.Add(1)
-		go func() {
-			defer requests.Done()
-			started := time.Now()
-			models, err := fetchModels(ctx, client, provider.BaseURL)
-			results <- ProviderModels{
-				Provider: provider,
-				Models:   models,
-				Err:      err,
-				Duration: time.Since(started),
-			}
-		}()
-	}
-	requests.Wait()
-	close(results)
-
-	output := make([]ProviderModels, 0, len(list))
-	for result := range results {
-		output = append(output, result)
+func normalizeModels(provider providers.Provider, upstreamModels []upstreamModel) []Model {
+	output := make([]Model, 0, len(upstreamModels))
+	seen := make(map[string]struct{}, len(upstreamModels))
+	for _, model := range upstreamModels {
+		if model.ID == "" {
+			continue
+		}
+		if _, exists := seen[model.ID]; exists {
+			continue
+		}
+		seen[model.ID] = struct{}{}
+		output = append(output, Model{
+			PublicID:        provider.Name + "/" + model.ID,
+			NativeID:        model.ID,
+			Created:         model.Created,
+			ProviderName:    provider.Name,
+			ProviderBaseURL: provider.BaseURL,
+		})
 	}
 	return output
 }
 
-func fetchModels(ctx context.Context, client *http.Client, baseURL string) ([]ProviderModel, error) {
+func fetchModels(ctx context.Context, client *http.Client, baseURL string) ([]upstreamModel, error) {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
@@ -174,7 +174,9 @@ func fetchModels(ctx context.Context, client *http.Client, baseURL string) ([]Pr
 		return nil, fmt.Errorf("reading models: response exceeds %d bytes", maxResponseSize)
 	}
 
-	var result upstreamResponse
+	var result struct {
+		Data []upstreamModel `json:"data"`
+	}
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, fmt.Errorf("decoding models: %w", err)
 	}
@@ -201,11 +203,4 @@ func redactURLError(err error) error {
 		return fmt.Errorf("%s: %w", urlError.Op, urlError.Err)
 	}
 	return err
-}
-
-func providerLabel(provider providers.Provider) string {
-	if provider.Type == providers.TypeInferenceSnap {
-		return provider.Name + " snap"
-	}
-	return provider.Name + " (remote)"
 }
