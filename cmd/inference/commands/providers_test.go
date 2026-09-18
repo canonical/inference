@@ -11,7 +11,12 @@ import (
 
 func newTestContext() (*common.Context, *bytes.Buffer, *bytes.Buffer) {
 	var stdout, stderr bytes.Buffer
-	return &common.Context{Stdout: &stdout, Stderr: &stderr}, &stdout, &stderr
+	return &common.Context{
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+		HTTPHost: "127.0.0.1",
+		HTTPPort: "8400",
+	}, &stdout, &stderr
 }
 
 func execute(cmd *cobra.Command, args ...string) error {
