@@ -102,12 +102,13 @@ func (c cpuDetails) MarshalYAML() (any, error) {
 	}
 	switch c.Architecture {
 	case cpu.Amd64:
-		if c.ManufacturerId == "" {
-			return c.Architecture, nil
-		}
-		return fmt.Sprintf("%s (%s)", c.Architecture, c.ManufacturerId), nil
-	case cpu.Arm64, cpu.Riscv64:
-		return c.Architecture, nil
+		return fmt.Sprintf("%s %s", c.ManufacturerId, c.Architecture), nil
+
+	case cpu.Arm64:
+		return fmt.Sprintf("%s", c.Architecture), nil
+
+	case cpu.Riscv64:
+		return fmt.Sprintf("%s", c.Architecture), nil
 	default:
 		return nil, fmt.Errorf("unsupported architecture: %s", c.Architecture)
 	}

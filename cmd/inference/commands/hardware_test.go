@@ -103,7 +103,7 @@ func TestCpuDetails_marshaling(t *testing.T) {
 				Architecture:   cpu.Amd64,
 				ManufacturerId: "AuthenticAMD",
 			},
-			want: "amd64 (AuthenticAMD)",
+			want: "AuthenticAMD amd64",
 		},
 		{
 			name: "ARM",
@@ -480,7 +480,7 @@ func Example_hardwareCommand_printMachineInfo_jsonCompact() {
 	// Output:
 	// {
 	//   "cpus": [
-	//     "amd64 (GenuineIntel)"
+	//     "GenuineIntel amd64"
 	//   ],
 	//   "memory": "67012501504 (Swap 0)",
 	//   "disks": [
@@ -511,7 +511,7 @@ func Example_hardwareCommand_printMachineInfo_plainCompact() {
 
 	// Output:
 	// cpus:
-	//     - amd64 (GenuineIntel)
+	//     - GenuineIntel amd64
 	// accelerators:
 	//     - Intel Corporation (VRAM 15.3M)
 	//     - bus: usb
