@@ -11,7 +11,12 @@ import (
 
 func newTestContext() (*common.Context, *bytes.Buffer, *bytes.Buffer) {
 	var stdout, stderr bytes.Buffer
-	return &common.Context{Stdout: &stdout, Stderr: &stderr}, &stdout, &stderr
+	return &common.Context{
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+		HTTPHost: "127.0.0.1",
+		HTTPPort: "8400",
+	}, &stdout, &stderr
 }
 
 func execute(cmd *cobra.Command, args ...string) error {
@@ -24,7 +29,8 @@ func TestProviders_TableExactOutput(t *testing.T) {
 		{Name: "gemma4", Type: providers.TypeInferenceSnap, State: providers.StateEnabled},
 		{Name: "qwen3", Type: providers.TypeInferenceSnap, State: providers.StateNotInstalled},
 	}
-	got, err := renderProvidersTable(list)
+	cmd := &providersCommand{}
+	got, err := cmd.outputTable(list)
 	if err != nil {
 		t.Fatalf("render table: %v", err)
 	}
@@ -41,7 +47,8 @@ func TestProviders_TableExactOutput(t *testing.T) {
 
 func TestProviders_TableNoHintWhenAllInstalled(t *testing.T) {
 	list := []providers.Provider{{Name: "gemma4", Type: providers.TypeInferenceSnap, State: providers.StateEnabled}}
-	got, err := renderProvidersTable(list)
+	cmd := &providersCommand{}
+	got, err := cmd.outputTable(list)
 	if err != nil {
 		t.Fatalf("render table: %v", err)
 	}
@@ -54,7 +61,8 @@ func TestProviders_JSONExactOutput(t *testing.T) {
 	list := []providers.Provider{
 		{Name: "gemma4", Type: providers.TypeInferenceSnap, State: providers.StateEnabled},
 	}
-	got, err := renderProvidersJSON(list)
+	cmd := &providersCommand{}
+	got, err := cmd.outputJSON(list)
 	if err != nil {
 		t.Fatalf("render JSON: %v", err)
 	}
@@ -75,7 +83,8 @@ func TestProviders_JSONExactOutput(t *testing.T) {
 }
 
 func TestProviders_JSONEmptyUsesEmptyArray(t *testing.T) {
-	got, err := renderProvidersJSON(nil)
+	cmd := &providersCommand{}
+	got, err := cmd.outputJSON(nil)
 	if err != nil {
 		t.Fatalf("render JSON: %v", err)
 	}

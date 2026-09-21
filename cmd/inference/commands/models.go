@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/canonical/inference/cmd/inference/common"
-	"github.com/canonical/inference/internal/providers"
+	"github.com/canonical/inference/internal/models"
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
@@ -15,54 +15,47 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type providersCommand struct {
+type modelsCommand struct {
 	*common.Context
-	format    string
-	installed bool
+	format string
 }
 
-type providerJSON struct {
-	Name  string `json:"provider"`
-	Type  string `json:"type"`
-	State string `json:"state"`
+type modelOutput struct {
+	ID string `json:"id"`
 }
 
-type providersJSONOutput struct {
-	Providers []providerJSON `json:"providers"`
+type modelsOutput struct {
+	Models []modelOutput `json:"models"`
 }
 
-func Providers(ctx *common.Context) *cobra.Command {
-	cmd := providersCommand{Context: ctx}
+func Models(ctx *common.Context) *cobra.Command {
+	cmd := modelsCommand{Context: ctx}
 	cobraCmd := &cobra.Command{
-		Use:               "providers",
-		Short:             "List inference providers",
-		Long:              "List available inference providers and whether they are installed.",
+		Use:               "models",
+		Short:             "List available models",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
 		RunE:              cmd.run,
 	}
 	cobraCmd.Flags().StringVar(&cmd.format, "format", "table", "output format [table|json]")
-	cobraCmd.Flags().BoolVar(&cmd.installed, "installed", false, "only show providers that are installed")
 	return cobraCmd
 }
 
-func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
+func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	if cmd.format != "table" && cmd.format != "json" {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	list, err := providers.List(
+	list, err := models.List(
 		cobraCmd.Context(),
 		cmd.SnapCatalog,
 		cmd.SnapdClient,
 		cmd.ShareProvidersPath,
-		providers.ListOptions{InstalledOnly: cmd.installed},
 	)
 	if err != nil {
-		return common.FriendlySnapdError(err)
+		return err
 	}
-
 	var output string
 	if cmd.format == "json" {
 		output, err = cmd.outputJSON(list)
@@ -76,28 +69,24 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	return err
 }
 
-func (cmd *providersCommand) outputJSON(list []providers.Provider) (string, error) {
-	if list == nil {
-		list = []providers.Provider{}
+func (cmd *modelsCommand) outputJSON(list []models.Model) (string, error) {
+	result := modelsOutput{Models: make([]modelOutput, len(list))}
+	for i, model := range list {
+		result.Models[i] = modelOutput{
+			ID: model.PublicID,
+		}
 	}
+
 	var output bytes.Buffer
 	encoder := json.NewEncoder(&output)
 	encoder.SetIndent("", "  ")
-	result := providersJSONOutput{Providers: make([]providerJSON, len(list))}
-	for i, p := range list {
-		result.Providers[i] = providerJSON{
-			Name:  p.Name,
-			Type:  string(p.Type),
-			State: string(p.State),
-		}
-	}
 	if err := encoder.Encode(result); err != nil {
 		return "", err
 	}
 	return output.String(), nil
 }
 
-func (cmd *providersCommand) outputTable(list []providers.Provider) (string, error) {
+func (cmd *modelsCommand) outputTable(list []models.Model) (string, error) {
 	var output bytes.Buffer
 	table := tablewriter.NewTable(
 		&output,
@@ -117,7 +106,6 @@ func (cmd *providersCommand) outputTable(list []providers.Provider) (string, err
 				Alignment: tw.CellAlignment{Global: tw.AlignLeft},
 				Padding: tw.CellPadding{PerColumn: []tw.Padding{
 					{Overwrite: true, Right: " "},
-					{Overwrite: true, Left: " ", Right: " "},
 					{Overwrite: true, Left: " "},
 				}},
 			},
@@ -126,20 +114,15 @@ func (cmd *providersCommand) outputTable(list []providers.Provider) (string, err
 				Alignment:  tw.CellAlignment{Global: tw.AlignLeft},
 				Padding: tw.CellPadding{PerColumn: []tw.Padding{
 					{Overwrite: true, Right: " "},
-					{Overwrite: true, Left: " ", Right: " "},
 					{Overwrite: true, Left: " "},
 				}},
 			},
 		}),
 	)
-	table.Header([]string{"PROVIDER", "TYPE", "STATE"})
-	showHint := false
-	for _, p := range list {
-		if err := table.Append([]string{p.Name, string(p.Type), string(p.State)}); err != nil {
+	table.Header([]string{"ID"})
+	for _, model := range list {
+		if err := table.Append([]string{model.PublicID}); err != nil {
 			return "", err
-		}
-		if !p.Installed() {
-			showHint = true
 		}
 	}
 	if err := table.Render(); err != nil {
@@ -149,9 +132,5 @@ func (cmd *providersCommand) outputTable(list []providers.Provider) (string, err
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}
-	result := strings.Join(lines, "\n")
-	if showHint {
-		result += "\n" + `Hint: run "inference install <provider>" to install providers.` + "\n"
-	}
-	return result, nil
+	return strings.Join(lines, "\n"), nil
 }

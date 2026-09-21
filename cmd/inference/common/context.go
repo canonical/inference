@@ -14,4 +14,6 @@ type Context struct {
 	SnapCatalog        *snapcatalog.Reader
 	ShareProvidersPath string
 	Verbose            bool
+	HTTPHost           string
+	HTTPPort           string
 }

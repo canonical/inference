@@ -13,7 +13,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const sharedProvidersPathEnvVar = "SHARED_PROVIDERS_PATH"
+const (
+	sharedProvidersPathEnvVar = "SHARED_PROVIDERS_PATH"
+	httpHostEnvVar            = "HTTP_HOST"
+	httpPortEnvVar            = "HTTP_PORT"
+	defaultHTTPHost           = "127.0.0.1"
+	defaultHTTPPort           = "8400"
+)
 
 func main() {
 	ctx := &common.Context{
@@ -22,6 +28,8 @@ func main() {
 		SnapdClient:        snapd.NewClient(),
 		SnapCatalog:        snapcatalog.NewReader(),
 		ShareProvidersPath: shareProvidersPath(),
+		HTTPHost:           httpHost(),
+		HTTPPort:           httpPort(),
 	}
 
 	commandCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -49,6 +57,21 @@ func shareProvidersPath() string {
 	return ""
 }
 
+func httpHost() string {
+	host := os.Getenv(httpHostEnvVar)
+	if host == "" || host == "0.0.0.0" {
+		return defaultHTTPHost
+	}
+	return host
+}
+
+func httpPort() string {
+	if port := os.Getenv(httpPortEnvVar); port != "" {
+		return port
+	}
+	return defaultHTTPPort
+}
+
 func root(ctx *common.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "inference",
@@ -66,6 +89,8 @@ func root(ctx *common.Context) *cobra.Command {
 		commands.Install(ctx),
 		commands.Remove(ctx),
 		commands.Hardware(ctx),
+		commands.Models(ctx),
+		commands.Status(ctx),
 	)
 	return cmd
 }
