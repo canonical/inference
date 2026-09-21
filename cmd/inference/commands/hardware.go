@@ -91,10 +91,13 @@ func (c CpuDetails) MarshalJSON() ([]byte, error) {
 	switch c.Architecture {
 
 	case cpu.Amd64:
-		return json.Marshal(fmt.Sprintf("%s (%s)", c.Architecture, c.ManufacturerId))
+		return json.Marshal(fmt.Sprintf("%s %s", c.ManufacturerId, c.Architecture))
 
 	case cpu.Arm64:
-		return json.Marshal(fmt.Sprintf("%s (0x%x)", c.Architecture, c.ImplementerId))
+		return json.Marshal(fmt.Sprintf("%s", c.Architecture))
+
+	case cpu.Riscv64:
+		return json.Marshal(fmt.Sprintf("%s", c.Architecture))
 
 	default:
 		return nil, fmt.Errorf("unsupported architecture: %s", c.Architecture)
@@ -117,11 +120,13 @@ func (c CpuDetails) MarshalYAML() (any, error) {
 	switch c.Architecture {
 
 	case cpu.Amd64:
-		return fmt.Sprintf("%s (%s)", c.Architecture, c.ManufacturerId), nil
+		return fmt.Sprintf("%s %s", c.ManufacturerId, c.Architecture), nil
 
 	case cpu.Arm64:
-		return fmt.Sprintf("%s (0x%x)", c.Architecture, c.ImplementerId), nil
+		return fmt.Sprintf("%s", c.Architecture), nil
 
+	case cpu.Riscv64:
+		return fmt.Sprintf("%s", c.Architecture), nil
 	default:
 		return nil, fmt.Errorf("unsupported architecture: %s", c.Architecture)
 	}
@@ -440,8 +445,22 @@ func (cmd *hardwareCommand) fetchMachineInfoWithSpinner() (*machine.Machine, err
 	if err != nil {
 		return nil, fmt.Errorf("getting machine info: %s", err)
 	}
-
+	hwInfo.CPUs = compactCpus(hwInfo.CPUs)
 	return hwInfo, nil
+}
+
+func compactCpus(cpus []cpu.CPU) []cpu.CPU {
+	if len(cpus) == 0 {
+		return cpus
+	}
+
+	compact := []cpu.CPU{cpus[0]}
+	for i := 1; i < len(cpus); i++ {
+		if cpus[i].Architecture != cpus[i-1].Architecture {
+			compact = append(compact, cpus[i])
+		}
+	}
+	return compact
 }
 
 func FormatBytes(b uint64) any {

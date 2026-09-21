@@ -42,7 +42,7 @@ func TestCpuDetails_marshaling(t *testing.T) {
 				Architecture:   cpu.Amd64,
 				ManufacturerId: "AuthenticAMD",
 			},
-			want: "amd64 (AuthenticAMD)",
+			want: "AuthenticAMD amd64",
 		},
 		{
 			name: "ARM",
@@ -50,7 +50,15 @@ func TestCpuDetails_marshaling(t *testing.T) {
 				Architecture:  cpu.Arm64,
 				ImplementerId: HexInt(0x41),
 			},
-			want: "arm64 (0x41)",
+			want: "arm64",
+		},
+		{
+			name: "RISCV64",
+			cpu: CpuDetails{
+				Architecture:  cpu.Riscv64,
+				ImplementerId: HexInt(0x41),
+			},
+			want: "riscv64",
 		},
 		{
 			name: "unknown arch implementer",
@@ -303,8 +311,8 @@ func TestHardwareCommand_newMachineDetails_resolvesARMCPU(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != `"arm64 (0x41)"` {
-		t.Errorf("expected resolved ARM CPU, got %s", got)
+	if string(got) != `"arm64"` {
+		t.Errorf("expected resolved arm64, got %s", got)
 	}
 }
 
@@ -411,7 +419,7 @@ func Example_hardwareCommand_printMachineInfo_jsonCompact() {
 	// Output:
 	// {
 	//   "cpus": [
-	//     "amd64 (GenuineIntel)"
+	//     "GenuineIntel amd64"
 	//   ],
 	//   "memory": "62.4G (Swap 0)",
 	//   "disks": [
@@ -442,7 +450,7 @@ func Example_hardwareCommand_printMachineInfo_plainCompact() {
 
 	// Output:
 	// cpus:
-	//     - amd64 (GenuineIntel)
+	//     - GenuineIntel amd64
 	// accelerators:
 	//     - Intel Corporation (VRAM 15.3M)
 	//     - bus: usb
