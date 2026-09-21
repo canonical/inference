@@ -95,12 +95,11 @@ func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error)
 }
 
 func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string, error) {
-	list, err := providers.List(
+	list, err := providers.ListInstalled(
 		ctx,
 		cmd.SnapCatalog,
 		cmd.SnapdClient,
 		cmd.ShareProvidersPath,
-		providers.ListOptions{InstalledOnly: true},
 	)
 	if err != nil {
 		return nil, common.FriendlySnapdError(err)

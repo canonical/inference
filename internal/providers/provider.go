@@ -63,7 +63,7 @@ func (p Provider) Identity() ProviderIdentity {
 	return ProviderIdentity{Type: p.Type, Name: p.Name}
 }
 
-type ListOptions struct {
+type listOptions struct {
 	InstalledOnly bool
 	Name          string
 }
@@ -79,7 +79,7 @@ func Find(
 		return Provider{}, fmt.Errorf("provider name can't be empty")
 	}
 
-	matches, err := List(ctx, catalog, snapdClient, shareProvidersPath, ListOptions{Name: name})
+	matches, err := list(ctx, catalog, snapdClient, shareProvidersPath, listOptions{Name: name})
 	if err != nil {
 		return Provider{}, err
 	}
@@ -95,12 +95,30 @@ func Find(
 	}
 }
 
-func List(
+func ListInstalled(
 	ctx context.Context,
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
-	options ListOptions,
+) ([]Provider, error) {
+	return list(ctx, catalog, snapdClient, shareProvidersPath, listOptions{InstalledOnly: true})
+}
+
+func ListAll(
+	ctx context.Context,
+	catalog *snapcatalog.Reader,
+	snapdClient *snapd.Client,
+	shareProvidersPath string,
+) ([]Provider, error) {
+	return list(ctx, catalog, snapdClient, shareProvidersPath, listOptions{})
+}
+
+func list(
+	ctx context.Context,
+	catalog *snapcatalog.Reader,
+	snapdClient *snapd.Client,
+	shareProvidersPath string,
+	options listOptions,
 ) ([]Provider, error) {
 
 	catalogProviders, err := CatalogSnapProviders(catalog)

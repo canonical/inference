@@ -47,7 +47,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("all providers", func(t *testing.T) {
-		got, err := List(context.Background(), catalog, client, "", ListOptions{})
+		got, err := ListAll(context.Background(), catalog, client, "")
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -67,7 +67,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("installed only", func(t *testing.T) {
-		got, err := List(context.Background(), catalog, client, "", ListOptions{InstalledOnly: true})
+		got, err := ListInstalled(context.Background(), catalog, client, "")
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -91,21 +91,19 @@ func TestList(t *testing.T) {
 			"qwen3":  snapd.SnapStatusInstalled,
 		})
 
-		got, err := List(context.Background(), catalog, client, "", ListOptions{Name: "gemma4"})
+		got, err := Find(context.Background(), catalog, client, "", "gemma4")
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
 
-		want := []Provider{
-			{Name: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected},
+		want := Provider{
+			Name:       "gemma4",
+			Type:       TypeInferenceSnap,
+			State:      StateEnabled,
+			Connection: ConnectionNotConnected,
 		}
-		if len(got) != len(want) {
-			t.Fatalf("got %d providers, want %d: %+v", len(got), len(want), got)
-		}
-		for i := range want {
-			if got[i] != want[i] {
-				t.Fatalf("provider %d: got %+v, want %+v", i, got[i], want[i])
-			}
+		if got != want {
+			t.Fatalf("provider: got %+v, want %+v", got, want)
 		}
 
 		// filtering happens before the snapd lookup
@@ -166,7 +164,7 @@ func TestListTreatsMissingCatalogAsEmpty(t *testing.T) {
 		{},
 		{Path: filepath.Join(t.TempDir(), "missing.json")},
 	} {
-		got, err := List(context.Background(), catalog, client, "", ListOptions{})
+		got, err := ListAll(context.Background(), catalog, client, "")
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -180,7 +178,7 @@ func TestListReturnsMalformedCatalogError(t *testing.T) {
 	catalog := snapcatalogtest.WriteCatalog(t, "not json")
 	client, _ := snapdtest.NewFakeServer(t, nil)
 
-	if _, err := List(context.Background(), catalog, client, "", ListOptions{}); err == nil {
+	if _, err := ListAll(context.Background(), catalog, client, ""); err == nil {
 		t.Fatal("expected malformed catalog error")
 	}
 }
