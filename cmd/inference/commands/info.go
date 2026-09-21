@@ -66,7 +66,11 @@ func (cmd *infoCommand) run(cobraCmd *cobra.Command, args []string) error {
 func renderInfo(p providers.Provider) (string, error) {
 	output := infoOutput{Name: p.Name, Type: string(p.Type), State: string(p.State)}
 	if p.BaseURL != "" {
-		output.API = &apiOutput{OpenAI: openAIOutput{BaseURL: providers.RedactURL(p.BaseURL)}}
+		redactedURL, err := providers.RedactURL(p.BaseURL)
+		if err != nil {
+			return "", fmt.Errorf("redacting provider base URL: %w", err)
+		}
+		output.API = &apiOutput{OpenAI: openAIOutput{BaseURL: redactedURL}}
 	}
 
 	data, err := yaml.Marshal(output)

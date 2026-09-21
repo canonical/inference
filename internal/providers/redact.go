@@ -1,15 +1,18 @@
 package providers
 
-import "net/url"
+import (
+	"fmt"
+	"net/url"
+)
 
-func RedactURL(rawURL string) string {
+func RedactURL(rawURL string) (string, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return "<invalid>"
+		return "", fmt.Errorf("parsing url: %w", err)
 	}
 	parsed.User = nil
 	parsed.RawQuery = ""
 	parsed.ForceQuery = false
 	parsed.Fragment = ""
-	return parsed.String()
+	return parsed.String(), nil
 }

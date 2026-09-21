@@ -75,6 +75,19 @@ state: enabled
 	}
 }
 
+func TestInfoRendering_InvalidBaseURLReturnsError(t *testing.T) {
+	provider := providers.Provider{
+		Name:    "gemma4",
+		Type:    providers.TypeInferenceSnap,
+		State:   providers.StateEnabled,
+		BaseURL: "http://[invalid",
+	}
+
+	if _, err := renderInfo(provider); err == nil {
+		t.Fatal("expected an error for an unparseable BaseURL, got none")
+	}
+}
+
 func TestInfo_PositionalArgsAreRequired(t *testing.T) {
 	ctx, stdout, _ := newTestContext()
 
