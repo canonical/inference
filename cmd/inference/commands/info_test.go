@@ -72,7 +72,7 @@ api:
 `,
 		},
 		{
-			name: "provider without a BaseURL [json]",
+			name: "provider without a BaseURL [yaml]",
 			provider: providers.Provider{
 				Name:  "gemma4",
 				Type:  providers.TypeInferenceSnap,
@@ -152,36 +152,36 @@ func TestInfo_TooManyPositionalArgsAreRejected(t *testing.T) {
 }
 
 func TestInfo_PrintsProvider(t *testing.T) {
-	ctx, stdout, _ := newTestContext()
-	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[
-		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"}
-	]`)
-	ctx.SnapdClient, _ = snapd.NewFakeServer(t, map[string]string{"gemma4": snapd.SnapStatusActive})
+	for _, test := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "yaml",
+			args: []string{"gemma4"},
+			want: "name: gemma4\ntype: inference-snap\nstate: enabled\n",
+		},
+		{
+			name: "json",
+			args: []string{"gemma4", "--format=json"},
+			want: "{\n  \"name\": \"gemma4\",\n  \"type\": \"inference-snap\",\n  \"state\": \"enabled\"\n}\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, stdout, _ := newTestContext()
+			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[
+				{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"}
+			]`)
+			ctx.SnapdClient, _ = snapd.NewFakeServer(t, map[string]string{"gemma4": snapd.SnapStatusActive})
 
-	if err := execute(Info(ctx), "gemma4"); err != nil {
-		t.Fatalf("Info: %v", err)
-	}
-
-	want := "name: gemma4\ntype: inference-snap\nstate: enabled\n"
-	if stdout.String() != want {
-		t.Errorf("got:\n%q\nwant:\n%q", stdout.String(), want)
-	}
-}
-
-func TestInfo_PrintsProviderJSON(t *testing.T) {
-	ctx, stdout, _ := newTestContext()
-	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[
-		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"}
-	]`)
-	ctx.SnapdClient, _ = snapd.NewFakeServer(t, map[string]string{"gemma4": snapd.SnapStatusActive})
-
-	if err := execute(Info(ctx), "gemma4", "--format=json"); err != nil {
-		t.Fatalf("Info: %v", err)
-	}
-
-	want := "{\n  \"name\": \"gemma4\",\n  \"type\": \"inference-snap\",\n  \"state\": \"enabled\"\n}\n"
-	if stdout.String() != want {
-		t.Errorf("got:\n%q\nwant:\n%q", stdout.String(), want)
+			if err := execute(Info(ctx), test.args...); err != nil {
+				t.Fatalf("Info: %v", err)
+			}
+			if stdout.String() != test.want {
+				t.Errorf("got:\n%q\nwant:\n%q", stdout.String(), test.want)
+			}
+		})
 	}
 }
 
