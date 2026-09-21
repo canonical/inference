@@ -5,9 +5,8 @@ import (
 	"testing"
 
 	"github.com/canonical/inference/internal/providers"
-	"github.com/canonical/inference/internal/snapcatalog/snapcatalogtest"
+	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
-	"github.com/canonical/inference/internal/snapd/snapdtest"
 )
 
 func TestInfoRendering(t *testing.T) {
@@ -114,10 +113,10 @@ func TestInfo_TooManyPositionalArgsAreRejected(t *testing.T) {
 
 func TestInfo_PrintsProvider(t *testing.T) {
 	ctx, stdout, _ := newTestContext()
-	ctx.SnapCatalog = snapcatalogtest.WriteCatalog(t, `[
+	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[
 		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"}
 	]`)
-	ctx.SnapdClient, _ = snapdtest.NewFakeServer(t, map[string]string{"gemma4": snapd.SnapStatusActive})
+	ctx.SnapdClient, _ = snapd.NewFakeServer(t, map[string]string{"gemma4": snapd.SnapStatusActive})
 
 	if err := execute(Info(ctx), "gemma4"); err != nil {
 		t.Fatalf("Info: %v", err)
@@ -131,8 +130,8 @@ func TestInfo_PrintsProvider(t *testing.T) {
 
 func TestInfo_UnknownProvider(t *testing.T) {
 	ctx, stdout, _ := newTestContext()
-	ctx.SnapCatalog = snapcatalogtest.WriteCatalog(t, `[]`)
-	ctx.SnapdClient, _ = snapdtest.NewFakeServer(t, nil)
+	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[]`)
+	ctx.SnapdClient, _ = snapd.NewFakeServer(t, nil)
 
 	err := execute(Info(ctx), "some-imaginary-provider")
 	if err == nil {

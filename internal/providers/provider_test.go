@@ -7,9 +7,7 @@ import (
 	"testing"
 
 	"github.com/canonical/inference/internal/snapcatalog"
-	"github.com/canonical/inference/internal/snapcatalog/snapcatalogtest"
 	"github.com/canonical/inference/internal/snapd"
-	"github.com/canonical/inference/internal/snapd/snapdtest"
 )
 
 func TestProviderInstalled(t *testing.T) {
@@ -36,12 +34,12 @@ func TestProviderInstalled(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
-	catalog := snapcatalogtest.WriteCatalog(t, `[
+	catalog := snapcatalog.WriteFakeCatalog(t, `[
 		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"},
 		{"snap":"qwen3","model_name":"Qwen 3","full_name":"canonical/qwen3","html_url":"https://example.com/qwen3"},
 		{"snap":"smollm2","model_name":"SmolLM2","full_name":"canonical/smollm2","html_url":"https://example.com/smollm2"}
 	]`)
-	client, _ := snapdtest.NewFakeServer(t, map[string]string{
+	client, _ := snapd.NewFakeServer(t, map[string]string{
 		"gemma4": snapd.SnapStatusActive,
 		"qwen3":  snapd.SnapStatusInstalled,
 	})
@@ -86,7 +84,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("searching one provider doesn't query others", func(t *testing.T) {
-		client, requests := snapdtest.NewFakeServer(t, map[string]string{
+		client, requests := snapd.NewFakeServer(t, map[string]string{
 			"gemma4": snapd.SnapStatusActive,
 			"qwen3":  snapd.SnapStatusInstalled,
 		})
@@ -114,11 +112,11 @@ func TestList(t *testing.T) {
 }
 
 func TestFind(t *testing.T) {
-	catalog := snapcatalogtest.WriteCatalog(t, `[
+	catalog := snapcatalog.WriteFakeCatalog(t, `[
 		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"},
 		{"snap":"qwen3","model_name":"Qwen 3","full_name":"canonical/qwen3","html_url":"https://example.com/qwen3"}
 	]`)
-	client, requests := snapdtest.NewFakeServer(t, map[string]string{
+	client, requests := snapd.NewFakeServer(t, map[string]string{
 		"gemma4": snapd.SnapStatusActive,
 		"qwen3":  snapd.SnapStatusInstalled,
 	})
@@ -158,7 +156,7 @@ func TestFind(t *testing.T) {
 }
 
 func TestListTreatsMissingCatalogAsEmpty(t *testing.T) {
-	client, _ := snapdtest.NewFakeServer(t, nil)
+	client, _ := snapd.NewFakeServer(t, nil)
 
 	for _, catalog := range []*snapcatalog.Reader{
 		{},
@@ -175,8 +173,8 @@ func TestListTreatsMissingCatalogAsEmpty(t *testing.T) {
 }
 
 func TestListReturnsMalformedCatalogError(t *testing.T) {
-	catalog := snapcatalogtest.WriteCatalog(t, "not json")
-	client, _ := snapdtest.NewFakeServer(t, nil)
+	catalog := snapcatalog.WriteFakeCatalog(t, "not json")
+	client, _ := snapd.NewFakeServer(t, nil)
 
 	if _, err := ListAll(context.Background(), catalog, client, ""); err == nil {
 		t.Fatal("expected malformed catalog error")

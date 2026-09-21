@@ -1,4 +1,4 @@
-package snapdtest
+package snapd
 
 import (
 	"fmt"
@@ -8,11 +8,9 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
-
-	"github.com/canonical/inference/internal/snapd"
 )
 
-func NewFakeServer(t testing.TB, statuses map[string]string) (*snapd.Client, *atomic.Int32) {
+func NewFakeServer(t testing.TB, statuses map[string]string) (*Client, *atomic.Int32) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -42,5 +40,5 @@ func NewFakeServer(t testing.TB, statuses map[string]string) (*snapd.Client, *at
 	server.Start()
 	t.Cleanup(server.Close)
 
-	return &snapd.Client{Socket: socket}, &requestsCounter
+	return &Client{Socket: socket}, &requestsCounter
 }
