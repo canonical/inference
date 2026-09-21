@@ -144,11 +144,11 @@ func (m MemoryDetails) MarshalJSON() ([]byte, error) {
 			TotalRam  any `json:"total-ram"`
 			TotalSwap any `json:"total-swap"`
 		}{
-			TotalRam:  FormatBytes(m.TotalRam),
-			TotalSwap: FormatBytes(m.TotalSwap),
+			TotalRam:  m.TotalRam,
+			TotalSwap: m.TotalSwap,
 		})
 	}
-	return json.Marshal(fmt.Sprintf("%v (Swap %v)", FormatBytes(m.TotalRam), FormatBytes(m.TotalSwap)))
+	return json.Marshal(fmt.Sprintf("%v (Swap %v)", m.TotalRam, m.TotalSwap))
 }
 
 func (m MemoryDetails) MarshalYAML() (any, error) {
@@ -158,11 +158,11 @@ func (m MemoryDetails) MarshalYAML() (any, error) {
 			TotalRam  any `yaml:"total-ram"`
 			TotalSwap any `yaml:"total-swap"`
 		}{
-			TotalRam:  FormatBytes(m.TotalRam),
-			TotalSwap: FormatBytes(m.TotalSwap),
+			TotalRam:  m.TotalRam,
+			TotalSwap: m.TotalSwap,
 		}, nil
 	} else {
-		return fmt.Sprintf("%v (Swap %v)", FormatBytes(m.TotalRam), FormatBytes(m.TotalSwap)), nil
+		return fmt.Sprintf("%v (Swap %v)", m.TotalRam, m.TotalSwap), nil
 	}
 }
 
