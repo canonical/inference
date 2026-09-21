@@ -8,7 +8,7 @@ The inference proxy uses `http://localhost:8400/v1` as its entry point by defaul
 
 ## Usage
 
-Install inference manager as a snap:
+Install Inference Manager as a snap:
 ```console
 sudo snap install inference
 ```
@@ -45,8 +45,8 @@ Hint: run "inference install <provider>" to install providers.
 The command lists all installed providers, along with any inference snaps that are available but not installed.
 
 Use `inference install` to install a provider, `inference remove` to remove a provider.
-At the moment, the command only allows addition of inference snaps.
-Support for adding other types of providers, including remote providers, is planned for future releases.
+At the moment, the commands only allow management of [inference snaps](https://github.com/canonical/inference-snaps).
+Support for other types of providers, including remote providers, is planned for future releases.
 
 Additional commands, including `inference enable` and `inference disable`, are under development. These commands will allow users to manage the state of installed providers.
 
@@ -84,7 +84,7 @@ $ curl --silent http://localhost:8400/v1/models | jq
 
 ### Show status
 
-To check the status of the inference manager, run:
+To check the status of the Inference Manager, run:
 ```
 $ inference status
 services:
