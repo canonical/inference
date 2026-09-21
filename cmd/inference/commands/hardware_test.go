@@ -131,28 +131,28 @@ func TestMemoryDetails_marshaling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "7.6G (Swap 0)\n" {
+	if string(got) != "8160437862 (Swap 0)\n" {
 		t.Errorf("expected zero swap, got %q", got)
 	}
 	got, err = yaml.Marshal(memorySwap)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "total-ram: 7.6G\ntotal-swap: 953.7M\n" {
+	if string(got) != "total-ram: 8160437862\ntotal-swap: 1000000000\n" {
 		t.Errorf("expected non-zero swap, got %q", got)
 	}
 	got, err = json.Marshal(memoryZeroSwap)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != `"7.6G (Swap 0)"` {
+	if string(got) != `"8160437862 (Swap 0)"` {
 		t.Errorf("expected JSON for zero swap, got %q", got)
 	}
 	got, err = json.Marshal(memorySwap)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != `{"total-ram":"7.6G","total-swap":"953.7M"}` {
+	if string(got) != `{"total-ram":8160437862,"total-swap":1000000000}` {
 		t.Errorf("expected JSON for non-zero swap, got %q", got)
 	}
 }
@@ -337,7 +337,7 @@ func Example_hardwareCommand_printMachineInfo_json() {
 	//     }
 	//   ],
 	//   "memory": {
-	//     "total-ram": "62.4G",
+	//     "total-ram": 67012501504,
 	//     "total-swap": 0
 	//   },
 	//   "disks": [
@@ -385,7 +385,7 @@ func Example_hardwareCommand_printMachineInfo_plain() {
 	//     - architecture: amd64
 	//       manufacturer-id: GenuineIntel
 	// memory:
-	//     total-ram: 62.4G
+	//     total-ram: 67012501504
 	//     total-swap: 0
 	// disks:
 	//     - path: /var/lib/snapd/snaps
@@ -421,7 +421,7 @@ func Example_hardwareCommand_printMachineInfo_jsonCompact() {
 	//   "cpus": [
 	//     "GenuineIntel amd64"
 	//   ],
-	//   "memory": "62.4G (Swap 0)",
+	//   "memory": "67012501504 (Swap 0)",
 	//   "disks": [
 	//     "/var/lib/snapd/snaps (Free 943543738368 / 1006451294208)"
 	//   ],
@@ -456,7 +456,7 @@ func Example_hardwareCommand_printMachineInfo_plainCompact() {
 	//     - bus: usb
 	//       vendor-name: Example Vendor
 	//       product-name: Example Product
-	// memory: 62.4G (Swap 0)
+	// memory: 67012501504 (Swap 0)
 	// disks:
 	//     - /var/lib/snapd/snaps (Free 878.7G / 937.3G)
 }
