@@ -62,9 +62,10 @@ state: enabled
 		},
 	}
 
+	cmd := &infoCommand{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := renderInfo(tt.provider)
+			got, err := cmd.renderInfo(tt.provider)
 			if err != nil {
 				t.Fatalf("error marshaling data: %q", err)
 			}
@@ -83,7 +84,8 @@ func TestInfoRendering_InvalidBaseURLReturnsError(t *testing.T) {
 		BaseURL: "http://[invalid",
 	}
 
-	if _, err := renderInfo(provider); err == nil {
+	cmd := &infoCommand{}
+	if _, err := cmd.renderInfo(provider); err == nil {
 		t.Fatal("expected an error for an unparseable BaseURL, got none")
 	}
 }

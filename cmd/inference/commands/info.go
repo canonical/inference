@@ -54,7 +54,7 @@ func (cmd *infoCommand) run(cobraCmd *cobra.Command, args []string) error {
 		return common.FriendlySnapdError(err)
 	}
 
-	infoYaml, err := renderInfo(provider)
+	infoYaml, err := cmd.renderInfo(provider)
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func (cmd *infoCommand) run(cobraCmd *cobra.Command, args []string) error {
 	return err
 }
 
-func renderInfo(p providers.Provider) (string, error) {
+func (cmd *infoCommand) renderInfo(p providers.Provider) (string, error) {
 	output := infoOutput{Name: p.Name, Type: string(p.Type), State: string(p.State)}
 	if p.BaseURL != "" {
 		redactedURL, err := providers.RedactURL(p.BaseURL)
