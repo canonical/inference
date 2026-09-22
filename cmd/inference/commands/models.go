@@ -56,7 +56,12 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	output, err := renderModels(list, cmd.format)
+	var output string
+	if cmd.format == "json" {
+		output, err = cmd.outputJSON(list)
+	} else {
+		output, err = cmd.outputTable(list)
+	}
 	if err != nil {
 		return err
 	}
@@ -64,11 +69,7 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	return err
 }
 
-func renderModels(list []models.Model, format string) (string, error) {
-	if format == "table" {
-		return renderModelsTable(list)
-	}
-
+func (cmd *modelsCommand) outputJSON(list []models.Model) (string, error) {
 	result := modelsOutput{Models: make([]modelOutput, len(list))}
 	for i, model := range list {
 		result.Models[i] = modelOutput{
@@ -85,7 +86,7 @@ func renderModels(list []models.Model, format string) (string, error) {
 	return output.String(), nil
 }
 
-func renderModelsTable(list []models.Model) (string, error) {
+func (cmd *modelsCommand) outputTable(list []models.Model) (string, error) {
 	var output bytes.Buffer
 	table := tablewriter.NewTable(
 		&output,
