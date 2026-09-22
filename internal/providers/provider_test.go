@@ -2,12 +2,8 @@ package providers
 
 import (
 	"context"
-	"fmt"
-	"net"
-	"net/http"
-	"net/http/httptest"
-	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/canonical/inference/internal/snapcatalog"
@@ -37,61 +33,19 @@ func TestProviderInstalled(t *testing.T) {
 	}
 }
 
-func writeCatalog(t *testing.T, entries string) *snapcatalog.Reader {
-	t.Helper()
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, snapcatalog.Filename)
-	if err := os.WriteFile(path, []byte(entries), 0o644); err != nil {
-		t.Fatalf("writing catalog: %v", err)
-	}
-	return &snapcatalog.Reader{Path: path}
-}
-
-func newSnapdServer(t *testing.T, statuses map[string]string) *snapd.Client {
-	t.Helper()
-
-	dir := t.TempDir()
-	socket := filepath.Join(dir, "snapd.socket")
-	listener, err := net.Listen("unix", socket)
-	if err != nil {
-		t.Fatalf("listening on unix socket: %v", err)
-	}
-
-	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		name := r.URL.Path[len("/v2/snaps/"):]
-		status, ok := statuses[name]
-		if !ok {
-			w.WriteHeader(http.StatusNotFound)
-			fmt.Fprintf(w, `{"type":"error","status":"Not Found","status-code":404,"result":{
-				"message":"snap \"%s\" not found",
-				"kind":"snap-not-found"
-			}}`, name)
-			return
-		}
-		fmt.Fprintf(w, `{"type":"sync","status":"OK","result":{"name":%q,"status":%q}}`, name, status)
-	}))
-	server.Listener.Close()
-	server.Listener = listener
-	server.Start()
-	t.Cleanup(server.Close)
-
-	return &snapd.Client{Socket: socket}
-}
-
 func TestList(t *testing.T) {
-	catalog := writeCatalog(t, `[
+	catalog := snapcatalog.WriteFakeCatalog(t, `[
 		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"},
 		{"snap":"qwen3","model_name":"Qwen 3","full_name":"canonical/qwen3","html_url":"https://example.com/qwen3"},
 		{"snap":"smollm2","model_name":"SmolLM2","full_name":"canonical/smollm2","html_url":"https://example.com/smollm2"}
 	]`)
-	client := newSnapdServer(t, map[string]string{
+	client, _ := snapd.NewFakeServer(t, map[string]string{
 		"gemma4": snapd.SnapStatusActive,
 		"qwen3":  snapd.SnapStatusInstalled,
 	})
 
 	t.Run("all providers", func(t *testing.T) {
-		got, err := List(context.Background(), catalog, client, "", ListOptions{})
+		got, err := ListAll(context.Background(), catalog, client, "")
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -111,7 +65,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("installed only", func(t *testing.T) {
-		got, err := List(context.Background(), catalog, client, "", ListOptions{InstalledOnly: true})
+		got, err := ListInstalled(context.Background(), catalog, client, "")
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -128,16 +82,87 @@ func TestList(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("searching one provider doesn't query others", func(t *testing.T) {
+		client, requests := snapd.NewFakeServer(t, map[string]string{
+			"gemma4": snapd.SnapStatusActive,
+			"qwen3":  snapd.SnapStatusInstalled,
+		})
+
+		got, err := Find(context.Background(), catalog, client, "", "gemma4")
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+
+		want := Provider{
+			Name:       "gemma4",
+			Type:       TypeInferenceSnap,
+			State:      StateEnabled,
+			Connection: ConnectionNotConnected,
+		}
+		if got != want {
+			t.Fatalf("provider: got %+v, want %+v", got, want)
+		}
+
+		// filtering happens before the snapd lookup
+		if n := requests.Load(); n != 1 {
+			t.Fatalf("expected exactly 1 snapd request, got %d", n)
+		}
+	})
+}
+
+func TestFind(t *testing.T) {
+	catalog := snapcatalog.WriteFakeCatalog(t, `[
+		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"},
+		{"snap":"qwen3","model_name":"Qwen 3","full_name":"canonical/qwen3","html_url":"https://example.com/qwen3"}
+	]`)
+	client, requests := snapd.NewFakeServer(t, map[string]string{
+		"gemma4": snapd.SnapStatusActive,
+		"qwen3":  snapd.SnapStatusInstalled,
+	})
+
+	t.Run("matching provider", func(t *testing.T) {
+		got, err := Find(context.Background(), catalog, client, "", "gemma4")
+		if err != nil {
+			t.Fatalf("Find: %v", err)
+		}
+		want := Provider{Name: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected}
+		if got != want {
+			t.Fatalf("got %+v, want %+v", got, want)
+		}
+
+		// filtering happens before the snapd lookup
+		if n := requests.Load(); n != 1 {
+			t.Fatalf("expected exactly 1 snapd request, got %d", n)
+		}
+	})
+
+	t.Run("nothing matches", func(t *testing.T) {
+		_, err := Find(context.Background(), catalog, client, "", "oopsie-daisy")
+		if err == nil {
+			t.Fatal("expected an error for an unknown provider")
+		}
+		if !strings.Contains(err.Error(), "oopsie-daisy") {
+			t.Fatalf("expected error to mention the requested name, got: %v", err)
+		}
+	})
+
+	t.Run("empty provider", func(t *testing.T) {
+		_, err := Find(context.Background(), catalog, client, "", "")
+		if err == nil {
+			t.Fatal("expected an error for an empty provider")
+		}
+	})
 }
 
 func TestListTreatsMissingCatalogAsEmpty(t *testing.T) {
-	client := newSnapdServer(t, nil)
+	client, _ := snapd.NewFakeServer(t, nil)
 
 	for _, catalog := range []*snapcatalog.Reader{
 		{},
 		{Path: filepath.Join(t.TempDir(), "missing.json")},
 	} {
-		got, err := List(context.Background(), catalog, client, "", ListOptions{})
+		got, err := ListAll(context.Background(), catalog, client, "")
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -148,10 +173,10 @@ func TestListTreatsMissingCatalogAsEmpty(t *testing.T) {
 }
 
 func TestListReturnsMalformedCatalogError(t *testing.T) {
-	catalog := writeCatalog(t, "not json")
-	client := newSnapdServer(t, nil)
+	catalog := snapcatalog.WriteFakeCatalog(t, "not json")
+	client, _ := snapd.NewFakeServer(t, nil)
 
-	if _, err := List(context.Background(), catalog, client, "", ListOptions{}); err == nil {
+	if _, err := ListAll(context.Background(), catalog, client, ""); err == nil {
 		t.Fatal("expected malformed catalog error")
 	}
 }

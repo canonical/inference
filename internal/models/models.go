@@ -42,12 +42,11 @@ func List(
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
 ) ([]Model, error) {
-	allProviders, err := providers.List(
+	allProviders, err := providers.ListAll(
 		ctx,
 		catalog,
 		snapdClient,
 		shareProvidersPath,
-		providers.ListOptions{},
 	)
 	if err != nil {
 		return nil, err

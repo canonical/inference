@@ -63,16 +63,62 @@ func (p Provider) Identity() ProviderIdentity {
 	return ProviderIdentity{Type: p.Type, Name: p.Name}
 }
 
-type ListOptions struct {
+type listOptions struct {
 	InstalledOnly bool
+	Name          string
 }
 
-func List(
+func Find(
 	ctx context.Context,
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
-	options ListOptions,
+	name string,
+) (Provider, error) {
+	if name == "" {
+		return Provider{}, fmt.Errorf("provider name can't be empty")
+	}
+
+	matches, err := list(ctx, catalog, snapdClient, shareProvidersPath, listOptions{Name: name})
+	if err != nil {
+		return Provider{}, err
+	}
+
+	switch len(matches) {
+	case 0:
+		return Provider{}, fmt.Errorf("unknown provider %q", name)
+	case 1:
+		return matches[0], nil
+	default:
+		// only to be hit when we add setup for types other than TypeInferenceSnap (e.g. TypeOpenAI)
+		return Provider{}, fmt.Errorf("ambiguous provider %q: matches multiple provider types", name)
+	}
+}
+
+func ListInstalled(
+	ctx context.Context,
+	catalog *snapcatalog.Reader,
+	snapdClient *snapd.Client,
+	shareProvidersPath string,
+) ([]Provider, error) {
+	return list(ctx, catalog, snapdClient, shareProvidersPath, listOptions{InstalledOnly: true})
+}
+
+func ListAll(
+	ctx context.Context,
+	catalog *snapcatalog.Reader,
+	snapdClient *snapd.Client,
+	shareProvidersPath string,
+) ([]Provider, error) {
+	return list(ctx, catalog, snapdClient, shareProvidersPath, listOptions{})
+}
+
+func list(
+	ctx context.Context,
+	catalog *snapcatalog.Reader,
+	snapdClient *snapd.Client,
+	shareProvidersPath string,
+	options listOptions,
 ) ([]Provider, error) {
 
 	catalogProviders, err := CatalogSnapProviders(catalog)
@@ -114,6 +160,9 @@ func List(
 	// Add snap state and optionally filter for only installed providers
 	result := make([]Provider, 0, len(merged))
 	for _, provider := range merged {
+		if options.Name != "" && provider.Name != options.Name {
+			continue
+		}
 		if provider.Type == TypeInferenceSnap {
 			state, err := snapProviderLifecycleState(ctx, snapdClient, provider.Name)
 			if err != nil {

@@ -65,7 +65,7 @@ func main() {
 
 	snapdClient := snapd.NewClient()
 	listProviders := func(ctx context.Context) ([]providers.Provider, error) {
-		return providers.List(ctx, catalog, snapdClient, providerRoot, providers.ListOptions{})
+		return providers.ListAll(ctx, catalog, snapdClient, providerRoot)
 	}
 
 	handler := openaiproxy.NewModelsHandler(listProviders, newUpstreamClient(), logger)
