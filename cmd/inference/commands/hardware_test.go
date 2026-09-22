@@ -92,10 +92,11 @@ func TestHexInt_marshaling(t *testing.T) {
 
 func TestCpuDetails_marshaling(t *testing.T) {
 	tests := []struct {
-		name    string
-		cpu     cpuDetails
-		want    string
-		wantErr bool
+		name        string
+		cpu         cpuDetails
+		wantJSON    string
+		wantYAML    string
+		wantYAMLErr bool
 	}{
 		{
 			name: "AMD",
@@ -103,7 +104,8 @@ func TestCpuDetails_marshaling(t *testing.T) {
 				Architecture:   cpu.Amd64,
 				ManufacturerId: "AuthenticAMD",
 			},
-			want: "AuthenticAMD amd64",
+			wantJSON: `{"architecture":"amd64","manufacturer-id":"AuthenticAMD"}`,
+			wantYAML: "AuthenticAMD amd64\n",
 		},
 		{
 			name: "ARM",
@@ -111,7 +113,8 @@ func TestCpuDetails_marshaling(t *testing.T) {
 				Architecture:  cpu.Arm64,
 				ImplementerId: HexInt(0x41),
 			},
-			want: "arm64",
+			wantJSON: `{"architecture":"arm64","implementer-id":"0x41"}`,
+			wantYAML: "arm64\n",
 		},
 		{
 			name: "RISCV64",
@@ -119,15 +122,16 @@ func TestCpuDetails_marshaling(t *testing.T) {
 				Architecture:  cpu.Riscv64,
 				ImplementerId: HexInt(0x41),
 			},
-			want: "riscv64",
+			wantJSON: `{"architecture":"riscv64","implementer-id":"0x41"}`,
+			wantYAML: "riscv64\n",
 		},
 		{
 			name: "unknown arch implementer",
 			cpu: cpuDetails{
 				Architecture: cpu.Ppc64,
 			},
-			want:    "unsupported architecture: ppc64",
-			wantErr: true,
+			wantJSON:    `{"architecture":"ppc64"}`,
+			wantYAMLErr: true,
 		},
 		{
 			name: "verbose",
@@ -136,35 +140,26 @@ func TestCpuDetails_marshaling(t *testing.T) {
 				Architecture:   cpu.Amd64,
 				ManufacturerId: "GenuineIntel",
 			},
-			want: `"GenuineIntel amd64"`,
+			wantJSON: `{"architecture":"amd64","manufacturer-id":"GenuineIntel"}`,
+			wantYAML: "architecture: amd64\nmanufacturer-id: GenuineIntel\n",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := json.Marshal(test.cpu)
-			if test.wantErr {
-				if err == nil {
-					t.Errorf("expected error, got none")
-				}
-				return
-			}
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := `"` + test.want + `"`
-			if test.cpu.Verbose {
-				want = `{"architecture":"amd64","manufacturer-id":"GenuineIntel"}`
-			}
-			if string(got) != want {
-				t.Errorf("expected %q, got %s", test.want, got)
+			if string(got) != test.wantJSON {
+				t.Errorf("expected %q, got %s", test.wantJSON, got)
 			}
 		})
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := yaml.Marshal(test.cpu)
-			if test.wantErr {
+			if test.wantYAMLErr {
 				if err == nil {
 					t.Errorf("expected error, got none")
 				}
@@ -173,12 +168,8 @@ func TestCpuDetails_marshaling(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := test.want + "\n"
-			if test.cpu.Verbose {
-				want = "architecture: amd64\nmanufacturer-id: GenuineIntel\n"
-			}
-			if string(got) != want {
-				t.Errorf("expected %q, got %s", test.want, got)
+			if string(got) != test.wantYAML {
+				t.Errorf("expected %q, got %s", test.wantYAML, got)
 			}
 		})
 	}
@@ -206,7 +197,7 @@ func TestMemoryDetails_marshaling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != `"8160437862 (Swap 0)"` {
+	if string(got) != `{"total-ram":8160437862,"total-swap":0}` {
 		t.Errorf("expected JSON for zero swap, got %q", got)
 	}
 	got, err = json.Marshal(memorySwap)
@@ -233,7 +224,7 @@ func TestDiskDetails_marshaling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != `"/ (Free 5000000000 / 1000000000000)"` {
+	if string(got) != `{"mount-point":"/","path":"/var/lib/snapd/snaps","total":1000000000000,"avail":5000000000}` {
 		t.Errorf("expected JSON for disk, got %q", got)
 	}
 	got, err = yaml.Marshal(disk2)
@@ -284,7 +275,7 @@ func TestPciDeviceDetails_marshaling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != `"NVIDIA Corporation GA102GL [RTX A5000] (VRAM 24.0G)"` {
+	if string(got) != `{"bus":"","vendor-name":"NVIDIA Corporation","device-name":"GA102GL [RTX A5000]","additional-properties":{"vram":"24.0G"}}` {
 		t.Errorf("expected compact JSON for PCI device, got %q", got)
 	}
 	got, err = yaml.Marshal(compactNoAddProps)
@@ -298,7 +289,7 @@ func TestPciDeviceDetails_marshaling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != `"NVIDIA Corporation GA102GL [RTX A5000]"` {
+	if string(got) != `{"bus":"","vendor-name":"NVIDIA Corporation","device-name":"GA102GL [RTX A5000]"}` {
 		t.Errorf("expected compact JSON for PCI device, got %q", got)
 	}
 	got, err = yaml.Marshal(verbose)
@@ -327,7 +318,7 @@ func TestApusysDeviceDetails_marshaling(t *testing.T) {
 		{
 			name:     "compact",
 			device:   apuSysDeviceDetails{Bus: "apusys", VendorName: "MediaTek"},
-			wantJSON: `"MediaTek"`,
+			wantJSON: `{"bus":"apusys","vendor-name":"MediaTek"}`,
 			wantYAML: "MediaTek\n",
 		},
 		{
@@ -372,7 +363,7 @@ func TestHardwareCommand_newMachineDetails_resolvesARMCPU(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != `"arm64"` {
+	if string(got) != `{"architecture":"arm64","implementer-id":"0x41"}` {
 		t.Errorf("expected resolved arm64, got %s", got)
 	}
 }
@@ -480,14 +471,33 @@ func Example_hardwareCommand_printMachineInfo_jsonCompact() {
 	// Output:
 	// {
 	//   "cpus": [
-	//     "GenuineIntel amd64"
+	//     {
+	//       "architecture": "amd64",
+	//       "manufacturer-id": "GenuineIntel"
+	//     }
 	//   ],
-	//   "memory": "67012501504 (Swap 0)",
+	//   "memory": {
+	//     "total-ram": 67012501504,
+	//     "total-swap": 0
+	//   },
 	//   "disks": [
-	//     "/var/lib/snapd/snaps (Free 943543738368 / 1006451294208)"
+	//     {
+	//       "path": "/var/lib/snapd/snaps",
+	//       "total": 1006451294208,
+	//       "avail": 943543738368
+	//     }
 	//   ],
 	//   "accelerators": [
-	//     "Intel Corporation (VRAM 15.3M)",
+	//     {
+	//       "bus": "pci",
+	//       "vendor-name": "Intel Corporation",
+	//       "subvendor-name": "Hewlett-Packard Company",
+	//       "additional-properties": {
+	//         "microarchitecture": "gfx1010",
+	//         "vram": "15.3M",
+	//         "compute-capability": "7.5"
+	//       }
+	//     },
 	//     {
 	//       "bus": "usb",
 	//       "vendor-name": "Example Vendor",
