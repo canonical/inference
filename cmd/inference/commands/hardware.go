@@ -33,50 +33,29 @@ type hardwareCommand struct {
 	format  string
 }
 
-type machineDetails struct {
+type hardwareDetails struct {
 	CPUs         []cpuDetails  `json:"cpus,omitempty" yaml:"cpus,omitempty"`
+	Accelerators []any         `json:"accelerators,omitempty" yaml:"accelerators,omitempty"`
 	Memory       memoryDetails `json:"memory,omitempty" yaml:"memory,omitempty"`
 	Disk         []diskDetails `json:"disks,omitempty" yaml:"disks,omitempty"`
-	Accelerators []any         `json:"accelerators,omitempty" yaml:"accelerators,omitempty"`
-	verbose      bool
 }
 
-func (md machineDetails) MarshalYAML() (any, error) {
-	if md.verbose {
-		return struct {
-			CPUs         []cpuDetails  `yaml:"cpus,omitempty"`
-			Memory       memoryDetails `yaml:"memory,omitempty"`
-			Disk         []diskDetails `yaml:"disks,omitempty"`
-			Accelerators []any         `yaml:"accelerators,omitempty"`
-		}{
-			CPUs:         md.CPUs,
-			Memory:       md.Memory,
-			Disk:         md.Disk,
-			Accelerators: md.Accelerators,
-		}, nil
-	} else {
-		return struct {
-			CPUs         []cpuDetails  `yaml:"cpus,omitempty"`
-			Accelerators []any         `yaml:"accelerators,omitempty"`
-			Memory       memoryDetails `yaml:"memory,omitempty"`
-			Disk         []diskDetails `yaml:"disks,omitempty"`
-		}{
-			CPUs:         md.CPUs,
-			Memory:       md.Memory,
-			Disk:         md.Disk,
-			Accelerators: md.Accelerators,
-		}, nil
-	}
+type hardwareDetailsVerbose struct {
+	CPUs         []cpuDetailsVerbose  `json:"cpus,omitempty" yaml:"cpus,omitempty"`
+	Accelerators []any                `json:"accelerators,omitempty" yaml:"accelerators,omitempty"`
+	Memory       memoryDetailsVerbose `json:"memory,omitempty" yaml:"memory,omitempty"`
+	Disk         []diskDetailsVerbose `json:"disks,omitempty" yaml:"disks,omitempty"`
 }
 
-type cpuDetails struct {
+type cpuDetailsVerbose struct {
 	Architecture   string `json:"architecture" yaml:"architecture"`
 	ManufacturerId string `json:"manufacturer-id,omitempty" yaml:"manufacturer-id,omitempty"`
 	ImplementerId  HexInt `json:"implementer-id,omitempty" yaml:"implementer-id,omitempty"`
-	Verbose        bool
 }
 
-func (c cpuDetails) MarshalJSON() ([]byte, error) {
+type cpuDetails string
+
+func (c cpuDetailsVerbose) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Architecture   string `json:"architecture,omitempty"`
 		ManufacturerId string `json:"manufacturer-id,omitempty"`
@@ -88,39 +67,26 @@ func (c cpuDetails) MarshalJSON() ([]byte, error) {
 	})
 }
 
-func (c cpuDetails) MarshalYAML() (any, error) {
-	if c.Verbose {
-		return struct {
-			Architecture   string `yaml:"architecture,omitempty"`
-			ManufacturerId string `yaml:"manufacturer-id,omitempty"`
-			ImplementerId  HexInt `yaml:"implementer-id,omitempty"`
-		}{
-			Architecture:   c.Architecture,
-			ManufacturerId: c.ManufacturerId,
-			ImplementerId:  c.ImplementerId,
-		}, nil
-	}
-	switch c.Architecture {
-	case cpu.Amd64:
-		return fmt.Sprintf("%s %s", c.ManufacturerId, c.Architecture), nil
-
-	case cpu.Arm64:
-		return fmt.Sprintf("%s", c.Architecture), nil
-
-	case cpu.Riscv64:
-		return fmt.Sprintf("%s", c.Architecture), nil
-	default:
-		return nil, fmt.Errorf("unsupported architecture: %s", c.Architecture)
-	}
+func (c cpuDetailsVerbose) MarshalYAML() (any, error) {
+	return struct {
+		Architecture   string `yaml:"architecture,omitempty"`
+		ManufacturerId string `yaml:"manufacturer-id,omitempty"`
+		ImplementerId  HexInt `yaml:"implementer-id,omitempty"`
+	}{
+		Architecture:   c.Architecture,
+		ManufacturerId: c.ManufacturerId,
+		ImplementerId:  c.ImplementerId,
+	}, nil
 }
 
-type memoryDetails struct {
+type memoryDetailsVerbose struct {
 	TotalRam  uint64 `json:"total-ram" yaml:"total-ram"`
 	TotalSwap uint64 `json:"total-swap" yaml:"total-swap"`
-	Verbose   bool
 }
 
-func (m memoryDetails) MarshalJSON() ([]byte, error) {
+type memoryDetails string
+
+func (m memoryDetailsVerbose) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		TotalRam  any `json:"total-ram"`
 		TotalSwap any `json:"total-swap"`
@@ -130,28 +96,26 @@ func (m memoryDetails) MarshalJSON() ([]byte, error) {
 	})
 }
 
-func (m memoryDetails) MarshalYAML() (any, error) {
-	if m.Verbose {
-		return struct {
-			TotalRam  any `yaml:"total-ram"`
-			TotalSwap any `yaml:"total-swap"`
-		}{
-			TotalRam:  m.TotalRam,
-			TotalSwap: m.TotalSwap,
-		}, nil
-	}
-	return fmt.Sprintf("%d (Swap %d)", m.TotalRam, m.TotalSwap), nil
+func (m memoryDetailsVerbose) MarshalYAML() (any, error) {
+	return struct {
+		TotalRam  any `yaml:"total-ram"`
+		TotalSwap any `yaml:"total-swap"`
+	}{
+		TotalRam:  FormatBytes(m.TotalRam),
+		TotalSwap: FormatBytes(m.TotalSwap),
+	}, nil
 }
 
-type diskDetails struct {
+type diskDetailsVerbose struct {
 	MountPoint *string `json:"mount-point,omitempty" yaml:"mount-point,omitempty"`
 	Path       string  `json:"path" yaml:"path"`
 	Total      uint64  `json:"total" yaml:"total"`
 	Avail      uint64  `json:"avail" yaml:"avail"`
-	Verbose    bool
 }
 
-func (d diskDetails) MarshalJSON() ([]byte, error) {
+type diskDetails string
+
+func (d diskDetailsVerbose) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		MountPoint *string `json:"mount-point,omitempty"`
 		Path       string  `json:"path"`
@@ -165,61 +129,50 @@ func (d diskDetails) MarshalJSON() ([]byte, error) {
 	})
 }
 
-func (d diskDetails) MarshalYAML() (any, error) {
-	if d.Verbose {
-		return struct {
-			MountPoint *string `yaml:"mount-point,omitempty"`
-			Path       string  `yaml:"path"`
-			Total      any     `yaml:"total"`
-			Avail      any     `yaml:"avail"`
-		}{
-			MountPoint: d.MountPoint,
-			Path:       d.Path,
-			Total:      FormatBytes(d.Total),
-			Avail:      FormatBytes(d.Avail),
-		}, nil
-	}
-	var diskPath string
-	if d.MountPoint != nil {
-		diskPath = *d.MountPoint
-	} else {
-		diskPath = d.Path
-	}
-	return fmt.Sprintf("%s (Free %s / %s)", diskPath, FormatBytes(d.Avail), FormatBytes(d.Total)), nil
+func (d diskDetailsVerbose) MarshalYAML() (any, error) {
+	return struct {
+		MountPoint *string `yaml:"mount-point,omitempty"`
+		Path       string  `yaml:"path"`
+		Total      any     `yaml:"total"`
+		Avail      any     `yaml:"avail"`
+	}{
+		MountPoint: d.MountPoint,
+		Path:       d.Path,
+		Total:      FormatBytes(d.Total),
+		Avail:      FormatBytes(d.Avail),
+	}, nil
 }
 
-type pciDeviceDetails struct {
+type pciDeviceDetailsVerbose struct {
 	Bus                  string                         `json:"bus" yaml:"bus"`
 	VendorName           string                         `json:"vendor-name,omitempty" yaml:"vendor-name,omitempty"`
 	DeviceName           string                         `json:"device-name,omitempty" yaml:"device-name,omitempty"`
 	SubvendorName        string                         `json:"subvendor-name,omitempty" yaml:"subvendor-name,omitempty"`
 	SubdeviceName        string                         `json:"subdevice-name,omitempty" yaml:"subdevice-name,omitempty"`
 	AdditionalProperties *pciAdditionalDeviceProperties `json:"additional-properties,omitempty" yaml:"additional-properties,omitempty"`
-	Verbose              bool                           `json:"-" yaml:"-"`
 }
 
-func (p pciDeviceDetails) MarshalYAML() (any, error) {
-	if p.Verbose {
-		return struct {
-			Bus                  string                         `yaml:"bus"`
-			VendorName           string                         `yaml:"vendor-name,omitempty"`
-			DeviceName           string                         `yaml:"device-name,omitempty"`
-			SubvendorName        string                         `yaml:"subvendor-name,omitempty"`
-			SubdeviceName        string                         `yaml:"subdevice-name,omitempty"`
-			AdditionalProperties *pciAdditionalDeviceProperties `yaml:"additional-properties,omitempty"`
-		}{
-			Bus:                  p.Bus,
-			VendorName:           p.VendorName,
-			DeviceName:           p.DeviceName,
-			SubvendorName:        p.SubvendorName,
-			SubdeviceName:        p.SubdeviceName,
-			AdditionalProperties: p.AdditionalProperties,
-		}, nil
-	}
-	return p.compactName(), nil
+type pciDeviceDetails string
+
+func (p pciDeviceDetailsVerbose) MarshalYAML() (any, error) {
+	return struct {
+		Bus                  string                         `yaml:"bus"`
+		VendorName           string                         `yaml:"vendor-name,omitempty"`
+		DeviceName           string                         `yaml:"device-name,omitempty"`
+		SubvendorName        string                         `yaml:"subvendor-name,omitempty"`
+		SubdeviceName        string                         `yaml:"subdevice-name,omitempty"`
+		AdditionalProperties *pciAdditionalDeviceProperties `yaml:"additional-properties,omitempty"`
+	}{
+		Bus:                  p.Bus,
+		VendorName:           p.VendorName,
+		DeviceName:           p.DeviceName,
+		SubvendorName:        p.SubvendorName,
+		SubdeviceName:        p.SubdeviceName,
+		AdditionalProperties: p.AdditionalProperties,
+	}, nil
 }
 
-func (p pciDeviceDetails) MarshalJSON() ([]byte, error) {
+func (p pciDeviceDetailsVerbose) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Bus                  string                         `json:"bus"`
 		VendorName           string                         `json:"vendor-name,omitempty"`
@@ -237,7 +190,7 @@ func (p pciDeviceDetails) MarshalJSON() ([]byte, error) {
 	})
 }
 
-func (p pciDeviceDetails) compactName() string {
+func (p pciDeviceDetailsVerbose) compactName() string {
 	name := strings.TrimSpace(fmt.Sprintf("%s %s", p.VendorName, p.DeviceName))
 	if p.AdditionalProperties == nil {
 		return name
@@ -275,15 +228,16 @@ func (a pciAdditionalDeviceProperties) MarshalJSON() ([]byte, error) {
 	})
 }
 
-type usbDeviceDetails struct {
+type usbDeviceDetailsVerbose struct {
 	Bus                  string            `json:"bus" yaml:"bus"`
 	VendorName           string            `json:"vendor-name,omitempty" yaml:"vendor-name,omitempty"`
 	ProductName          string            `json:"product-name,omitempty" yaml:"product-name,omitempty"`
 	AdditionalProperties map[string]string `json:"additional-properties,omitempty" yaml:"additional-properties,omitempty"`
-	Verbose              bool              `json:"-" yaml:"-"`
 }
 
-func (u usbDeviceDetails) MarshalYAML() (any, error) {
+type usbDeviceDetails string
+
+func (u usbDeviceDetailsVerbose) MarshalYAML() (any, error) {
 	return struct {
 		Bus                  string            `yaml:"bus"`
 		VendorName           string            `yaml:"vendor-name,omitempty"`
@@ -297,11 +251,11 @@ func (u usbDeviceDetails) MarshalYAML() (any, error) {
 	}, nil
 }
 
-func (u usbDeviceDetails) compactName() string {
+func (u usbDeviceDetailsVerbose) compactName() string {
 	return strings.TrimSpace(fmt.Sprintf("%s %s", u.VendorName, u.ProductName))
 }
 
-func (p usbDeviceDetails) MarshalJSON() ([]byte, error) {
+func (p usbDeviceDetailsVerbose) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Bus                  string            `json:"bus"`
 		VendorName           string            `json:"vendor-name,omitempty"`
@@ -315,26 +269,24 @@ func (p usbDeviceDetails) MarshalJSON() ([]byte, error) {
 	})
 }
 
-type fastRPCDeviceDetails struct {
+type fastRPCDeviceDetailsVerbose struct {
 	Bus                  string            `json:"bus" yaml:"bus"`
 	AdditionalProperties map[string]string `json:"additional-properties,omitempty" yaml:"additional-properties,omitempty"`
-	Verbose              bool              `json:"-" yaml:"-"`
 }
 
-func (f fastRPCDeviceDetails) MarshalYAML() (any, error) {
-	if f.Verbose {
-		return struct {
-			Bus                  string            `yaml:"bus"`
-			AdditionalProperties map[string]string `yaml:"additional-properties,omitempty"`
-		}{
-			Bus:                  f.Bus,
-			AdditionalProperties: f.AdditionalProperties,
-		}, nil
-	}
-	return f.Bus, nil
+type fastRPCDeviceDetails string
+
+func (f fastRPCDeviceDetailsVerbose) MarshalYAML() (any, error) {
+	return struct {
+		Bus                  string            `yaml:"bus"`
+		AdditionalProperties map[string]string `yaml:"additional-properties,omitempty"`
+	}{
+		Bus:                  f.Bus,
+		AdditionalProperties: f.AdditionalProperties,
+	}, nil
 }
 
-func (f fastRPCDeviceDetails) MarshalJSON() ([]byte, error) {
+func (f fastRPCDeviceDetailsVerbose) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Bus                  string            `json:"bus"`
 		AdditionalProperties map[string]string `json:"additional-properties,omitempty"`
@@ -344,26 +296,24 @@ func (f fastRPCDeviceDetails) MarshalJSON() ([]byte, error) {
 	})
 }
 
-type apuSysDeviceDetails struct {
+type apuSysDeviceDetailsVerbose struct {
 	Bus        string `json:"bus" yaml:"bus"`
 	VendorName string `json:"vendor-name,omitempty" yaml:"vendor-name,omitempty"`
-	Verbose    bool   `json:"-" yaml:"-"`
 }
 
-func (a apuSysDeviceDetails) MarshalYAML() (any, error) {
-	if a.Verbose {
-		return struct {
-			Bus        string `yaml:"bus"`
-			VendorName string `yaml:"vendor-name,omitempty"`
-		}{
-			Bus:        a.Bus,
-			VendorName: a.VendorName,
-		}, nil
-	}
-	return a.VendorName, nil
+type apuSysDeviceDetails string
+
+func (a apuSysDeviceDetailsVerbose) MarshalYAML() (any, error) {
+	return struct {
+		Bus        string `yaml:"bus"`
+		VendorName string `yaml:"vendor-name,omitempty"`
+	}{
+		Bus:        a.Bus,
+		VendorName: a.VendorName,
+	}, nil
 }
 
-func (a apuSysDeviceDetails) MarshalJSON() ([]byte, error) {
+func (a apuSysDeviceDetailsVerbose) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Bus        string `json:"bus"`
 		VendorName string `json:"vendor-name,omitempty"`
@@ -379,8 +329,8 @@ func Hardware(ctx *common.Context) *cobra.Command {
 
 	cobraCmd := &cobra.Command{
 		Use:               "hardware",
-		Short:             "Print information about the host machine",
-		Long:              "Print information about the host machine, including hardware and compute resources",
+		Short:             "Print information about the host hardware",
+		Long:              "Print information about the host hardware, including hardware and compute resources",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE:              cmd.run,
@@ -409,26 +359,66 @@ func (cmd *hardwareCommand) run(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	info, err := cmd.fetchMachineInfoWithSpinner()
+	info, err := cmd.fetchHardwareInfoWithSpinner()
 	if err != nil {
 		return err
 	}
 
-	return cmd.printMachineInfo(*cmd.newMachineDetails(info))
+	return cmd.printHardwareInfo(*cmd.newHardwareDetails(info))
 }
 
-func (cmd *hardwareCommand) printMachineInfo(info machineDetails) error {
+func compactHardwareDetails(info hardwareDetailsVerbose) hardwareDetails {
+	h := hardwareDetails{
+		Memory: memoryDetails(fmt.Sprintf("%v (Swap %v)", FormatBytes(info.Memory.TotalRam), FormatBytes(info.Memory.TotalSwap))),
+	}
+
+	for _, c := range info.CPUs {
+		name := c.Architecture
+		if c.Architecture == cpu.Amd64 {
+			name = strings.TrimSpace(fmt.Sprintf("%s (%s)", c.Architecture, c.ManufacturerId))
+		}
+		h.CPUs = append(h.CPUs, cpuDetails(name))
+	}
+
+	for _, a := range info.Accelerators {
+		switch d := a.(type) {
+		case pciDeviceDetailsVerbose:
+			h.Accelerators = append(h.Accelerators, pciDeviceDetails(d.compactName()))
+		case usbDeviceDetailsVerbose:
+			h.Accelerators = append(h.Accelerators, usbDeviceDetails(d.compactName()))
+		case fastRPCDeviceDetailsVerbose:
+			h.Accelerators = append(h.Accelerators, fastRPCDeviceDetails(d.Bus))
+		case apuSysDeviceDetailsVerbose:
+			h.Accelerators = append(h.Accelerators, apuSysDeviceDetails(d.Bus))
+		}
+	}
+
+	for _, d := range info.Disk {
+		path := d.Path
+		if d.MountPoint != nil {
+			path = *d.MountPoint
+		}
+		h.Disk = append(h.Disk, diskDetails(fmt.Sprintf("%s (Free %s / %s)", path, FormatBytes(d.Avail), FormatBytes(d.Total))))
+	}
+
+	return h
+}
+
+func (cmd *hardwareCommand) printHardwareInfo(info hardwareDetailsVerbose) error {
 	switch cmd.format {
 	case "json":
-		return cmd.printMachineInfoJson(info)
+		return cmd.printHardwareInfoJson(info)
 	case "plain":
-		return cmd.printMachineInfoPlain(info)
+		if !cmd.verbose {
+			return cmd.printHardwareInfoPlain(compactHardwareDetails(info))
+		}
+		return cmd.printHardwareInfoPlain(info)
 	default:
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 }
 
-func (cmd *hardwareCommand) printMachineInfoJson(info machineDetails) error {
+func (cmd *hardwareCommand) printHardwareInfoJson(info hardwareDetailsVerbose) error {
 	jsonString, err := json.MarshalIndent(info, "", "  ")
 	if err != nil {
 		return fmt.Errorf("json: %s", err)
@@ -437,7 +427,7 @@ func (cmd *hardwareCommand) printMachineInfoJson(info machineDetails) error {
 	return nil
 }
 
-func (cmd *hardwareCommand) printMachineInfoPlain(info machineDetails) error {
+func (cmd *hardwareCommand) printHardwareInfoPlain(info any) error {
 	yamlString, err := yaml.Marshal(info)
 	if err != nil {
 		return fmt.Errorf("plain: %s", err)
@@ -446,8 +436,8 @@ func (cmd *hardwareCommand) printMachineInfoPlain(info machineDetails) error {
 	return nil
 }
 
-func (cmd *hardwareCommand) fetchMachineInfoWithSpinner() (*machine.Machine, error) {
-	stopProgress := common.StartProgressSpinner("Gathering machine information")
+func (cmd *hardwareCommand) fetchHardwareInfoWithSpinner() (*machine.Machine, error) {
+	stopProgress := common.StartProgressSpinner("Gathering hardware information")
 	hwInfo, warnings, err := machine.Get(host.Real(), true, false)
 	stopProgress()
 
@@ -458,7 +448,7 @@ func (cmd *hardwareCommand) fetchMachineInfoWithSpinner() (*machine.Machine, err
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("getting machine info: %s", err)
+		return nil, fmt.Errorf("getting hardware info: %s", err)
 	}
 	hwInfo.CPUs = compactCpus(hwInfo.CPUs)
 	return hwInfo, nil
@@ -496,17 +486,15 @@ func FormatBytes(b uint64) any {
 	}
 }
 
-func (cmd *hardwareCommand) newMachineDetails(info *machine.Machine) *machineDetails {
+func (cmd *hardwareCommand) newHardwareDetails(info *machine.Machine) *hardwareDetailsVerbose {
 	if info == nil {
 		return nil
 	}
 
-	v := &machineDetails{
-		verbose: cmd.verbose,
-		Memory: memoryDetails{
+	v := &hardwareDetailsVerbose{
+		Memory: memoryDetailsVerbose{
 			TotalRam:  info.Memory.TotalRam,
 			TotalSwap: info.Memory.TotalSwap,
-			Verbose:   cmd.verbose,
 		},
 	}
 
@@ -516,67 +504,61 @@ func (cmd *hardwareCommand) newMachineDetails(info *machine.Machine) *machineDet
 
 	// Add PCI devices
 	for _, d := range info.PCIDevices {
-		v.Accelerators = append(v.Accelerators, pciDeviceDetails{
+		v.Accelerators = append(v.Accelerators, pciDeviceDetailsVerbose{
 			Bus:                  d.Bus,
 			VendorName:           d.VendorName,
 			DeviceName:           d.DeviceName,
 			SubvendorName:        d.SubvendorName,
 			SubdeviceName:        d.SubdeviceName,
 			AdditionalProperties: newPciAdditionalDeviceProperties(d.AdditionalProperties),
-			Verbose:              cmd.verbose,
 		})
 	}
 
 	// Add USB devices
 	for _, d := range info.USBDevices {
-		v.Accelerators = append(v.Accelerators, usbDeviceDetails{
+		v.Accelerators = append(v.Accelerators, usbDeviceDetailsVerbose{
 			Bus:                  d.Bus,
 			VendorName:           d.VendorName,
 			ProductName:          d.ProductName,
 			AdditionalProperties: d.AdditionalProperties,
-			Verbose:              cmd.verbose,
 		})
 	}
 
 	// Add FastRPC devices
 	for _, d := range info.FastRPCDevices {
-		v.Accelerators = append(v.Accelerators, fastRPCDeviceDetails{
+		v.Accelerators = append(v.Accelerators, fastRPCDeviceDetailsVerbose{
 			Bus:                  d.Bus,
 			AdditionalProperties: d.AdditionalProperties,
-			Verbose:              cmd.verbose,
 		})
 	}
 
 	// Add APUSYS devices
 	for _, d := range info.APUSYSDevices {
-		v.Accelerators = append(v.Accelerators, apuSysDeviceDetails{
+		v.Accelerators = append(v.Accelerators, apuSysDeviceDetailsVerbose{
 			Bus:        d.Bus,
 			VendorName: d.VendorName,
-			Verbose:    cmd.verbose,
 		})
 	}
 
 	if info.CPUs != nil {
-		v.CPUs = make([]cpuDetails, len(info.CPUs))
+		v.CPUs = make([]cpuDetailsVerbose, len(info.CPUs))
 		for i, c := range info.CPUs {
-			v.CPUs[i] = cpuDetails{
+			v.CPUs[i] = cpuDetailsVerbose{
 				Architecture:   c.Architecture,
 				ManufacturerId: c.ManufacturerId,
 				ImplementerId:  HexInt(c.ImplementerId),
-				Verbose:        cmd.verbose,
 			}
 		}
 	}
 
 	if info.Disk != nil {
-		v.Disk = make([]diskDetails, 0, len(info.Disk))
+		v.Disk = make([]diskDetailsVerbose, 0, len(info.Disk))
 		for _, d := range info.Disk {
-			v.Disk = append(v.Disk, diskDetails{
+			v.Disk = append(v.Disk, diskDetailsVerbose{
 				MountPoint: d.MountPoint,
 				Path:       d.Path,
 				Total:      d.Total,
 				Avail:      d.Available,
-				Verbose:    cmd.verbose,
 			})
 		}
 	}
