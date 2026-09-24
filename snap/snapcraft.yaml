@@ -37,43 +37,39 @@ parts:
 
   # Used for NVIDIA vRAM and CUDA Capability detection.
   # Only the binary is included to avoid staging libraries, which should instead be provided by the host through the opengl interface.
-  nvidia-smi:
+  cli-nvidia-smi:
     plugin: nil
     build-packages:
-      - to amd64:
-        - nvidia-utils-580
-      - to arm64:
-        - nvidia-utils-580
+      - nvidia-utils-580
     override-build: |
       mkdir -p $CRAFT_PART_INSTALL/usr/bin
+      cp /usr/bin/nvidia-smi $CRAFT_PART_INSTALL/usr/bin/
       
-      if [ "$CRAFT_ARCH_BUILD_FOR" == "amd64" ] || [ "$CRAFT_ARCH_BUILD_FOR" == "arm64" ]; then
-        cp /usr/bin/nvidia-smi $CRAFT_PART_INSTALL/usr/bin/
-        
-        license_dir=$CRAFT_PART_INSTALL/usr/share/doc/nvidia-utils-580/
-        mkdir -p $license_dir
-        cp /usr/share/doc/nvidia-utils-580/copyright $license_dir/
-      else
-        echo -e "#!/bin/sh\necho nvidia drivers are not available on $CRAFT_ARCH_BUILD_FOR\nexit 1" > $CRAFT_PART_INSTALL/usr/bin/nvidia-smi
-        chmod a+rx $CRAFT_PART_INSTALL/usr/bin/nvidia-smi
-      fi
+      license_dir=$CRAFT_PART_INSTALL/usr/share/doc/nvidia-utils-580/
+      mkdir -p $license_dir
+      cp /usr/share/doc/nvidia-utils-580/copyright $license_dir/
 
   # OpenCL ICD and libigdgmm are required for Intel GPU vRAM lookup with clinfo
-  intel-opencl-icd:
+  cli-intel-opencl-icd:
     plugin: nil
     build-packages:
       - wget
     override-build: |
       if [ "$CRAFT_ARCH_BUILD_FOR" == "amd64" ]; then
+        # First install the legacy support version. Then install the latest, so that latest can override any old libraries.
+      
         # Legacy
+        mkdir -p "$CRAFT_PART_BUILD/icd-legacy"
+        cd "$CRAFT_PART_BUILD/icd-legacy"
         wget -nv https://github.com/intel/compute-runtime/releases/download/24.35.30872.36/intel-opencl-icd-legacy1_24.35.30872.36_amd64.deb
-        wget -nv https://github.com/intel/compute-runtime/releases/download/24.35.30872.36/libigdgmm12_22.5.0_amd64.deb
+        dpkg --root="$CRAFT_PART_INSTALL" --force-all -i "$CRAFT_PART_BUILD/icd-legacy"/*.deb
       
         # Latest
-        wget -nv https://github.com/intel/compute-runtime/releases/download/26.01.36711.4/intel-opencl-icd_26.01.36711.4-0_amd64.deb
-        wget -nv https://github.com/intel/compute-runtime/releases/download/26.01.36711.4/libigdgmm12_22.9.0_amd64.deb
-      
-        dpkg --root=$CRAFT_PART_INSTALL --force-all -i *.deb
+        mkdir -p "$CRAFT_PART_BUILD/icd-latest"
+        cd "$CRAFT_PART_BUILD/icd-latest"
+        wget -nv https://github.com/intel/compute-runtime/releases/download/26.22.38646.4/intel-opencl-icd_26.22.38646.4-0_amd64.deb
+        wget -nv https://github.com/intel/compute-runtime/releases/download/26.22.38646.4/libigdgmm12_22.10.0_amd64.deb
+        dpkg --root="$CRAFT_PART_INSTALL" --force-all -i "$CRAFT_PART_BUILD/icd-latest"/*.deb
       
         # Two symlinks are created when installing intel-opencl-icd-legacy: 
         # etc/alternatives/ocloc -> /usr/bin/ocloc-24.35.0, usr/bin/ocloc -> /etc/alternatives/ocloc
