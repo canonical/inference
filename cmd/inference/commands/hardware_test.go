@@ -7,6 +7,8 @@ import (
 
 	"github.com/canonical/lscompute/pkg/machine"
 	"github.com/canonical/lscompute/pkg/machine/cpu"
+	"github.com/canonical/lscompute/pkg/machine/device/apusys"
+	"github.com/canonical/lscompute/pkg/machine/device/fastrpc"
 	"github.com/canonical/lscompute/pkg/machine/device/pci"
 	"github.com/canonical/lscompute/pkg/machine/device/usb"
 	"github.com/canonical/lscompute/pkg/machine/disk"
@@ -61,6 +63,17 @@ func hardwareInfoFixture(name string) (*machine.Machine, error) {
 						VendorName:  "Example Vendor",
 						ProductName: "Example Product",
 					},
+				},
+			},
+			APUSYSDevices: []apusys.Device{
+				{
+					Bus:        "apusys",
+					VendorName: "Example APUSYS Vendor",
+				},
+			},
+			FastRPCDevices: []fastrpc.Device{
+				{
+					Bus: "fastrpc",
 				},
 			},
 		}, nil
@@ -351,6 +364,13 @@ func Example_hardwareCommand_printMachineInfo_json() {
 	//       "bus": "usb",
 	//       "vendor-name": "Example Vendor",
 	//       "product-name": "Example Product"
+	//     },
+	//     {
+	//       "bus": "fastrpc"
+	//     },
+	//     {
+	//       "bus": "apusys",
+	//       "vendor-name": "Example APUSYS Vendor"
 	//     }
 	//   ],
 	//   "memory": {
@@ -395,6 +415,9 @@ func Example_hardwareCommand_printMachineInfo_plain() {
 	//     - bus: usb
 	//       vendor-name: Example Vendor
 	//       product-name: Example Product
+	//     - bus: fastrpc
+	//     - bus: apusys
+	//       vendor-name: Example APUSYS Vendor
 	// memory:
 	//     total-ram: 62.4G
 	//     total-swap: 0
@@ -422,6 +445,8 @@ func Example_hardwareCommand_printMachineInfo_plainCompact() {
 	// accelerators:
 	//     - Intel Corporation (VRAM 15.3M)
 	//     - Example Vendor Example Product
+	//     - fastrpc
+	//     - Example APUSYS Vendor
 	// memory: 62.4G (Swap 0)
 	// disks:
 	//     - /var/lib/snapd/snaps (Free 878.7G / 937.3G)
