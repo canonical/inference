@@ -34,10 +34,10 @@ type hardwareCommand struct {
 }
 
 type hardwareDetails struct {
-	CPUs         []cpuDetails  `json:"cpus,omitempty" yaml:"cpus,omitempty"`
-	Accelerators []any         `json:"accelerators,omitempty" yaml:"accelerators,omitempty"`
-	Memory       memoryDetails `json:"memory,omitempty" yaml:"memory,omitempty"`
-	Disk         []diskDetails `json:"disks,omitempty" yaml:"disks,omitempty"`
+	CPUs         []string `json:"cpus,omitempty" yaml:"cpus,omitempty"`
+	Accelerators []any    `json:"accelerators,omitempty" yaml:"accelerators,omitempty"`
+	Memory       string   `json:"memory,omitempty" yaml:"memory,omitempty"`
+	Disk         []string `json:"disks,omitempty" yaml:"disks,omitempty"`
 }
 
 type hardwareDetailsVerbose struct {
@@ -52,8 +52,6 @@ type cpuDetailsVerbose struct {
 	ManufacturerId string `json:"manufacturer-id,omitempty" yaml:"manufacturer-id,omitempty"`
 	ImplementerId  HexInt `json:"implementer-id,omitempty" yaml:"implementer-id,omitempty"`
 }
-
-type cpuDetails string
 
 func (c cpuDetailsVerbose) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
@@ -84,8 +82,6 @@ type memoryDetailsVerbose struct {
 	TotalSwap uint64 `json:"total-swap" yaml:"total-swap"`
 }
 
-type memoryDetails string
-
 func (m memoryDetailsVerbose) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		TotalRam  any `json:"total-ram"`
@@ -112,8 +108,6 @@ type diskDetailsVerbose struct {
 	Total      uint64  `json:"total" yaml:"total"`
 	Avail      uint64  `json:"avail" yaml:"avail"`
 }
-
-type diskDetails string
 
 func (d diskDetailsVerbose) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
@@ -151,8 +145,6 @@ type pciDeviceDetailsVerbose struct {
 	SubdeviceName        string                         `json:"subdevice-name,omitempty" yaml:"subdevice-name,omitempty"`
 	AdditionalProperties *pciAdditionalDeviceProperties `json:"additional-properties,omitempty" yaml:"additional-properties,omitempty"`
 }
-
-type pciDeviceDetails string
 
 func (p pciDeviceDetailsVerbose) MarshalYAML() (any, error) {
 	return struct {
@@ -235,8 +227,6 @@ type usbDeviceDetailsVerbose struct {
 	AdditionalProperties map[string]string `json:"additional-properties,omitempty" yaml:"additional-properties,omitempty"`
 }
 
-type usbDeviceDetails string
-
 func (u usbDeviceDetailsVerbose) MarshalYAML() (any, error) {
 	return struct {
 		Bus                  string            `yaml:"bus"`
@@ -274,8 +264,6 @@ type fastRPCDeviceDetailsVerbose struct {
 	AdditionalProperties map[string]string `json:"additional-properties,omitempty" yaml:"additional-properties,omitempty"`
 }
 
-type fastRPCDeviceDetails string
-
 func (f fastRPCDeviceDetailsVerbose) MarshalYAML() (any, error) {
 	return struct {
 		Bus                  string            `yaml:"bus"`
@@ -300,8 +288,6 @@ type apuSysDeviceDetailsVerbose struct {
 	Bus        string `json:"bus" yaml:"bus"`
 	VendorName string `json:"vendor-name,omitempty" yaml:"vendor-name,omitempty"`
 }
-
-type apuSysDeviceDetails string
 
 func (a apuSysDeviceDetailsVerbose) MarshalYAML() (any, error) {
 	return struct {
@@ -369,7 +355,7 @@ func (cmd *hardwareCommand) run(_ *cobra.Command, _ []string) error {
 
 func compactHardwareDetails(info hardwareDetailsVerbose) hardwareDetails {
 	h := hardwareDetails{
-		Memory: memoryDetails(fmt.Sprintf("%v (Swap %v)", FormatBytes(info.Memory.TotalRam), FormatBytes(info.Memory.TotalSwap))),
+		Memory: string(fmt.Sprintf("%v (Swap %v)", FormatBytes(info.Memory.TotalRam), FormatBytes(info.Memory.TotalSwap))),
 	}
 
 	for _, c := range info.CPUs {
@@ -377,19 +363,19 @@ func compactHardwareDetails(info hardwareDetailsVerbose) hardwareDetails {
 		if c.Architecture == cpu.Amd64 {
 			name = strings.TrimSpace(fmt.Sprintf("%s (%s)", c.Architecture, c.ManufacturerId))
 		}
-		h.CPUs = append(h.CPUs, cpuDetails(name))
+		h.CPUs = append(h.CPUs, name)
 	}
 
 	for _, a := range info.Accelerators {
 		switch d := a.(type) {
 		case pciDeviceDetailsVerbose:
-			h.Accelerators = append(h.Accelerators, pciDeviceDetails(d.compactName()))
+			h.Accelerators = append(h.Accelerators, d.compactName())
 		case usbDeviceDetailsVerbose:
-			h.Accelerators = append(h.Accelerators, usbDeviceDetails(d.compactName()))
+			h.Accelerators = append(h.Accelerators, d.compactName())
 		case fastRPCDeviceDetailsVerbose:
-			h.Accelerators = append(h.Accelerators, fastRPCDeviceDetails(d.Bus))
+			h.Accelerators = append(h.Accelerators, d.Bus)
 		case apuSysDeviceDetailsVerbose:
-			h.Accelerators = append(h.Accelerators, apuSysDeviceDetails(d.VendorName))
+			h.Accelerators = append(h.Accelerators, d.VendorName)
 		}
 	}
 
@@ -398,7 +384,7 @@ func compactHardwareDetails(info hardwareDetailsVerbose) hardwareDetails {
 		if d.MountPoint != nil {
 			path = *d.MountPoint
 		}
-		h.Disk = append(h.Disk, diskDetails(fmt.Sprintf("%s (Free %s / %s)", path, FormatBytes(d.Avail), FormatBytes(d.Total))))
+		h.Disk = append(h.Disk, string(fmt.Sprintf("%s (Free %s / %s)", path, FormatBytes(d.Avail), FormatBytes(d.Total))))
 	}
 
 	return h
