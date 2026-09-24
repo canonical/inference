@@ -389,7 +389,7 @@ func compactHardwareDetails(info hardwareDetailsVerbose) hardwareDetails {
 		case fastRPCDeviceDetailsVerbose:
 			h.Accelerators = append(h.Accelerators, fastRPCDeviceDetails(d.Bus))
 		case apuSysDeviceDetailsVerbose:
-			h.Accelerators = append(h.Accelerators, apuSysDeviceDetails(d.Bus))
+			h.Accelerators = append(h.Accelerators, apuSysDeviceDetails(d.VendorName))
 		}
 	}
 
