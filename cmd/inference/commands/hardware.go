@@ -63,8 +63,8 @@ func (m memoryDetailsVerbose) MarshalYAML() (any, error) {
 		TotalRam  any `yaml:"total-ram"`
 		TotalSwap any `yaml:"total-swap"`
 	}{
-		TotalRam:  FormatBytes(m.TotalRam),
-		TotalSwap: FormatBytes(m.TotalSwap),
+		TotalRam:  common.FormatBytes(m.TotalRam),
+		TotalSwap: common.FormatBytes(m.TotalSwap),
 	}, nil
 }
 
@@ -84,8 +84,8 @@ func (d diskDetailsVerbose) MarshalYAML() (any, error) {
 	}{
 		MountPoint: d.MountPoint,
 		Path:       d.Path,
-		Total:      FormatBytes(d.Total),
-		Avail:      FormatBytes(d.Avail),
+		Total:      common.FormatBytes(d.Total),
+		Avail:      common.FormatBytes(d.Avail),
 	}, nil
 }
 
@@ -103,7 +103,7 @@ func (p pciDeviceDetailsVerbose) compactName() string {
 	if p.AdditionalProperties == nil {
 		return name
 	}
-	return fmt.Sprintf("%s (VRAM %v)", name, FormatBytes(p.AdditionalProperties.Vram))
+	return fmt.Sprintf("%s (VRAM %v)", name, common.FormatBytes(p.AdditionalProperties.Vram))
 }
 
 type pciAdditionalDeviceProperties struct {
@@ -119,7 +119,7 @@ func (a pciAdditionalDeviceProperties) MarshalYAML() (any, error) {
 		ComputeCapability string `yaml:"compute-capability,omitempty"`
 	}{
 		Microarchitecture: a.Microarchitecture,
-		Vram:              FormatBytes(a.Vram),
+		Vram:              common.FormatBytes(a.Vram),
 		ComputeCapability: a.ComputeCapability,
 	}, nil
 }
@@ -189,9 +189,9 @@ func (cmd *hardwareCommand) run(_ *cobra.Command, _ []string) error {
 	return cmd.printHardwareInfo(*cmd.newHardwareDetails(info))
 }
 
-func compactHardwareDetails(info hardwareDetailsVerbose) hardwareDetails {
+func (info hardwareDetailsVerbose) compactHardwareDetails() hardwareDetails {
 	h := hardwareDetails{
-		Memory: string(fmt.Sprintf("%v (Swap %v)", FormatBytes(info.Memory.TotalRam), FormatBytes(info.Memory.TotalSwap))),
+		Memory: string(fmt.Sprintf("%v (Swap %v)", common.FormatBytes(info.Memory.TotalRam), common.FormatBytes(info.Memory.TotalSwap))),
 	}
 
 	for _, c := range info.CPUs {
@@ -220,7 +220,7 @@ func compactHardwareDetails(info hardwareDetailsVerbose) hardwareDetails {
 		if d.MountPoint != nil {
 			path = *d.MountPoint
 		}
-		h.Disk = append(h.Disk, string(fmt.Sprintf("%s (Free %s / %s)", path, FormatBytes(d.Avail), FormatBytes(d.Total))))
+		h.Disk = append(h.Disk, string(fmt.Sprintf("%s (Free %s / %s)", path, common.FormatBytes(d.Avail), common.FormatBytes(d.Total))))
 	}
 
 	return h
@@ -229,10 +229,10 @@ func compactHardwareDetails(info hardwareDetailsVerbose) hardwareDetails {
 func (cmd *hardwareCommand) printHardwareInfo(info hardwareDetailsVerbose) error {
 	switch cmd.format {
 	case "json":
-		return cmd.printHardwareInfoJson(info)
+		return cmd.printHardwareInfoJSON(info)
 	case "plain":
 		if !cmd.verbose {
-			return cmd.printHardwareInfoPlain(compactHardwareDetails(info))
+			return cmd.printHardwareInfoPlain(info.compactHardwareDetails())
 		}
 		return cmd.printHardwareInfoPlain(info)
 	default:
@@ -240,7 +240,7 @@ func (cmd *hardwareCommand) printHardwareInfo(info hardwareDetailsVerbose) error
 	}
 }
 
-func (cmd *hardwareCommand) printHardwareInfoJson(info hardwareDetailsVerbose) error {
+func (cmd *hardwareCommand) printHardwareInfoJSON(info hardwareDetailsVerbose) error {
 	jsonString, err := json.MarshalIndent(info, "", "  ")
 	if err != nil {
 		return fmt.Errorf("json: %s", err)
@@ -272,11 +272,11 @@ func (cmd *hardwareCommand) fetchHardwareInfoWithSpinner() (*machine.Machine, er
 	if err != nil {
 		return nil, fmt.Errorf("getting hardware info: %s", err)
 	}
-	hwInfo.CPUs = compactCpus(hwInfo.CPUs)
+	hwInfo.CPUs = cmd.compactCPUs(hwInfo.CPUs)
 	return hwInfo, nil
 }
 
-func compactCpus(cpus []cpu.CPU) []cpu.CPU {
+func (cmd *hardwareCommand) compactCPUs(cpus []cpu.CPU) []cpu.CPU {
 	if len(cpus) == 0 {
 		return cpus
 	}
@@ -288,24 +288,6 @@ func compactCpus(cpus []cpu.CPU) []cpu.CPU {
 		}
 	}
 	return compact
-}
-
-func FormatBytes(b uint64) any {
-	const (
-		mib = 1024 * 1024
-		gib = 1024 * mib
-		tib = 1024 * gib
-	)
-	switch {
-	case b >= tib:
-		return fmt.Sprintf("%.1fT", float64(b)/tib)
-	case b >= gib:
-		return fmt.Sprintf("%.1fG", float64(b)/gib)
-	case b >= mib:
-		return fmt.Sprintf("%.1fM", float64(b)/mib)
-	default:
-		return b
-	}
 }
 
 func (cmd *hardwareCommand) newHardwareDetails(info *machine.Machine) *hardwareDetailsVerbose {
@@ -326,14 +308,15 @@ func (cmd *hardwareCommand) newHardwareDetails(info *machine.Machine) *hardwareD
 
 	// Add PCI devices
 	for _, d := range info.PCIDevices {
-		v.Accelerators = append(v.Accelerators, pciDeviceDetailsVerbose{
-			Bus:                  d.Bus,
-			VendorName:           d.VendorName,
-			DeviceName:           d.DeviceName,
-			SubvendorName:        d.SubvendorName,
-			SubdeviceName:        d.SubdeviceName,
-			AdditionalProperties: newPciAdditionalDeviceProperties(d.AdditionalProperties),
-		})
+		pci := pciDeviceDetailsVerbose{
+			Bus:           d.Bus,
+			VendorName:    d.VendorName,
+			DeviceName:    d.DeviceName,
+			SubvendorName: d.SubvendorName,
+			SubdeviceName: d.SubdeviceName,
+		}
+		pci.AdditionalProperties = pci.newPciAdditionalDeviceProperties(d.AdditionalProperties)
+		v.Accelerators = append(v.Accelerators, pci)
 	}
 
 	// Add USB devices
@@ -388,7 +371,7 @@ func (cmd *hardwareCommand) newHardwareDetails(info *machine.Machine) *hardwareD
 	return v
 }
 
-func newPciAdditionalDeviceProperties(props map[string]string) *pciAdditionalDeviceProperties {
+func (p pciDeviceDetailsVerbose) newPciAdditionalDeviceProperties(props map[string]string) *pciAdditionalDeviceProperties {
 	if len(props) == 0 {
 		return nil
 	}

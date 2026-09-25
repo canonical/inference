@@ -463,13 +463,14 @@ func Test_printHardwareInfo_unknownFormat(t *testing.T) {
 }
 
 func Test_compactCpus(t *testing.T) {
+	cmd := hardwareCommand{}
 	cpus := []cpu.CPU{
 		{Architecture: cpu.Amd64, ManufacturerId: "GenuineIntel"},
 		{Architecture: cpu.Amd64, ManufacturerId: "GenuineIntel"},
 		{Architecture: cpu.Arm64, ManufacturerId: "ARM"},
 	}
 
-	compact := compactCpus(cpus)
+	compact := cmd.compactCPUs(cpus)
 	if len(compact) != 2 {
 		t.Errorf("expected 2 compacted CPUs, got %d", len(compact))
 	}
