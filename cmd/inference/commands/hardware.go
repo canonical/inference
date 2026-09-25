@@ -15,13 +15,13 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
-type HexInt uint64
+type hexInt uint64
 
-func (h HexInt) MarshalJSON() ([]byte, error) {
+func (h hexInt) MarshalJSON() ([]byte, error) {
 	return json.Marshal(fmt.Sprintf("0x%x", uint64(h)))
 }
 
-func (h HexInt) MarshalYAML() (any, error) {
+func (h hexInt) MarshalYAML() (any, error) {
 	return fmt.Sprintf("0x%x", uint64(h)), nil
 }
 
@@ -50,7 +50,7 @@ type hardwareDetailsVerbose struct {
 type cpuDetailsVerbose struct {
 	Architecture   string `json:"architecture" yaml:"architecture"`
 	ManufacturerId string `json:"manufacturer-id,omitempty" yaml:"manufacturer-id,omitempty"`
-	ImplementerId  HexInt `json:"implementer-id,omitempty" yaml:"implementer-id,omitempty"`
+	ImplementerId  hexInt `json:"implementer-id,omitempty" yaml:"implementer-id,omitempty"`
 }
 
 type memoryDetailsVerbose struct {
@@ -351,7 +351,7 @@ func (cmd *hardwareCommand) newHardwareDetails(info *machine.Machine) *hardwareD
 			v.CPUs[i] = cpuDetailsVerbose{
 				Architecture:   c.Architecture,
 				ManufacturerId: c.ManufacturerId,
-				ImplementerId:  HexInt(c.ImplementerId),
+				ImplementerId:  hexInt(c.ImplementerId),
 			}
 		}
 	}

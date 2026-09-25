@@ -84,7 +84,7 @@ func hardwareInfoFixture(name string) (*machine.Machine, error) {
 }
 
 func TestHexInt_marshaling(t *testing.T) {
-	value := HexInt(0xd0c)
+	value := hexInt(0xd0c)
 
 	jsonValue, err := value.MarshalJSON()
 	if err != nil {
@@ -124,7 +124,7 @@ func TestCpuDetailsVerbose_marshaling(t *testing.T) {
 			name: "ARM",
 			cpu: cpuDetailsVerbose{
 				Architecture:  cpu.Arm64,
-				ImplementerId: HexInt(0x41),
+				ImplementerId: hexInt(0x41),
 			},
 			wantJSON: `{"architecture":"arm64","implementer-id":"0x41"}`,
 			wantYAML: "architecture: arm64\nimplementer-id: \"0x41\"\n",
@@ -133,7 +133,7 @@ func TestCpuDetailsVerbose_marshaling(t *testing.T) {
 			name: "RISCV64",
 			cpu: cpuDetailsVerbose{
 				Architecture:  cpu.Riscv64,
-				ImplementerId: HexInt(0x41),
+				ImplementerId: hexInt(0x41),
 			},
 			wantJSON: `{"architecture":"riscv64","implementer-id":"0x41"}`,
 			wantYAML: "architecture: riscv64\nimplementer-id: \"0x41\"\n",
