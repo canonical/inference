@@ -35,7 +35,7 @@ type hardwareCommand struct {
 
 type hardwareDetails struct {
 	CPUs         []string `yaml:"cpus,omitempty"`
-	Accelerators []any    `yaml:"accelerators,omitempty"`
+	Accelerators []string `yaml:"accelerators,omitempty"`
 	Memory       string   `yaml:"memory,omitempty"`
 	Disk         []string `yaml:"disks,omitempty"`
 }
