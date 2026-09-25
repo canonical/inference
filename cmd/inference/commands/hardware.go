@@ -12,7 +12,7 @@ import (
 	"github.com/canonical/lscompute/pkg/machine/cpu"
 	"github.com/canonical/lscompute/pkg/machine/host"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 type HexInt uint64

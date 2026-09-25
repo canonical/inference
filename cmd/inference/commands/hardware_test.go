@@ -13,7 +13,7 @@ import (
 	"github.com/canonical/lscompute/pkg/machine/device/usb"
 	"github.com/canonical/lscompute/pkg/machine/disk"
 	"github.com/canonical/lscompute/pkg/machine/memory"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // hardwareInfoFixture returns a small, hand-built MachineInfo fixture for the named machine.

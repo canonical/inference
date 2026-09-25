@@ -11,7 +11,7 @@ import (
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/providers"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 type statusCommand struct {

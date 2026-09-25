@@ -8,7 +8,7 @@ import (
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/providers"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 type infoCommand struct {
@@ -35,8 +35,8 @@ func Info(ctx *common.Context) *cobra.Command {
 	cmd := infoCommand{Context: ctx}
 	cobraCmd := &cobra.Command{
 		Use:               "info <provider>",
-		Short:             "Show information about a provider",
-		Long:              "Show information about an inference provider, including its state and API details.",
+        Short:             "Show information about a provider",
+        Long:              "Show information about an inference provider, including its state and API details.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: common.CompleteSnapNames,
 		SilenceUsage:      true,
