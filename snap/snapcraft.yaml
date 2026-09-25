@@ -12,6 +12,12 @@ adopt-info: version
 layout:
   /usr/share/misc/pci.ids:
     bind-file: $SNAP/usr/share/misc/pci.ids
+  # OpenCL looks in /etc/OpenCL/vendors for .icd files containing the paths to shared objects
+  /etc/OpenCL/vendors:
+    bind: $SNAP/etc/OpenCL/vendors
+  # Intel icd files use an absolute path to Intel OpenCL shared objects. Use a layout to mount the so files at the expected location
+  /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/intel-opencl:
+    bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/intel-opencl
     
 plugs:
   provider:
@@ -49,12 +55,12 @@ parts:
       mkdir -p $license_dir
       cp /usr/share/doc/nvidia-utils-580/copyright $license_dir/
 
-  # OpenCL ICD and libigdgmm are required for Intel GPU vRAM lookup with clinfo
-  cli-intel-opencl-icd:
+  cli-intel-clinfo:
     plugin: nil
     build-packages:
       - wget
     override-build: |
+      # OpenCL ICD and libigdgmm are required for Intel GPU vRAM lookup with clinfo
       if [ "$CRAFT_ARCH_BUILD_FOR" == "amd64" ]; then
         # First install the legacy support version. Then install the latest, so that latest can override any old libraries.
       
@@ -79,6 +85,10 @@ parts:
       fi
       
       craftctl default
+    stage-packages:
+      - clinfo
+    override-stage: |
+      [ "$CRAFT_ARCH_BUILD_FOR" == "amd64" ] && craftctl default || exit 0
 
   cli:
     plugin: go
