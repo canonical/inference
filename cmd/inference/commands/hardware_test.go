@@ -274,7 +274,7 @@ func TestPciDeviceDetailsVerbose_marshaling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "{\"bus\":\"pci\",\"vendor-name\":\"NVIDIA Corporation\",\"device-name\":\"GA102GL [RTX A5000]\",\"subvendor-name\":\"NVIDIA Corporation\",\"subdevice-name\":\"RTX A5000\",\"additional-properties\":{\"vram\":\"24.0G\"}}" {
+	if string(got) != "{\"bus\":\"pci\",\"vendor-name\":\"NVIDIA Corporation\",\"device-name\":\"GA102GL [RTX A5000]\",\"subvendor-name\":\"NVIDIA Corporation\",\"subdevice-name\":\"RTX A5000\",\"additional-properties\":{\"vram\":25769803776}}" {
 		t.Errorf("expected JSON for PCI device, got %q", got)
 	}
 	got, err = yaml.Marshal(pNoAddProps)
@@ -356,7 +356,7 @@ func Example_hardwareCommand_printMachineInfo_json() {
 	//       "subvendor-name": "Hewlett-Packard Company",
 	//       "additional-properties": {
 	//         "microarchitecture": "gfx1010",
-	//         "vram": "15.3M",
+	//         "vram": 16000000,
 	//         "compute-capability": "7.5"
 	//       }
 	//     },

@@ -34,10 +34,10 @@ type hardwareCommand struct {
 }
 
 type hardwareDetails struct {
-	CPUs         []string `json:"cpus,omitempty" yaml:"cpus,omitempty"`
-	Accelerators []any    `json:"accelerators,omitempty" yaml:"accelerators,omitempty"`
-	Memory       string   `json:"memory,omitempty" yaml:"memory,omitempty"`
-	Disk         []string `json:"disks,omitempty" yaml:"disks,omitempty"`
+	CPUs         []string `yaml:"cpus,omitempty"`
+	Accelerators []any    `yaml:"accelerators,omitempty"`
+	Memory       string   `yaml:"memory,omitempty"`
+	Disk         []string `yaml:"disks,omitempty"`
 }
 
 type hardwareDetailsVerbose struct {
@@ -53,43 +53,9 @@ type cpuDetailsVerbose struct {
 	ImplementerId  HexInt `json:"implementer-id,omitempty" yaml:"implementer-id,omitempty"`
 }
 
-func (c cpuDetailsVerbose) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Architecture   string `json:"architecture,omitempty"`
-		ManufacturerId string `json:"manufacturer-id,omitempty"`
-		ImplementerId  HexInt `json:"implementer-id,omitempty"`
-	}{
-		Architecture:   c.Architecture,
-		ManufacturerId: c.ManufacturerId,
-		ImplementerId:  c.ImplementerId,
-	})
-}
-
-func (c cpuDetailsVerbose) MarshalYAML() (any, error) {
-	return struct {
-		Architecture   string `yaml:"architecture,omitempty"`
-		ManufacturerId string `yaml:"manufacturer-id,omitempty"`
-		ImplementerId  HexInt `yaml:"implementer-id,omitempty"`
-	}{
-		Architecture:   c.Architecture,
-		ManufacturerId: c.ManufacturerId,
-		ImplementerId:  c.ImplementerId,
-	}, nil
-}
-
 type memoryDetailsVerbose struct {
 	TotalRam  uint64 `json:"total-ram" yaml:"total-ram"`
 	TotalSwap uint64 `json:"total-swap" yaml:"total-swap"`
-}
-
-func (m memoryDetailsVerbose) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		TotalRam  any `json:"total-ram"`
-		TotalSwap any `json:"total-swap"`
-	}{
-		TotalRam:  m.TotalRam,
-		TotalSwap: m.TotalSwap,
-	})
 }
 
 func (m memoryDetailsVerbose) MarshalYAML() (any, error) {
@@ -107,20 +73,6 @@ type diskDetailsVerbose struct {
 	Path       string  `json:"path" yaml:"path"`
 	Total      uint64  `json:"total" yaml:"total"`
 	Avail      uint64  `json:"avail" yaml:"avail"`
-}
-
-func (d diskDetailsVerbose) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		MountPoint *string `json:"mount-point,omitempty"`
-		Path       string  `json:"path"`
-		Total      any     `json:"total"`
-		Avail      any     `json:"avail"`
-	}{
-		MountPoint: d.MountPoint,
-		Path:       d.Path,
-		Total:      d.Total,
-		Avail:      d.Avail,
-	})
 }
 
 func (d diskDetailsVerbose) MarshalYAML() (any, error) {
@@ -144,42 +96,6 @@ type pciDeviceDetailsVerbose struct {
 	SubvendorName        string                         `json:"subvendor-name,omitempty" yaml:"subvendor-name,omitempty"`
 	SubdeviceName        string                         `json:"subdevice-name,omitempty" yaml:"subdevice-name,omitempty"`
 	AdditionalProperties *pciAdditionalDeviceProperties `json:"additional-properties,omitempty" yaml:"additional-properties,omitempty"`
-}
-
-func (p pciDeviceDetailsVerbose) MarshalYAML() (any, error) {
-	return struct {
-		Bus                  string                         `yaml:"bus"`
-		VendorName           string                         `yaml:"vendor-name,omitempty"`
-		DeviceName           string                         `yaml:"device-name,omitempty"`
-		SubvendorName        string                         `yaml:"subvendor-name,omitempty"`
-		SubdeviceName        string                         `yaml:"subdevice-name,omitempty"`
-		AdditionalProperties *pciAdditionalDeviceProperties `yaml:"additional-properties,omitempty"`
-	}{
-		Bus:                  p.Bus,
-		VendorName:           p.VendorName,
-		DeviceName:           p.DeviceName,
-		SubvendorName:        p.SubvendorName,
-		SubdeviceName:        p.SubdeviceName,
-		AdditionalProperties: p.AdditionalProperties,
-	}, nil
-}
-
-func (p pciDeviceDetailsVerbose) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Bus                  string                         `json:"bus"`
-		VendorName           string                         `json:"vendor-name,omitempty"`
-		DeviceName           string                         `json:"device-name,omitempty"`
-		SubvendorName        string                         `json:"subvendor-name,omitempty"`
-		SubdeviceName        string                         `json:"subdevice-name,omitempty"`
-		AdditionalProperties *pciAdditionalDeviceProperties `json:"additional-properties,omitempty"`
-	}{
-		Bus:                  p.Bus,
-		VendorName:           p.VendorName,
-		DeviceName:           p.DeviceName,
-		SubvendorName:        p.SubvendorName,
-		SubdeviceName:        p.SubdeviceName,
-		AdditionalProperties: p.AdditionalProperties,
-	})
 }
 
 func (p pciDeviceDetailsVerbose) compactName() string {
@@ -208,18 +124,6 @@ func (a pciAdditionalDeviceProperties) MarshalYAML() (any, error) {
 	}, nil
 }
 
-func (a pciAdditionalDeviceProperties) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Microarchitecture string `json:"microarchitecture,omitempty"`
-		Vram              any    `json:"vram,omitempty"`
-		ComputeCapability string `json:"compute-capability,omitempty"`
-	}{
-		Microarchitecture: a.Microarchitecture,
-		Vram:              FormatBytes(a.Vram),
-		ComputeCapability: a.ComputeCapability,
-	})
-}
-
 type usbDeviceDetailsVerbose struct {
 	Bus                  string            `json:"bus" yaml:"bus"`
 	VendorName           string            `json:"vendor-name,omitempty" yaml:"vendor-name,omitempty"`
@@ -227,36 +131,8 @@ type usbDeviceDetailsVerbose struct {
 	AdditionalProperties map[string]string `json:"additional-properties,omitempty" yaml:"additional-properties,omitempty"`
 }
 
-func (u usbDeviceDetailsVerbose) MarshalYAML() (any, error) {
-	return struct {
-		Bus                  string            `yaml:"bus"`
-		VendorName           string            `yaml:"vendor-name,omitempty"`
-		ProductName          string            `yaml:"product-name,omitempty"`
-		AdditionalProperties map[string]string `yaml:"additional-properties,omitempty"`
-	}{
-		Bus:                  u.Bus,
-		VendorName:           u.VendorName,
-		ProductName:          u.ProductName,
-		AdditionalProperties: u.AdditionalProperties,
-	}, nil
-}
-
 func (u usbDeviceDetailsVerbose) compactName() string {
 	return strings.TrimSpace(fmt.Sprintf("%s %s", u.VendorName, u.ProductName))
-}
-
-func (p usbDeviceDetailsVerbose) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Bus                  string            `json:"bus"`
-		VendorName           string            `json:"vendor-name,omitempty"`
-		ProductName          string            `json:"product-name,omitempty"`
-		AdditionalProperties map[string]string `json:"additional-properties,omitempty"`
-	}{
-		Bus:                  p.Bus,
-		VendorName:           p.VendorName,
-		ProductName:          p.ProductName,
-		AdditionalProperties: p.AdditionalProperties,
-	})
 }
 
 type fastRPCDeviceDetailsVerbose struct {
@@ -264,49 +140,9 @@ type fastRPCDeviceDetailsVerbose struct {
 	AdditionalProperties map[string]string `json:"additional-properties,omitempty" yaml:"additional-properties,omitempty"`
 }
 
-func (f fastRPCDeviceDetailsVerbose) MarshalYAML() (any, error) {
-	return struct {
-		Bus                  string            `yaml:"bus"`
-		AdditionalProperties map[string]string `yaml:"additional-properties,omitempty"`
-	}{
-		Bus:                  f.Bus,
-		AdditionalProperties: f.AdditionalProperties,
-	}, nil
-}
-
-func (f fastRPCDeviceDetailsVerbose) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Bus                  string            `json:"bus"`
-		AdditionalProperties map[string]string `json:"additional-properties,omitempty"`
-	}{
-		Bus:                  f.Bus,
-		AdditionalProperties: f.AdditionalProperties,
-	})
-}
-
 type apuSysDeviceDetailsVerbose struct {
 	Bus        string `json:"bus" yaml:"bus"`
 	VendorName string `json:"vendor-name,omitempty" yaml:"vendor-name,omitempty"`
-}
-
-func (a apuSysDeviceDetailsVerbose) MarshalYAML() (any, error) {
-	return struct {
-		Bus        string `yaml:"bus"`
-		VendorName string `yaml:"vendor-name,omitempty"`
-	}{
-		Bus:        a.Bus,
-		VendorName: a.VendorName,
-	}, nil
-}
-
-func (a apuSysDeviceDetailsVerbose) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Bus        string `json:"bus"`
-		VendorName string `json:"vendor-name,omitempty"`
-	}{
-		Bus:        a.Bus,
-		VendorName: a.VendorName,
-	})
 }
 
 func Hardware(ctx *common.Context) *cobra.Command {
