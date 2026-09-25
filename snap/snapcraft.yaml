@@ -89,6 +89,8 @@ parts:
       - clinfo
     override-stage: |
       [ "$CRAFT_ARCH_BUILD_FOR" == "amd64" ] && craftctl default || exit 0
+    override-prime: |
+      [ "$CRAFT_ARCH_BUILD_FOR" == "amd64" ] && craftctl default || exit 0
 
   cli:
     plugin: go
