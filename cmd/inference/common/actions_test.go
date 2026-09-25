@@ -104,6 +104,25 @@ func TestProgressPrinter_NonTerminalFilePrintsSpinnerMessageOnce(t *testing.T) {
 	}
 }
 
+func TestProgressPrinter_SpinPlacesSpinnerNextToLabel(t *testing.T) {
+	var buf bytes.Buffer
+	progress := &progressPrinter{
+		w:        &buf,
+		terminal: true,
+		now:      func() time.Time { return time.Unix(0, 0) },
+		width:    func() int { return 40 },
+		taskID:   "download",
+		lastLog:  make(map[string]string),
+		reported: make(map[string]struct{}),
+	}
+
+	progress.Spin("Download component")
+
+	if got := buf.String(); !strings.Contains(got, "Download component /") {
+		t.Fatalf("expected spinner adjacent to label, got %q", got)
+	}
+}
+
 func TestActiveTaskPrefersLastTaskOverEarlierMonitor(t *testing.T) {
 	tasks := []snapd.Task{
 		{ID: "1", Kind: "process-delayed-security-backend-effects", Summary: "Process delayed security backend side effects", Status: "Doing"},

@@ -9,6 +9,16 @@ grade: stable
 confinement: strict
 adopt-info: version
 
+layout:
+  /usr/share/misc/pci.ids:
+    bind-file: $SNAP/usr/share/misc/pci.ids
+  # OpenCL looks in /etc/OpenCL/vendors for .icd files containing the paths to shared objects
+  /etc/OpenCL/vendors:
+    bind: $SNAP/etc/OpenCL/vendors
+  # Intel icd files use an absolute path to Intel OpenCL shared objects. Use a layout to mount the so files at the expected location
+  /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/intel-opencl:
+    bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/intel-opencl
+    
 plugs:
   provider:
     interface: content
@@ -23,6 +33,64 @@ parts:
     source: .
     override-pull: |
       craftctl set version="$(git -C $SNAPCRAFT_PROJECT_DIR describe --always --dirty)"
+
+  pci-ids:
+    plugin: dump
+    source: https://pci-ids.ucw.cz/v2.2/pci.ids
+    source-type: file
+    organize:
+      pci.ids: usr/share/misc/pci.ids
+
+  # Used for NVIDIA vRAM and CUDA Capability detection.
+  # Only the binary is included to avoid staging libraries, which should instead be provided by the host through the opengl interface.
+  cli-nvidia-smi:
+    plugin: nil
+    build-packages:
+      - nvidia-utils-580
+    override-build: |
+      mkdir -p $CRAFT_PART_INSTALL/usr/bin
+      cp /usr/bin/nvidia-smi $CRAFT_PART_INSTALL/usr/bin/
+      
+      license_dir=$CRAFT_PART_INSTALL/usr/share/doc/nvidia-utils-580/
+      mkdir -p $license_dir
+      cp /usr/share/doc/nvidia-utils-580/copyright $license_dir/
+
+  cli-intel-clinfo:
+    plugin: nil
+    build-packages:
+      - wget
+    override-build: |
+      # OpenCL ICD and libigdgmm are required for Intel GPU vRAM lookup with clinfo
+      if [ "$CRAFT_ARCH_BUILD_FOR" == "amd64" ]; then
+        # First install the legacy support version. Then install the latest, so that latest can override any old libraries.
+      
+        # Legacy
+        mkdir -p "$CRAFT_PART_BUILD/icd-legacy"
+        cd "$CRAFT_PART_BUILD/icd-legacy"
+        wget -nv https://github.com/intel/compute-runtime/releases/download/24.35.30872.36/intel-opencl-icd-legacy1_24.35.30872.36_amd64.deb
+        dpkg --root="$CRAFT_PART_INSTALL" --force-all -i "$CRAFT_PART_BUILD/icd-legacy"/*.deb
+      
+        # Latest
+        mkdir -p "$CRAFT_PART_BUILD/icd-latest"
+        cd "$CRAFT_PART_BUILD/icd-latest"
+        wget -nv https://github.com/intel/compute-runtime/releases/download/26.22.38646.4/intel-opencl-icd_26.22.38646.4-0_amd64.deb
+        wget -nv https://github.com/intel/compute-runtime/releases/download/26.22.38646.4/libigdgmm12_22.10.0_amd64.deb
+        dpkg --root="$CRAFT_PART_INSTALL" --force-all -i "$CRAFT_PART_BUILD/icd-latest"/*.deb
+      
+        # Two symlinks are created when installing intel-opencl-icd-legacy: 
+        # etc/alternatives/ocloc -> /usr/bin/ocloc-24.35.0, usr/bin/ocloc -> /etc/alternatives/ocloc
+        # These point to outside of the snap and fails store review. They are not required, so remove it.
+        rm $CRAFT_PART_INSTALL/etc/alternatives/ocloc
+        rm $CRAFT_PART_INSTALL/usr/bin/ocloc
+      fi
+      
+      craftctl default
+    stage-packages:
+      - clinfo
+    override-stage: |
+      [ "$CRAFT_ARCH_BUILD_FOR" == "amd64" ] && craftctl default || exit 0
+    override-prime: |
+      [ "$CRAFT_ARCH_BUILD_FOR" == "amd64" ] && craftctl default || exit 0
 
   cli:
     plugin: go
@@ -52,6 +120,9 @@ apps:
     plugs:
       - network
       - snapd-control
+      - hardware-observe
+      - mount-observe
+      - opengl
 
   d:
     command: bin/inference_d

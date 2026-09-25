@@ -4,6 +4,7 @@ go 1.26.7
 
 require (
 	github.com/canonical/go-snapctl v1.0.0-beta.6
+	github.com/canonical/lscompute v1.0.0-beta
 	github.com/fatih/color v1.18.0
 	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-isatty v0.0.20

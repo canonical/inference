@@ -13,6 +13,7 @@ type Context struct {
 	SnapdClient        *snapd.Client
 	SnapCatalog        *snapcatalog.Reader
 	ShareProvidersPath string
+	Verbose            bool
 	HTTPHost           string
 	HTTPPort           string
 }
