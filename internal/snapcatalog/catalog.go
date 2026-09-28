@@ -25,10 +25,18 @@ const (
 
 var ErrNotConfigured = errors.New("snap catalog path is not configured")
 
+type Engine struct {
+	Name         string   `json:"name"`
+	Runtime      string   `json:"runtime"`
+	DefaultModel string   `json:"default_model"`
+	Models       []string `json:"models"`
+}
+
 type Entry struct {
-	SnapName      string `json:"snap"`
-	ModelName     string `json:"model_name"`
-	RepositoryURL string `json:"repo_url"`
+	SnapName      string   `json:"snap"`
+	ModelName     string   `json:"model_name"`
+	RepositoryURL string   `json:"repo_url"`
+	Engines       []Engine `json:"engines"`
 }
 
 func ParseEntries(data []byte) ([]Entry, error) {
@@ -40,6 +48,13 @@ func ParseEntries(data []byte) ([]Entry, error) {
 	slices.SortFunc(entries, func(a, b Entry) int {
 		return strings.Compare(a.SnapName, b.SnapName)
 	})
+
+	for _, entry := range entries {
+		slices.SortFunc(entry.Engines, func(a, b Engine) int {
+			return strings.Compare(a.Name, b.Name)
+		})
+	}
+
 	return entries, nil
 }
 
