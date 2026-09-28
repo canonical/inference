@@ -105,8 +105,8 @@ func TestConnectedSnapProvidersRejectsDuplicateSnapName(t *testing.T) {
 
 func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
 	catalog := snapcatalog.WriteFakeCatalog(t, `[
-		{"snap":"published","model_name":"Published","full_name":"canonical/published","html_url":"https://example.com/published"},
-		{"snap":"disconnected","model_name":"Disconnected","full_name":"canonical/disconnected","html_url":"https://example.com/disconnected"}
+		{"snap":"published","model_name":"Published","repo_url":"https://example.com/published"},
+		{"snap":"disconnected","model_name":"Disconnected","repo_url":"https://example.com/disconnected"}
 	]`)
 	root := t.TempDir()
 	writeProviderEnv(t, root, "published-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=published\n")

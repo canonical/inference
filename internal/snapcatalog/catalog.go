@@ -28,8 +28,7 @@ var ErrNotConfigured = errors.New("snap catalog path is not configured")
 type Entry struct {
 	SnapName      string `json:"snap"`
 	ModelName     string `json:"model_name"`
-	Repository    string `json:"full_name"`
-	RepositoryURL string `json:"html_url"`
+	RepositoryURL string `json:"repo_url"`
 }
 
 func ParseEntries(data []byte) ([]Entry, error) {

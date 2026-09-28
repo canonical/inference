@@ -171,7 +171,7 @@ func TestInfo_PrintsProvider(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, stdout, _ := newTestContext()
 			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[
-				{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"}
+				{"snap":"gemma4","model_name":"Gemma 4","repo_url":"https://example.com/gemma4"}
 			]`)
 			ctx.SnapdClient, _ = snapd.NewFakeServer(t, map[string]string{"gemma4": snapd.SnapStatusActive})
 

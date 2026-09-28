@@ -14,7 +14,7 @@ import (
 
 func publishedEntry(snap, model, repository string) string {
 	return `{"snap":"` + snap + `","model_name":"` + model +
-		`","full_name":"` + repository + `","html_url":"https://github.com/` + repository + `"}`
+		`","repo_url":"https://github.com/` + repository + `"}`
 }
 
 func publishedCatalog(entries ...string) string {
@@ -43,7 +43,6 @@ func TestParseEntriesSortsBySnapName(t *testing.T) {
 	want := Entry{
 		SnapName:      "gemma4",
 		ModelName:     "Gemma 4",
-		Repository:    "canonical/gemma4-snap",
 		RepositoryURL: "https://github.com/canonical/gemma4-snap",
 	}
 	if len(entries) != 2 || entries[0] != want || entries[1].SnapName != "qwen3" {
@@ -52,8 +51,8 @@ func TestParseEntriesSortsBySnapName(t *testing.T) {
 }
 
 func TestParseEntriesIgnoresUnknownFields(t *testing.T) {
-	data := `[{"snap":"qwen3","model_name":"Qwen 3","full_name":"canonical/qwen3-snap",
-		"html_url":"https://github.com/canonical/qwen3-snap","added_at":"2026-01-01"}]`
+	data := `[{"snap":"qwen3","model_name":"Qwen 3",
+		"repo_url":"https://github.com/canonical/qwen3-snap","added_at":"2026-01-01"}]`
 
 	entries, err := ParseEntries([]byte(data))
 	if err != nil {

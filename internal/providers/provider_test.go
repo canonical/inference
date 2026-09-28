@@ -35,9 +35,9 @@ func TestProviderInstalled(t *testing.T) {
 
 func TestList(t *testing.T) {
 	catalog := snapcatalog.WriteFakeCatalog(t, `[
-		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"},
-		{"snap":"qwen3","model_name":"Qwen 3","full_name":"canonical/qwen3","html_url":"https://example.com/qwen3"},
-		{"snap":"smollm2","model_name":"SmolLM2","full_name":"canonical/smollm2","html_url":"https://example.com/smollm2"}
+		{"snap":"gemma4","model_name":"Gemma 4","repo_url":"https://example.com/gemma4"},
+		{"snap":"qwen3","model_name":"Qwen 3","repo_url":"https://example.com/qwen3"},
+		{"snap":"smollm2","model_name":"SmolLM2","repo_url":"https://example.com/smollm2"}
 	]`)
 	client, _ := snapd.NewFakeServer(t, map[string]string{
 		"gemma4": snapd.SnapStatusActive,
@@ -113,8 +113,8 @@ func TestList(t *testing.T) {
 
 func TestFind(t *testing.T) {
 	catalog := snapcatalog.WriteFakeCatalog(t, `[
-		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"},
-		{"snap":"qwen3","model_name":"Qwen 3","full_name":"canonical/qwen3","html_url":"https://example.com/qwen3"}
+		{"snap":"gemma4","model_name":"Gemma 4","repo_url":"https://example.com/gemma4"},
+		{"snap":"qwen3","model_name":"Qwen 3","repo_url":"https://example.com/qwen3"}
 	]`)
 	client, requests := snapd.NewFakeServer(t, map[string]string{
 		"gemma4": snapd.SnapStatusActive,
