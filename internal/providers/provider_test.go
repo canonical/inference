@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -58,7 +59,7 @@ func TestList(t *testing.T) {
 			t.Fatalf("got %d providers, want %d: %+v", len(got), len(want), got)
 		}
 		for i := range want {
-			if got[i] != want[i] {
+			if !reflect.DeepEqual(got[i], want[i]) {
 				t.Fatalf("provider %d: got %+v, want %+v", i, got[i], want[i])
 			}
 		}
@@ -77,7 +78,7 @@ func TestList(t *testing.T) {
 			t.Fatalf("got %d providers, want %d: %+v", len(got), len(want), got)
 		}
 		for i := range want {
-			if got[i] != want[i] {
+			if !reflect.DeepEqual(got[i], want[i]) {
 				t.Fatalf("provider %d: got %+v, want %+v", i, got[i], want[i])
 			}
 		}
@@ -100,7 +101,7 @@ func TestList(t *testing.T) {
 			State:      StateEnabled,
 			Connection: ConnectionNotConnected,
 		}
-		if got != want {
+		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("provider: got %+v, want %+v", got, want)
 		}
 
@@ -127,7 +128,7 @@ func TestFind(t *testing.T) {
 			t.Fatalf("Find: %v", err)
 		}
 		want := Provider{Name: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected}
-		if got != want {
+		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("got %+v, want %+v", got, want)
 		}
 
@@ -151,6 +152,61 @@ func TestFind(t *testing.T) {
 		_, err := Find(context.Background(), catalog, client, "", "")
 		if err == nil {
 			t.Fatal("expected an error for an empty provider")
+		}
+	})
+}
+
+func TestFindReturnsCatalogEngines(t *testing.T) {
+	catalog := snapcatalog.WriteFakeCatalog(t, `[
+		{"snap":"gemma4","model_name":"Gemma 4","repo_url":"https://example.com/gemma4",
+		 "engines":[{"name":"cpu","runtime":"llamacpp","default_model":"gemma4-e4b","models":["gemma4-e2b","gemma4-e4b"]}]},
+		{"snap":"smollm2","model_name":"SmolLM2","repo_url":"https://example.com/smollm2",
+		 "engines":[{"name":"cpu","runtime":"llamacpp","default_model":"smollm2-135m","models":["smollm2-135m"]}]}
+	]`)
+	root := t.TempDir()
+	writeProviderEnv(t, root, "smollm2-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=smollm2\n")
+	writeProviderEnv(t, root, "custom-mount", "OPENAI_BASE_URL=http://localhost:8081/v1\nSNAP_NAME=custom\n")
+	client, _ := snapd.NewFakeServer(t, map[string]string{
+		"smollm2": snapd.SnapStatusActive,
+		"custom":  snapd.SnapStatusActive,
+	})
+
+	t.Run("catalog snap that is not installed", func(t *testing.T) {
+		got, err := Find(context.Background(), catalog, client, root, "gemma4")
+		if err != nil {
+			t.Fatalf("Find: %v", err)
+		}
+		want := []Engine{
+			{Name: "cpu", Runtime: "llamacpp", DefaultModel: "gemma4-e4b", Models: []string{"gemma4-e2b", "gemma4-e4b"}},
+		}
+		if !reflect.DeepEqual(got.Engines, want) {
+			t.Fatalf("got %+v, want %+v", got.Engines, want)
+		}
+	})
+
+	t.Run("catalog snap that is also connected", func(t *testing.T) {
+		got, err := Find(context.Background(), catalog, client, root, "smollm2")
+		if err != nil {
+			t.Fatalf("Find: %v", err)
+		}
+		want := []Engine{
+			{Name: "cpu", Runtime: "llamacpp", DefaultModel: "smollm2-135m", Models: []string{"smollm2-135m"}},
+		}
+		if !reflect.DeepEqual(got.Engines, want) {
+			t.Fatalf("got %+v, want %+v", got.Engines, want)
+		}
+		if got.BaseURL != "http://localhost:8080/v1" {
+			t.Fatalf("got BaseURL %q, want %q", got.BaseURL, "http://localhost:8080/v1")
+		}
+	})
+
+	t.Run("connected snap missing from the catalog", func(t *testing.T) {
+		got, err := Find(context.Background(), catalog, client, root, "custom")
+		if err != nil {
+			t.Fatalf("Find: %v", err)
+		}
+		if got.Engines != nil {
+			t.Fatalf("got %+v, want no engines", got.Engines)
 		}
 	})
 }

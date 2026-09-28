@@ -49,13 +49,32 @@ func ParseEntries(data []byte) ([]Entry, error) {
 		return strings.Compare(a.SnapName, b.SnapName)
 	})
 
-	for _, entry := range entries {
-		slices.SortFunc(entry.Engines, func(a, b Engine) int {
-			return strings.Compare(a.Name, b.Name)
-		})
+	for i := range entries {
+		entries[i].Engines = normalizeEngines(entries[i].Engines)
 	}
 
 	return entries, nil
+}
+
+func normalizeEngines(engines []Engine) []Engine {
+	if engines == nil {
+		return nil
+	}
+
+	seen := make(map[string]bool, len(engines))
+	result := make([]Engine, 0, len(engines))
+	for _, engine := range engines {
+		if engine.Name == "" || seen[engine.Name] {
+			continue
+		}
+		seen[engine.Name] = true
+		result = append(result, engine)
+	}
+
+	slices.SortFunc(result, func(a, b Engine) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return result
 }
 
 type Reader struct {

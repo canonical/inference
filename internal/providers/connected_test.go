@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -44,7 +45,7 @@ func TestConnectedSnapProviders(t *testing.T) {
 		Connection: ConnectionConnected,
 		BaseURL:    "https://user:password@example.com/v1/?region=eu#backend",
 	}
-	if len(got) != 1 || got[0] != want {
+	if len(got) != 1 || !reflect.DeepEqual(got[0], want) {
 		t.Fatalf("got %+v, want [%+v]", got, want)
 	}
 }
@@ -146,7 +147,7 @@ func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
 		t.Fatalf("got %+v, want %+v", result, want)
 	}
 	for i := range want {
-		if result[i] != want[i] {
+		if !reflect.DeepEqual(result[i], want[i]) {
 			t.Fatalf("provider %d: got %+v, want %+v", i, result[i], want[i])
 		}
 	}

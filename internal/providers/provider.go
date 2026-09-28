@@ -35,12 +35,20 @@ const (
 	ConnectionNotApplicable ConnectionState = "not applicable"
 )
 
+type Engine struct {
+	Name         string
+	Runtime      string
+	DefaultModel string
+	Models       []string
+}
+
 type Provider struct {
 	Name       string
 	Type       ProviderType
 	State      LifecycleState
 	Connection ConnectionState
 	BaseURL    string
+	Engines    []Engine
 }
 
 type ProviderIdentity struct {
