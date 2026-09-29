@@ -99,6 +99,153 @@ state: enabled
 }
 `,
 		},
+		{
+			name: "provider with 2 engines [yaml]",
+			provider: providers.Provider{
+				Name:  "gemma4",
+				Type:  providers.TypeInferenceSnap,
+				State: providers.StateEnabled,
+				Engines: []providers.Engine{
+					{
+						Name:         "cpu",
+						Runtime:      "llamacpp",
+						DefaultModel: "gemma4-e4b",
+						Models:       []string{"gemma4-e2b", "gemma4-e4b"},
+					},
+					{
+						Name:         "nvidia-gpu",
+						Runtime:      "llamacpp-cuda",
+						DefaultModel: "gemma4-e4b",
+						Models:       []string{"gemma4-e4b", "gemma4-26b-a4b"},
+					},
+				},
+			},
+			format: "yaml",
+			want: `name: gemma4
+type: inference-snap
+state: enabled
+engines:
+  - name: cpu
+    runtime: llamacpp
+    default-model: gemma4-e4b
+    models:
+      - gemma4-e2b
+      - gemma4-e4b
+  - name: nvidia-gpu
+    runtime: llamacpp-cuda
+    default-model: gemma4-e4b
+    models:
+      - gemma4-e4b
+      - gemma4-26b-a4b
+`,
+		},
+		{
+			name: "provider with 2 engines [json]",
+			provider: providers.Provider{
+				Name:  "gemma4",
+				Type:  providers.TypeInferenceSnap,
+				State: providers.StateEnabled,
+				Engines: []providers.Engine{
+					{
+						Name:         "cpu",
+						Runtime:      "llamacpp",
+						DefaultModel: "gemma4-e4b",
+						Models:       []string{"gemma4-e2b", "gemma4-e4b"},
+					},
+					{
+						Name:         "nvidia-gpu",
+						Runtime:      "llamacpp-cuda",
+						DefaultModel: "gemma4-e4b",
+						Models:       []string{"gemma4-e4b", "gemma4-26b-a4b"},
+					},
+				},
+			},
+			format: "json",
+			want: `{
+  "name": "gemma4",
+  "type": "inference-snap",
+  "state": "enabled",
+  "engines": [
+    {
+      "name": "cpu",
+      "runtime": "llamacpp",
+      "default-model": "gemma4-e4b",
+      "models": [
+        "gemma4-e2b",
+        "gemma4-e4b"
+      ]
+    },
+    {
+      "name": "nvidia-gpu",
+      "runtime": "llamacpp-cuda",
+      "default-model": "gemma4-e4b",
+      "models": [
+        "gemma4-e4b",
+        "gemma4-26b-a4b"
+      ]
+    }
+  ]
+}
+`,
+		},
+		{
+			name: "engine without a default model omits the field [yaml]",
+			provider: providers.Provider{
+				Name:  "gemma4",
+				Type:  providers.TypeInferenceSnap,
+				State: providers.StateEnabled,
+				Engines: []providers.Engine{
+					{
+						Name:    "cpu",
+						Runtime: "llamacpp",
+						Models:  []string{"gemma4-e2b", "gemma4-e4b"},
+					},
+				},
+			},
+			format: "yaml",
+			want: `name: gemma4
+type: inference-snap
+state: enabled
+engines:
+  - name: cpu
+    runtime: llamacpp
+    models:
+      - gemma4-e2b
+      - gemma4-e4b
+`,
+		},
+		{
+			name: "engine without a default model omits the field [json]",
+			provider: providers.Provider{
+				Name:  "gemma4",
+				Type:  providers.TypeInferenceSnap,
+				State: providers.StateEnabled,
+				Engines: []providers.Engine{
+					{
+						Name:    "cpu",
+						Runtime: "llamacpp",
+						Models:  []string{"gemma4-e2b", "gemma4-e4b"},
+					},
+				},
+			},
+			format: "json",
+			want: `{
+  "name": "gemma4",
+  "type": "inference-snap",
+  "state": "enabled",
+  "engines": [
+    {
+      "name": "cpu",
+      "runtime": "llamacpp",
+      "models": [
+        "gemma4-e2b",
+        "gemma4-e4b"
+      ]
+    }
+  ]
+}
+`,
+		},
 	}
 
 	cmd := &infoCommand{}
