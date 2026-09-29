@@ -9,6 +9,10 @@ grade: stable
 confinement: strict
 adopt-info: version
 
+platforms:
+  amd64:
+  arm64:
+
 layout:
   /usr/share/misc/pci.ids:
     bind-file: $SNAP/usr/share/misc/pci.ids
