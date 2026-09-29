@@ -6,6 +6,8 @@ import (
 
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/providers"
+	"github.com/canonical/inference/internal/snapcatalog"
+	"github.com/canonical/inference/internal/snapd"
 	"github.com/spf13/cobra"
 )
 
@@ -116,5 +118,38 @@ func TestProviders_PositionalArgsAreRejected(t *testing.T) {
 	}
 	if stdout.String() != "" {
 		t.Fatalf("expected no stdout output for unexpected positional arguments, got %q", stdout.String())
+	}
+}
+
+func TestProviders_CatalogProvidersShownByDefault(t *testing.T) {
+	ctx, stdout, _ := newTestContext()
+	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[
+		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"}
+	]`)
+	ctx.SnapdClient, _ = snapd.NewFakeServer(t, nil)
+
+	if err := execute(Providers(ctx)); err != nil {
+		t.Fatalf("Providers: %v", err)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("gemma4")) {
+		t.Fatalf("expected catalog provider in output, got:\n%s", stdout.String())
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("not installed")) {
+		t.Fatalf("expected catalog provider state in output, got:\n%s", stdout.String())
+	}
+}
+
+func TestProviders_InstalledExcludesCatalogOnlyProviders(t *testing.T) {
+	ctx, stdout, _ := newTestContext()
+	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[
+		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"}
+	]`)
+	ctx.SnapdClient, _ = snapd.NewFakeServer(t, nil)
+
+	if err := execute(Providers(ctx), "--installed"); err != nil {
+		t.Fatalf("Providers: %v", err)
+	}
+	if bytes.Contains(stdout.Bytes(), []byte("gemma4")) {
+		t.Fatalf("did not expect catalog-only provider in output, got:\n%s", stdout.String())
 	}
 }
