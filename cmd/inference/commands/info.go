@@ -17,11 +17,11 @@ type infoCommand struct {
 }
 
 type infoOutput struct {
-	Name    string         `json:"name" yaml:"name"`
-	Type    string         `json:"type" yaml:"type"`
-	State   string         `json:"state" yaml:"state"`
-	API     *apiOutput     `json:"api,omitempty" yaml:"api,omitempty"`
-	Engines []engineOutput `json:"engines,omitempty" yaml:"engines,omitempty"`
+	Name    string        `json:"name" yaml:"name"`
+	Type    string        `json:"type" yaml:"type"`
+	State   string        `json:"state" yaml:"state"`
+	API     *apiOutput    `json:"api,omitempty" yaml:"api,omitempty"`
+	Engines enginesOutput `json:"engines,omitempty" yaml:"engines,omitempty"`
 }
 
 type apiOutput struct {
@@ -33,10 +33,33 @@ type openAIOutput struct {
 }
 
 type engineOutput struct {
-	Name         string   `json:"name" yaml:"name"`
-	Runtime      string   `json:"runtime" yaml:"runtime"`
-	DefaultModel string   `json:"default-model,omitempty" yaml:"default-model,omitempty"`
-	Models       []string `json:"models" yaml:"models"`
+	Name         string   `json:"name"`
+	Runtime      string   `json:"runtime"`
+	DefaultModel string   `json:"default-model,omitempty"`
+	Models       []string `json:"models"`
+}
+
+type enginesOutput []engineOutput
+
+// MarshalYAML keys engines by name and marks the default model. JSON keeps the plain array.
+func (e enginesOutput) MarshalYAML() (any, error) {
+	type engineYAML struct {
+		Runtime string   `yaml:"runtime"`
+		Models  []string `yaml:"models"`
+	}
+
+	engines := make(map[string]engineYAML, len(e))
+	for _, engine := range e {
+		models := make([]string, len(engine.Models))
+		for i, model := range engine.Models {
+			models[i] = model
+			if model == engine.DefaultModel {
+				models[i] += " (default)"
+			}
+		}
+		engines[engine.Name] = engineYAML{Runtime: engine.Runtime, Models: models}
+	}
+	return engines, nil
 }
 
 func Info(ctx *common.Context) *cobra.Command {

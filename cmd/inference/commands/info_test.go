@@ -125,17 +125,15 @@ state: enabled
 type: inference-snap
 state: enabled
 engines:
-  - name: cpu
+  cpu:
     runtime: llamacpp
-    default-model: gemma4-e4b
     models:
       - gemma4-e2b
-      - gemma4-e4b
-  - name: nvidia-gpu
+      - gemma4-e4b (default)
+  nvidia-gpu:
     runtime: llamacpp-cuda
-    default-model: gemma4-e4b
     models:
-      - gemma4-e4b
+      - gemma4-e4b (default)
       - gemma4-26b-a4b
 `,
 		},
@@ -189,7 +187,7 @@ engines:
 `,
 		},
 		{
-			name: "engine without a default model omits the field [yaml]",
+			name: "engine without a default model marks no model [yaml]",
 			provider: providers.Provider{
 				Name:  "gemma4",
 				Type:  providers.TypeInferenceSnap,
@@ -207,7 +205,7 @@ engines:
 type: inference-snap
 state: enabled
 engines:
-  - name: cpu
+  cpu:
     runtime: llamacpp
     models:
       - gemma4-e2b
@@ -335,18 +333,16 @@ func TestInfo_PrintsProvider(t *testing.T) {
 type: inference-snap
 state: enabled
 engines:
-  - name: amd-gpu
+  amd-gpu:
     runtime: llamacpp-rocm
-    default-model: gemma4-e4b
     models:
       - gemma4-e2b
-      - gemma4-e4b
-  - name: cpu
+      - gemma4-e4b (default)
+  cpu:
     runtime: llamacpp
-    default-model: gemma4-e4b
     models:
       - gemma4-e2b
-      - gemma4-e4b
+      - gemma4-e4b (default)
 `,
 		},
 		{
@@ -388,18 +384,16 @@ engines:
 type: inference-snap
 state: not installed
 engines:
-  - name: amd-gpu
+  amd-gpu:
     runtime: llamacpp-rocm
-    default-model: gemma4-e4b
     models:
       - gemma4-e2b
-      - gemma4-e4b
-  - name: cpu
+      - gemma4-e4b (default)
+  cpu:
     runtime: llamacpp
-    default-model: gemma4-e4b
     models:
       - gemma4-e2b
-      - gemma4-e4b
+      - gemma4-e4b (default)
 `,
 		},
 	} {
