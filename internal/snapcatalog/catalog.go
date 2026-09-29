@@ -25,6 +25,8 @@ const (
 
 var ErrNotConfigured = errors.New("snap catalog path is not configured")
 
+// Engine mirrors an engines/<name>/engine.yaml of the snap revision released
+// to latest/stable for amd64, as published in the catalog.
 type Engine struct {
 	Name         string   `json:"name"`
 	Runtime      string   `json:"runtime"`
