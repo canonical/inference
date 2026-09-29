@@ -44,7 +44,7 @@ func Info(ctx *common.Context) *cobra.Command {
 	cobraCmd := &cobra.Command{
 		Use:               "info <provider>",
 		Short:             "Show information about a provider",
-		Long:              "Show information about an inference provider, including its state and API details.",
+		Long:              "Show information about an inference provider, including its state, API details, and available engines with their models.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: common.CompleteSnapNames,
 		SilenceUsage:      true,

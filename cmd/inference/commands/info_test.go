@@ -299,28 +299,114 @@ func TestInfo_TooManyPositionalArgsAreRejected(t *testing.T) {
 }
 
 func TestInfo_PrintsProvider(t *testing.T) {
+	const catalog = `[
+		{
+			"snap": "gemma4",
+			"model_name": "Gemma 4",
+			"repo_url": "https://example.com/gemma4",
+			"engines": [
+				{
+					"name": "amd-gpu",
+					"runtime": "llamacpp-rocm",
+					"default_model": "gemma4-e4b",
+					"models": ["gemma4-e2b", "gemma4-e4b"]
+				},
+				{
+					"name": "cpu",
+					"runtime": "llamacpp",
+					"default_model": "gemma4-e4b",
+					"models": ["gemma4-e2b", "gemma4-e4b"]
+				}
+			]
+		}
+	]`
+
 	for _, test := range []struct {
-		name string
-		args []string
-		want string
+		name     string
+		args     []string
+		statuses map[string]string
+		want     string
 	}{
 		{
-			name: "yaml",
-			args: []string{"gemma4"},
-			want: "name: gemma4\ntype: inference-snap\nstate: enabled\n",
+			name:     "enabled [yaml]",
+			args:     []string{"gemma4"},
+			statuses: map[string]string{"gemma4": snapd.SnapStatusActive},
+			want: `name: gemma4
+type: inference-snap
+state: enabled
+engines:
+  - name: amd-gpu
+    runtime: llamacpp-rocm
+    default-model: gemma4-e4b
+    models:
+      - gemma4-e2b
+      - gemma4-e4b
+  - name: cpu
+    runtime: llamacpp
+    default-model: gemma4-e4b
+    models:
+      - gemma4-e2b
+      - gemma4-e4b
+`,
 		},
 		{
-			name: "json",
-			args: []string{"gemma4", "--format=json"},
-			want: "{\n  \"name\": \"gemma4\",\n  \"type\": \"inference-snap\",\n  \"state\": \"enabled\"\n}\n",
+			name:     "enabled [json]",
+			args:     []string{"gemma4", "--format=json"},
+			statuses: map[string]string{"gemma4": snapd.SnapStatusActive},
+			want: `{
+  "name": "gemma4",
+  "type": "inference-snap",
+  "state": "enabled",
+  "engines": [
+    {
+      "name": "amd-gpu",
+      "runtime": "llamacpp-rocm",
+      "default-model": "gemma4-e4b",
+      "models": [
+        "gemma4-e2b",
+        "gemma4-e4b"
+      ]
+    },
+    {
+      "name": "cpu",
+      "runtime": "llamacpp",
+      "default-model": "gemma4-e4b",
+      "models": [
+        "gemma4-e2b",
+        "gemma4-e4b"
+      ]
+    }
+  ]
+}
+`,
+		},
+		{
+			name:     "not installed shows installable engines [yaml]",
+			args:     []string{"gemma4"},
+			statuses: nil,
+			want: `name: gemma4
+type: inference-snap
+state: not installed
+engines:
+  - name: amd-gpu
+    runtime: llamacpp-rocm
+    default-model: gemma4-e4b
+    models:
+      - gemma4-e2b
+      - gemma4-e4b
+  - name: cpu
+    runtime: llamacpp
+    default-model: gemma4-e4b
+    models:
+      - gemma4-e2b
+      - gemma4-e4b
+`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, stdout, _ := newTestContext()
-			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[
-				{"snap":"gemma4","model_name":"Gemma 4","repo_url":"https://example.com/gemma4"}
-			]`)
-			ctx.SnapdClient, _ = snapd.NewFakeServer(t, map[string]string{"gemma4": snapd.SnapStatusActive})
+			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, catalog)
+			ctx.SnapdClient, _ = snapd.NewFakeServer(t, test.statuses)
 
 			if err := execute(Info(ctx), test.args...); err != nil {
 				t.Fatalf("Info: %v", err)
