@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	inferenceProviderPlugName = "provider"
-	providerSlotName          = "provider"
+	providerPlugName = "provider"
+	providerSlotName = "provider"
 )
 
 var errSnapdControlNotConnected = errors.New(
@@ -67,7 +67,7 @@ func InstallSnap(ctx context.Context, cliCtx *Context, name string) error {
 			return fmt.Errorf(
 				"connecting %s:%s to %s:%s: %w",
 				inferenceSnapInstanceName(),
-				inferenceProviderPlugName,
+				providerPlugName,
 				name,
 				providerSlotName,
 				err,
@@ -101,7 +101,7 @@ func runConnect(ctx context.Context, client *snapd.Client, snapName string, w io
 	changeID, err := client.Connect(
 		ctx,
 		inferenceSnapInstanceName(),
-		inferenceProviderPlugName,
+		providerPlugName,
 		snapName,
 		providerSlotName,
 	)

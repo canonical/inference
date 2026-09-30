@@ -336,7 +336,7 @@ func TestInstallSnap_ConnectsProviderAfterInstallation(t *testing.T) {
 			if got, want := request.Plugs[0].Snap, snapInstanceName; got != want {
 				t.Errorf("got plug snap %q, want %q", got, want)
 			}
-			if got, want := request.Plugs[0].Plug, inferenceProviderPlugName; got != want {
+			if got, want := request.Plugs[0].Plug, providerPlugName; got != want {
 				t.Errorf("got plug %q, want %q", got, want)
 			}
 			if got, want := request.Slots[0].Snap, "gemma4"; got != want {
