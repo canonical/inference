@@ -15,6 +15,7 @@ import (
 )
 
 var (
+	// ErrAccessDenied indicates that access to the snapd socket was denied.
 	ErrAccessDenied        = errors.New("snapd socket denied access")
 	ErrSocketUnreachable   = errors.New("cannot reach snapd socket")
 	ErrAlreadyInstalled    = errors.New("snap is already installed")

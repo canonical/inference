@@ -339,9 +339,9 @@ func TestConnect_RequestsProviderConnection(t *testing.T) {
 }
 
 func TestConnect_InterfacesUnchanged(t *testing.T) {
-	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w, `{"type":"error","status":"Bad Request","status-code":400,"result":{
+		_, _ = fmt.Fprint(w, `{"type":"error","status":"Bad Request","status-code":400,"result":{
 			"message":"nothing to do",
 			"kind":"interfaces-unchanged"
 		}}`)
@@ -355,7 +355,7 @@ func TestConnect_InterfacesUnchanged(t *testing.T) {
 }
 
 func TestInstall_AsyncResponseMissingChangeIDIsRejected(t *testing.T) {
-	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		writeAsyncAccepted(w, "")
 	})
 
