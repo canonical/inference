@@ -143,6 +143,52 @@ func (c *Client) Remove(ctx context.Context, name string) (changeID string, err 
 	return c.snapAction(ctx, name, "remove")
 }
 
+func (c *Client) Connect(ctx context.Context, plugSnap, plug, slotSnap, slot string) (changeID string, err error) {
+	reqBody, err := json.Marshal(struct {
+		Action string `json:"action"`
+		Plugs  []struct {
+			Snap string `json:"snap"`
+			Plug string `json:"plug"`
+		} `json:"plugs"`
+		Slots []struct {
+			Snap string `json:"snap"`
+			Slot string `json:"slot"`
+		} `json:"slots"`
+	}{
+		Action: "connect",
+		Plugs: []struct {
+			Snap string `json:"snap"`
+			Plug string `json:"plug"`
+		}{{Snap: plugSnap, Plug: plug}},
+		Slots: []struct {
+			Snap string `json:"snap"`
+			Slot string `json:"slot"`
+		}{{Snap: slotSnap, Slot: slot}},
+	})
+	if err != nil {
+		return "", fmt.Errorf("encoding snapd connect request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		"http://localhost/v2/interfaces",
+		bytes.NewReader(reqBody),
+	)
+	if err != nil {
+		return "", fmt.Errorf("building snapd connect request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return "", wrapCallErr(err)
+	}
+	defer resp.Body.Close()
+
+	return decodeAsyncActionResponse(resp, "connect")
+}
+
 func (c *Client) snapAction(ctx context.Context, name, action string) (string, error) {
 	return performSnapAction(ctx, c.httpClient(), name, action)
 }
@@ -166,6 +212,10 @@ func performSnapAction(ctx context.Context, client *http.Client, name, action st
 	}
 	defer resp.Body.Close()
 
+	return decodeAsyncActionResponse(resp, action)
+}
+
+func decodeAsyncActionResponse(resp *http.Response, action string) (string, error) {
 	env, err := decodeEnvelope(resp)
 	if err != nil {
 		return "", err

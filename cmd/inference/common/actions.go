@@ -42,6 +42,18 @@ func InstallSnap(ctx context.Context, cliCtx *Context, name string) error {
 	err := runInstall(ctx, cliCtx.SnapdClient, name, cliCtx.Stdout)
 	switch {
 	case err == nil:
+		// If installation succeeded, connect the inference:provider interface to the provider:provider plug.
+		// In the future a store auto assertion should handle this.
+		if err = runConnect(ctx, cliCtx.SnapdClient, name, cliCtx.Stdout); err != nil {
+			switch {
+			case errors.Is(err, context.Canceled):
+				return cancelledError("connection", err)
+			case errors.Is(err, snapd.ErrAccessDenied), errors.Is(err, snapd.ErrSocketUnreachable):
+				return FriendlySnapdError(err)
+			default:
+				return fmt.Errorf("connecting inference:provider to %s:provider: %w", name, err)
+			}
+		}
 		_, err = fmt.Fprintf(cliCtx.Stdout, "Installed %s\n", name)
 		return err
 	case errors.Is(err, snapd.ErrAlreadyInstalled):
@@ -61,6 +73,17 @@ func runInstall(ctx context.Context, client *snapd.Client, name string, w io.Wri
 	defer progress.Finished()
 
 	changeID, err := startWithConflictRetry(ctx, client, name, progress, client.Install)
+	if err != nil {
+		return err
+	}
+	return waitForChangeOrAbort(ctx, client, changeID, progress)
+}
+
+func runConnect(ctx context.Context, client *snapd.Client, name string, w io.Writer) error {
+	progress := newProgressPrinter(w)
+	defer progress.Finished()
+
+	changeID, err := client.Connect(ctx, "inference", "provider", name, "provider")
 	if err != nil {
 		return err
 	}

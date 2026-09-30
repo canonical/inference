@@ -306,6 +306,48 @@ func TestRunInstall_PollsUntilDone(t *testing.T) {
 	}
 }
 
+func TestInstallSnap_ConnectsProviderAfterInstallation(t *testing.T) {
+	var requests []string
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/gemma4":
+			writeAsyncAccepted(w, "install")
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/changes/install":
+			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/interfaces":
+			writeAsyncAccepted(w, "connect")
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/changes/connect":
+			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	var stdout bytes.Buffer
+	err := InstallSnap(
+		context.Background(),
+		&Context{Stdout: &stdout, SnapdClient: &snapd.Client{Socket: socket}},
+		"gemma4",
+	)
+	if err != nil {
+		t.Fatalf("InstallSnap: %v", err)
+	}
+
+	wantRequests := []string{
+		"POST /v2/snaps/gemma4",
+		"GET /v2/changes/install",
+		"POST /v2/interfaces",
+		"GET /v2/changes/connect",
+	}
+	if strings.Join(requests, "\n") != strings.Join(wantRequests, "\n") {
+		t.Fatalf("got requests %q, want %q", requests, wantRequests)
+	}
+	if got, want := stdout.String(), "Installed gemma4\n"; got != want {
+		t.Fatalf("got output %q, want %q", got, want)
+	}
+}
+
 func TestRunInstall_ReturnsErrorWhenChangeFails(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
