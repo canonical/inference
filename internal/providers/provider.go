@@ -35,7 +35,7 @@ const (
 	ConnectionNotApplicable ConnectionState = "not applicable"
 )
 
-// Engine represents an inference provider's runtime and model details  
+// Engine represents an inference provider's runtime and model details
 type Engine struct {
 	Name         string
 	Runtime      string
