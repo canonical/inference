@@ -433,7 +433,7 @@ func TestInstallSnap_ConnectsProviderWhenAlreadyInstalled(t *testing.T) {
 	if strings.Join(requests, "\n") != strings.Join(wantRequests, "\n") {
 		t.Fatalf("got requests %q, want %q", requests, wantRequests)
 	}
-	if got, want := stdout.String(), "\"gemma4\" is already installed\n"; got != want {
+	if got, want := stdout.String(), "gemma4 is already installed\n"; got != want {
 		t.Fatalf("got output %q, want %q", got, want)
 	}
 }
@@ -467,7 +467,7 @@ func TestInstallSnap_AcceptsAlreadyConnectedProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InstallSnap: %v", err)
 	}
-	if got, want := stdout.String(), "\"gemma4\" is already installed\n"; got != want {
+	if got, want := stdout.String(), "gemma4 is already installed\n"; got != want {
 		t.Fatalf("got output %q, want %q", got, want)
 	}
 }
