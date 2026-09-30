@@ -348,6 +348,83 @@ func TestInstallSnap_ConnectsProviderAfterInstallation(t *testing.T) {
 	}
 }
 
+func TestInstallSnap_ConnectsProviderWhenAlreadyInstalled(t *testing.T) {
+	var requests []string
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/gemma4":
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"type":"error","status":"Bad Request","status-code":400,"result":{
+				"message":"snap \"gemma4\" is already installed",
+				"kind":"snap-already-installed"
+			}}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/interfaces":
+			writeAsyncAccepted(w, "connect")
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/changes/connect":
+			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	var stdout bytes.Buffer
+	err := InstallSnap(
+		context.Background(),
+		&Context{Stdout: &stdout, SnapdClient: &snapd.Client{Socket: socket}},
+		"gemma4",
+	)
+	if err != nil {
+		t.Fatalf("InstallSnap: %v", err)
+	}
+
+	wantRequests := []string{
+		"POST /v2/snaps/gemma4",
+		"POST /v2/interfaces",
+		"GET /v2/changes/connect",
+	}
+	if strings.Join(requests, "\n") != strings.Join(wantRequests, "\n") {
+		t.Fatalf("got requests %q, want %q", requests, wantRequests)
+	}
+	if got, want := stdout.String(), "\"gemma4\" is already installed\n"; got != want {
+		t.Fatalf("got output %q, want %q", got, want)
+	}
+}
+
+func TestInstallSnap_AcceptsAlreadyConnectedProvider(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/gemma4":
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"type":"error","status":"Bad Request","status-code":400,"result":{
+				"message":"snap \"gemma4\" is already installed",
+				"kind":"snap-already-installed"
+			}}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/interfaces":
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"type":"error","status":"Bad Request","status-code":400,"result":{
+				"message":"nothing to do",
+				"kind":"interfaces-unchanged"
+			}}`)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	var stdout bytes.Buffer
+	err := InstallSnap(
+		context.Background(),
+		&Context{Stdout: &stdout, SnapdClient: &snapd.Client{Socket: socket}},
+		"gemma4",
+	)
+	if err != nil {
+		t.Fatalf("InstallSnap: %v", err)
+	}
+	if got, want := stdout.String(), "\"gemma4\" is already installed\n"; got != want {
+		t.Fatalf("got output %q, want %q", got, want)
+	}
+}
+
 func TestRunInstall_ReturnsErrorWhenChangeFails(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {

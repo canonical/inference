@@ -41,31 +41,33 @@ const (
 func InstallSnap(ctx context.Context, cliCtx *Context, name string) error {
 	err := runInstall(ctx, cliCtx.SnapdClient, name, cliCtx.Stdout)
 	switch {
-	case err == nil:
-		// If installation succeeded, connect the inference:provider interface to the provider:provider plug.
-		// In the future a store auto assertion should handle this.
-		if err = runConnect(ctx, cliCtx.SnapdClient, name, cliCtx.Stdout); err != nil {
-			switch {
-			case errors.Is(err, context.Canceled):
-				return cancelledError("connection", err)
-			case errors.Is(err, snapd.ErrAccessDenied), errors.Is(err, snapd.ErrSocketUnreachable):
-				return FriendlySnapdError(err)
-			default:
-				return fmt.Errorf("connecting inference:provider to %s:provider: %w", name, err)
-			}
-		}
-		_, err = fmt.Fprintf(cliCtx.Stdout, "Installed %s\n", name)
-		return err
-	case errors.Is(err, snapd.ErrAlreadyInstalled):
-		_, err = fmt.Fprintf(cliCtx.Stdout, "%q is already installed\n", name)
-		return err
 	case errors.Is(err, context.Canceled):
 		return cancelledError("installation", err)
 	case errors.Is(err, snapd.ErrAccessDenied), errors.Is(err, snapd.ErrSocketUnreachable):
 		return FriendlySnapdError(err)
-	default:
+	case err != nil && !errors.Is(err, snapd.ErrAlreadyInstalled):
 		return fmt.Errorf("installing %s: %w", name, err)
 	}
+
+	alreadyInstalled := errors.Is(err, snapd.ErrAlreadyInstalled)
+	if err = runConnect(ctx, cliCtx.SnapdClient, name, cliCtx.Stdout); err != nil &&
+		!errors.Is(err, snapd.ErrInterfacesUnchanged) {
+		switch {
+		case errors.Is(err, context.Canceled):
+			return cancelledError("connection", err)
+		case errors.Is(err, snapd.ErrAccessDenied), errors.Is(err, snapd.ErrSocketUnreachable):
+			return FriendlySnapdError(err)
+		default:
+			return fmt.Errorf("connecting inference:provider to %s:provider: %w", name, err)
+		}
+	}
+
+	if alreadyInstalled {
+		_, err = fmt.Fprintf(cliCtx.Stdout, "%q is already installed\n", name)
+		return err
+	}
+	_, err = fmt.Fprintf(cliCtx.Stdout, "Installed %s\n", name)
+	return err
 }
 
 func runInstall(ctx context.Context, client *snapd.Client, name string, w io.Writer) error {

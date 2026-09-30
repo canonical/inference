@@ -15,12 +15,13 @@ import (
 )
 
 var (
-	ErrAccessDenied      = errors.New("snapd socket denied access")
-	ErrSocketUnreachable = errors.New("cannot reach snapd socket")
-	ErrAlreadyInstalled  = errors.New("snap is already installed")
-	ErrNotInstalled      = errors.New("snap is not installed")
-	ErrChangeConflict    = errors.New("snap has a conflicting change in progress")
-	ErrTransient         = errors.New("temporary snapd communication failure")
+	ErrAccessDenied        = errors.New("snapd socket denied access")
+	ErrSocketUnreachable   = errors.New("cannot reach snapd socket")
+	ErrAlreadyInstalled    = errors.New("snap is already installed")
+	ErrNotInstalled        = errors.New("snap is not installed")
+	ErrChangeConflict      = errors.New("snap has a conflicting change in progress")
+	ErrInterfacesUnchanged = errors.New("interface connection is unchanged")
+	ErrTransient           = errors.New("temporary snapd communication failure")
 )
 
 const (
@@ -28,6 +29,7 @@ const (
 	snapNotInstalledKind     = "snap-not-installed"
 	snapChangeConflictKind   = "snap-change-conflict"
 	snapNotFoundKind         = "snap-not-found"
+	interfacesUnchangedKind  = "interfaces-unchanged"
 )
 
 const (
@@ -385,6 +387,9 @@ func decodeEnvelope(resp *http.Response) (envelope, error) {
 		}
 		if result.Kind == snapChangeConflictKind {
 			return envelope{}, withMessage(ErrChangeConflict, result.Message)
+		}
+		if result.Kind == interfacesUnchangedKind {
+			return envelope{}, withMessage(ErrInterfacesUnchanged, result.Message)
 		}
 		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 			if result.Message != "" {

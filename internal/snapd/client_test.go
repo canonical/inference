@@ -338,6 +338,22 @@ func TestConnect_RequestsProviderConnection(t *testing.T) {
 	}
 }
 
+func TestConnect_InterfacesUnchanged(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"type":"error","status":"Bad Request","status-code":400,"result":{
+			"message":"nothing to do",
+			"kind":"interfaces-unchanged"
+		}}`)
+	})
+
+	client := &Client{Socket: socket}
+	_, err := client.Connect(context.Background(), "inference", "provider", "gemma4", "provider")
+	if !errors.Is(err, ErrInterfacesUnchanged) {
+		t.Fatalf("expected ErrInterfacesUnchanged, got %v", err)
+	}
+}
+
 func TestInstall_AsyncResponseMissingChangeIDIsRejected(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		writeAsyncAccepted(w, "")
