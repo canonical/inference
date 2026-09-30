@@ -14,20 +14,24 @@ import (
 	"time"
 )
 
+//revive:disable:exported Exported sentinel errors are self-explanatory.
 var (
-	ErrAccessDenied      = errors.New("snapd socket denied access")
-	ErrSocketUnreachable = errors.New("cannot reach snapd socket")
-	ErrAlreadyInstalled  = errors.New("snap is already installed")
-	ErrNotInstalled      = errors.New("snap is not installed")
-	ErrChangeConflict    = errors.New("snap has a conflicting change in progress")
-	ErrTransient         = errors.New("temporary snapd communication failure")
+	ErrAccessDenied        = errors.New("snapd socket denied access")
+	ErrSocketUnreachable   = errors.New("cannot reach snapd socket")
+	ErrAlreadyInstalled    = errors.New("snap is already installed")
+	ErrNotInstalled        = errors.New("snap is not installed")
+	ErrChangeConflict      = errors.New("snap has a conflicting change in progress")
+	ErrInterfacesUnchanged = errors.New("interface connection is unchanged")
+	ErrTransient           = errors.New("temporary snapd communication failure")
 )
+//revive:enable:exported
 
 const (
 	snapAlreadyInstalledKind = "snap-already-installed"
 	snapNotInstalledKind     = "snap-not-installed"
 	snapChangeConflictKind   = "snap-change-conflict"
 	snapNotFoundKind         = "snap-not-found"
+	interfacesUnchangedKind  = "interfaces-unchanged"
 )
 
 const (
@@ -143,6 +147,57 @@ func (c *Client) Remove(ctx context.Context, name string) (changeID string, err 
 	return c.snapAction(ctx, name, "remove")
 }
 
+// Connect requests that snapd connect the given plug and slot.
+// The plug and slot are specified by their snap and interface names.
+// If the request is accepted, the returned changeID can be used to track the progress of the connection.
+func (c *Client) Connect(ctx context.Context, plugSnap, plug, slotSnap, slot string) (changeID string, err error) {
+	reqBody, err := json.Marshal(struct {
+		Action string `json:"action"`
+		Plugs  []struct {
+			Snap string `json:"snap"`
+			Plug string `json:"plug"`
+		} `json:"plugs"`
+		Slots []struct {
+			Snap string `json:"snap"`
+			Slot string `json:"slot"`
+		} `json:"slots"`
+	}{
+		Action: "connect",
+		Plugs: []struct {
+			Snap string `json:"snap"`
+			Plug string `json:"plug"`
+		}{{Snap: plugSnap, Plug: plug}},
+		Slots: []struct {
+			Snap string `json:"snap"`
+			Slot string `json:"slot"`
+		}{{Snap: slotSnap, Slot: slot}},
+	})
+	if err != nil {
+		return "", fmt.Errorf("encoding snapd connect request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		"http://localhost/v2/interfaces",
+		bytes.NewReader(reqBody),
+	)
+	if err != nil {
+		return "", fmt.Errorf("building snapd connect request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return "", wrapCallErr(err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	return decodeAsyncActionResponse(resp, "connect")
+}
+
 func (c *Client) snapAction(ctx context.Context, name, action string) (string, error) {
 	return performSnapAction(ctx, c.httpClient(), name, action)
 }
@@ -166,6 +221,10 @@ func performSnapAction(ctx context.Context, client *http.Client, name, action st
 	}
 	defer resp.Body.Close()
 
+	return decodeAsyncActionResponse(resp, action)
+}
+
+func decodeAsyncActionResponse(resp *http.Response, action string) (string, error) {
 	env, err := decodeEnvelope(resp)
 	if err != nil {
 		return "", err
@@ -330,6 +389,9 @@ func decodeEnvelope(resp *http.Response) (envelope, error) {
 		}
 		if result.Kind == snapChangeConflictKind {
 			return envelope{}, withMessage(ErrChangeConflict, result.Message)
+		}
+		if result.Kind == interfacesUnchangedKind {
+			return envelope{}, withMessage(ErrInterfacesUnchanged, result.Message)
 		}
 		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 			if result.Message != "" {

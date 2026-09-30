@@ -299,8 +299,63 @@ func TestInstall_AsyncResponseReturnsChangeID(t *testing.T) {
 	}
 }
 
-func TestInstall_AsyncResponseMissingChangeIDIsRejected(t *testing.T) {
+func TestConnect_RequestsProviderConnection(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v2/interfaces" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+
+		var request struct {
+			Action string `json:"action"`
+			Plugs  []struct {
+				Snap string `json:"snap"`
+				Plug string `json:"plug"`
+			} `json:"plugs"`
+			Slots []struct {
+				Snap string `json:"snap"`
+				Slot string `json:"slot"`
+			} `json:"slots"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decoding request: %v", err)
+		}
+		if request.Action != "connect" ||
+			len(request.Plugs) != 1 || request.Plugs[0].Snap != "inference" || request.Plugs[0].Plug != "provider" ||
+			len(request.Slots) != 1 || request.Slots[0].Snap != "gemma4" || request.Slots[0].Slot != "provider" {
+			t.Fatalf("unexpected connect request: %+v", request)
+		}
+
+		writeAsyncAccepted(w, "43")
+	})
+
+	client := &Client{Socket: socket}
+	changeID, err := client.Connect(context.Background(), "inference", "provider", "gemma4", "provider")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if changeID != "43" {
+		t.Fatalf("got change id %q, want %q", changeID, "43")
+	}
+}
+
+func TestConnect_InterfacesUnchanged(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprint(w, `{"type":"error","status":"Bad Request","status-code":400,"result":{
+			"message":"nothing to do",
+			"kind":"interfaces-unchanged"
+		}}`)
+	})
+
+	client := &Client{Socket: socket}
+	_, err := client.Connect(context.Background(), "inference", "provider", "gemma4", "provider")
+	if !errors.Is(err, ErrInterfacesUnchanged) {
+		t.Fatalf("expected ErrInterfacesUnchanged, got %v", err)
+	}
+}
+
+func TestInstall_AsyncResponseMissingChangeIDIsRejected(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		writeAsyncAccepted(w, "")
 	})
 

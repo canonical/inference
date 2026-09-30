@@ -7,7 +7,13 @@ import (
 	"io"
 	"time"
 
+	snapctlenv "github.com/canonical/go-snapctl/env"
 	"github.com/canonical/inference/internal/snapd"
+)
+
+const (
+	providerPlugName = "provider"
+	providerSlotName = "provider"
 )
 
 var errSnapdControlNotConnected = errors.New(
@@ -41,30 +47,76 @@ const (
 func InstallSnap(ctx context.Context, cliCtx *Context, name string) error {
 	err := runInstall(ctx, cliCtx.SnapdClient, name, cliCtx.Stdout)
 	switch {
-	case err == nil:
-		_, err = fmt.Fprintf(cliCtx.Stdout, "Installed %s\n", name)
-		return err
-	case errors.Is(err, snapd.ErrAlreadyInstalled):
-		_, err = fmt.Fprintf(cliCtx.Stdout, "%q is already installed\n", name)
-		return err
 	case errors.Is(err, context.Canceled):
 		return cancelledError("installation", err)
 	case errors.Is(err, snapd.ErrAccessDenied), errors.Is(err, snapd.ErrSocketUnreachable):
 		return FriendlySnapdError(err)
-	default:
+	case err != nil && !errors.Is(err, snapd.ErrAlreadyInstalled):
 		return fmt.Errorf("installing %s: %w", name, err)
 	}
+
+	alreadyInstalled := errors.Is(err, snapd.ErrAlreadyInstalled)
+	if err = runConnect(ctx, cliCtx.SnapdClient, name, cliCtx.Stdout); err != nil &&
+		!errors.Is(err, snapd.ErrInterfacesUnchanged) {
+		switch {
+		case errors.Is(err, context.Canceled):
+			return cancelledError("connection", err)
+		case errors.Is(err, snapd.ErrAccessDenied), errors.Is(err, snapd.ErrSocketUnreachable):
+			return FriendlySnapdError(err)
+		default:
+			return fmt.Errorf(
+				"connecting %s:%s to %s:%s: %w",
+				inferenceSnapInstanceName(),
+				providerPlugName,
+				name,
+				providerSlotName,
+				err,
+			)
+		}
+	}
+
+	if alreadyInstalled {
+		_, err = fmt.Fprintf(cliCtx.Stdout, "%s is already installed\n", name)
+		return err
+	}
+	_, err = fmt.Fprintf(cliCtx.Stdout, "Installed %s\n", name)
+	return err
 }
 
-func runInstall(ctx context.Context, client *snapd.Client, name string, w io.Writer) error {
+func runInstall(ctx context.Context, client *snapd.Client, snapName string, w io.Writer) error {
 	progress := newProgressPrinter(w)
 	defer progress.Finished()
 
-	changeID, err := startWithConflictRetry(ctx, client, name, progress, client.Install)
+	changeID, err := startWithConflictRetry(ctx, client, snapName, progress, client.Install)
 	if err != nil {
 		return err
 	}
 	return waitForChangeOrAbort(ctx, client, changeID, progress)
+}
+
+func runConnect(ctx context.Context, client *snapd.Client, snapName string, w io.Writer) error {
+	progress := newProgressPrinter(w)
+	defer progress.Finished()
+
+	changeID, err := client.Connect(
+		ctx,
+		inferenceSnapInstanceName(),
+		providerPlugName,
+		snapName,
+		providerSlotName,
+	)
+	if err != nil {
+		return err
+	}
+	return waitForChangeOrAbort(ctx, client, changeID, progress)
+}
+
+func inferenceSnapInstanceName() string {
+	name := snapctlenv.SnapInstanceName()
+	if name == "" {
+		return InferenceSnapName
+	}
+	return name
 }
 
 func RemoveSnap(ctx context.Context, cliCtx *Context, name string) error {

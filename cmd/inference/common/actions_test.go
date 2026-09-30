@@ -3,6 +3,7 @@ package common
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -45,7 +46,7 @@ func newUnixServer(t *testing.T, handler http.HandlerFunc) string {
 
 func writeAsyncAccepted(w http.ResponseWriter, changeID string) {
 	w.WriteHeader(http.StatusAccepted)
-	fmt.Fprintf(w, `{"type":"async","status":"Accepted","status-code":202,"change":%q}`, changeID)
+	_, _ = fmt.Fprintf(w, `{"type":"async","status":"Accepted","status-code":202,"change":%q}`, changeID)
 }
 
 func TestProgressPrinter_NonTerminalPrintsEachStartedTaskOnce(t *testing.T) {
@@ -286,10 +287,10 @@ func TestRunInstall_PollsUntilDone(t *testing.T) {
 			writeAsyncAccepted(w, "7")
 		case r.URL.Path == "/v2/changes/7":
 			if atomic.AddInt32(&changeRequests, 1) < 3 {
-				fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap","tasks":[{"id":"1","summary":"Download snap","status":"Doing","log":["download started"],"progress":{"done":1,"total":4}}]}}`)
+				_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap","tasks":[{"id":"1","summary":"Download snap","status":"Doing","log":["download started"],"progress":{"done":1,"total":4}}]}}`)
 				return
 			}
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true,"summary":"Install \"smollm2\" snap"}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true,"summary":"Install \"smollm2\" snap"}}`)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -306,13 +307,178 @@ func TestRunInstall_PollsUntilDone(t *testing.T) {
 	}
 }
 
+func TestInstallSnap_ConnectsProviderAfterInstallation(t *testing.T) {
+	const snapInstanceName = "inference_gpu"
+	t.Setenv("SNAP_INSTANCE_NAME", snapInstanceName)
+
+	var requests []string
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/gemma4":
+			writeAsyncAccepted(w, "install")
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/changes/install":
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/interfaces":
+			var request struct {
+				Plugs []struct {
+					Snap string `json:"snap"`
+					Plug string `json:"plug"`
+				} `json:"plugs"`
+				Slots []struct {
+					Snap string `json:"snap"`
+					Slot string `json:"slot"`
+				} `json:"slots"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("decoding connect request: %v", err)
+			}
+			if got, want := request.Plugs[0].Snap, snapInstanceName; got != want {
+				t.Errorf("got plug snap %q, want %q", got, want)
+			}
+			if got, want := request.Plugs[0].Plug, providerPlugName; got != want {
+				t.Errorf("got plug %q, want %q", got, want)
+			}
+			if got, want := request.Slots[0].Snap, "gemma4"; got != want {
+				t.Errorf("got slot snap %q, want %q", got, want)
+			}
+			if got, want := request.Slots[0].Slot, providerSlotName; got != want {
+				t.Errorf("got slot %q, want %q", got, want)
+			}
+			writeAsyncAccepted(w, "connect")
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/changes/connect":
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	var stdout bytes.Buffer
+	err := InstallSnap(
+		context.Background(),
+		&Context{Stdout: &stdout, SnapdClient: &snapd.Client{Socket: socket}},
+		"gemma4",
+	)
+	if err != nil {
+		t.Fatalf("InstallSnap: %v", err)
+	}
+
+	wantRequests := []string{
+		"POST /v2/snaps/gemma4",
+		"GET /v2/changes/install",
+		"POST /v2/interfaces",
+		"GET /v2/changes/connect",
+	}
+	if strings.Join(requests, "\n") != strings.Join(wantRequests, "\n") {
+		t.Fatalf("got requests %q, want %q", requests, wantRequests)
+	}
+	if got, want := stdout.String(), "Installed gemma4\n"; got != want {
+		t.Fatalf("got output %q, want %q", got, want)
+	}
+}
+
+func TestInferenceSnapInstanceName(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		instanceName string
+		want         string
+	}{
+		{name: "outside snap", want: InferenceSnapName},
+		{name: "parallel instance", instanceName: "inference_gpu", want: "inference_gpu"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("SNAP_INSTANCE_NAME", test.instanceName)
+			if got := inferenceSnapInstanceName(); got != test.want {
+				t.Fatalf("got %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestInstallSnap_ConnectsProviderWhenAlreadyInstalled(t *testing.T) {
+	var requests []string
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/gemma4":
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = fmt.Fprint(w, `{"type":"error","status":"Bad Request","status-code":400,"result":{
+				"message":"snap \"gemma4\" is already installed",
+				"kind":"snap-already-installed"
+			}}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/interfaces":
+			writeAsyncAccepted(w, "connect")
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/changes/connect":
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	var stdout bytes.Buffer
+	err := InstallSnap(
+		context.Background(),
+		&Context{Stdout: &stdout, SnapdClient: &snapd.Client{Socket: socket}},
+		"gemma4",
+	)
+	if err != nil {
+		t.Fatalf("InstallSnap: %v", err)
+	}
+
+	wantRequests := []string{
+		"POST /v2/snaps/gemma4",
+		"POST /v2/interfaces",
+		"GET /v2/changes/connect",
+	}
+	if strings.Join(requests, "\n") != strings.Join(wantRequests, "\n") {
+		t.Fatalf("got requests %q, want %q", requests, wantRequests)
+	}
+	if got, want := stdout.String(), "gemma4 is already installed\n"; got != want {
+		t.Fatalf("got output %q, want %q", got, want)
+	}
+}
+
+func TestInstallSnap_AcceptsAlreadyConnectedProvider(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/gemma4":
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = fmt.Fprint(w, `{"type":"error","status":"Bad Request","status-code":400,"result":{
+				"message":"snap \"gemma4\" is already installed",
+				"kind":"snap-already-installed"
+			}}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/interfaces":
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = fmt.Fprint(w, `{"type":"error","status":"Bad Request","status-code":400,"result":{
+				"message":"nothing to do",
+				"kind":"interfaces-unchanged"
+			}}`)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	var stdout bytes.Buffer
+	err := InstallSnap(
+		context.Background(),
+		&Context{Stdout: &stdout, SnapdClient: &snapd.Client{Socket: socket}},
+		"gemma4",
+	)
+	if err != nil {
+		t.Fatalf("InstallSnap: %v", err)
+	}
+	if got, want := stdout.String(), "gemma4 is already installed\n"; got != want {
+		t.Fatalf("got output %q, want %q", got, want)
+	}
+}
+
 func TestRunInstall_ReturnsErrorWhenChangeFails(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost:
 			writeAsyncAccepted(w, "7")
 		case r.URL.Path == "/v2/changes/7":
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Error","ready":true,"err":"boom"}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Error","ready":true,"err":"boom"}}`)
 		}
 	})
 
@@ -332,10 +498,10 @@ func TestRunInstall_RetriesTransientPollFailure(t *testing.T) {
 		case r.URL.Path == "/v2/changes/7":
 			if atomic.AddInt32(&changeRequests, 1) == 1 {
 				w.WriteHeader(http.StatusServiceUnavailable)
-				fmt.Fprint(w, `{"type":"error","status":"Service Unavailable","status-code":503,"result":{"message":"snapd is restarting"}}`)
+				_, _ = fmt.Fprint(w, `{"type":"error","status":"Service Unavailable","status-code":503,"result":{"message":"snapd is restarting"}}`)
 				return
 			}
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -356,7 +522,7 @@ func TestRunInstall_SurfacesSystemRestartMaintenance(t *testing.T) {
 		case r.Method == http.MethodPost:
 			writeAsyncAccepted(w, "7")
 		case r.URL.Path == "/v2/changes/7":
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{
 				"status":"Wait","ready":false
 			},"maintenance":{"kind":"system-restart","message":"system restart required"}}`)
 		default:
@@ -379,7 +545,7 @@ func TestRunInstall_WaitsOutConflictThenRetries(t *testing.T) {
 		case r.Method == http.MethodPost:
 			if atomic.AddInt32(&installRequests, 1) == 1 {
 				w.WriteHeader(http.StatusConflict)
-				fmt.Fprint(w, `{"type":"error","status":"Conflict","result":{
+				_, _ = fmt.Fprint(w, `{"type":"error","status":"Conflict","result":{
 					"message":"snap \"smollm2\" has \"install-snap\" change in progress",
 					"kind":"snap-change-conflict"
 				}}`)
@@ -388,12 +554,12 @@ func TestRunInstall_WaitsOutConflictThenRetries(t *testing.T) {
 			writeAsyncAccepted(w, "7")
 		case r.URL.Path == "/v2/changes":
 			if atomic.AddInt32(&inProgressRequests, 1) < 2 {
-				fmt.Fprint(w, `{"type":"sync","status":"OK","result":[{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}]}`)
+				_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":[{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}]}`)
 				return
 			}
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":[]}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":[]}`)
 		case r.URL.Path == "/v2/changes/7":
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true,"summary":"Install \"smollm2\" snap"}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true,"summary":"Install \"smollm2\" snap"}}`)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -414,13 +580,13 @@ func TestRunInstall_PropagatesConflictWaitFailure(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost:
 			w.WriteHeader(http.StatusConflict)
-			fmt.Fprint(w, `{"type":"error","status":"Conflict","result":{
+			_, _ = fmt.Fprint(w, `{"type":"error","status":"Conflict","result":{
 				"message":"snap \"smollm2\" has \"install-snap\" change in progress",
 				"kind":"snap-change-conflict"
 			}}`)
 		case r.URL.Path == "/v2/changes":
 			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprint(w, `{"type":"error","status":"Internal Server Error","result":{"message":"boom"}}`)
+			_, _ = fmt.Fprint(w, `{"type":"error","status":"Internal Server Error","result":{"message":"boom"}}`)
 		}
 	})
 
@@ -444,12 +610,12 @@ func TestRunInstall_RepeatedConflictsStopAfterBoundedRetries(t *testing.T) {
 		case r.Method == http.MethodPost:
 			atomic.AddInt32(&installRequests, 1)
 			w.WriteHeader(http.StatusConflict)
-			fmt.Fprint(w, `{"type":"error","status":"Conflict","result":{
+			_, _ = fmt.Fprint(w, `{"type":"error","status":"Conflict","result":{
 				"message":"snap \"smollm2\" has \"install-snap\" change in progress",
 				"kind":"snap-change-conflict"
 			}}`)
 		case r.URL.Path == "/v2/changes":
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":[]}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":[]}`)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -469,7 +635,7 @@ func TestRunInstall_SynchronousResponseIsRejected(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost:
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -489,9 +655,9 @@ func TestRunInstall_ContextCancellationDuringPoll(t *testing.T) {
 			writeAsyncAccepted(w, "7")
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/changes/7":
 			atomic.AddInt32(&abortRequests, 1)
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
 		case r.URL.Path == "/v2/changes/7":
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}}`)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -516,9 +682,9 @@ func TestInstallSnap_ContextCancellationHasFriendlyMessage(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/smollm2":
 			writeAsyncAccepted(w, "7")
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/changes/7":
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
 		case r.URL.Path == "/v2/changes/7":
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}}`)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -543,9 +709,9 @@ func TestRunRemove_ContextCancellationDuringPoll(t *testing.T) {
 			writeAsyncAccepted(w, "7")
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/changes/7":
 			atomic.AddInt32(&abortRequests, 1)
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
 		case r.URL.Path == "/v2/changes/7":
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Remove \"smollm2\" snap"}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Remove \"smollm2\" snap"}}`)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -571,9 +737,9 @@ func TestInstallSnap_CancellationReportsFailedAbort(t *testing.T) {
 			writeAsyncAccepted(w, "7")
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/changes/7":
 			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprint(w, `{"type":"error","status":"Internal Server Error","result":{"message":"boom"}}`)
+			_, _ = fmt.Fprint(w, `{"type":"error","status":"Internal Server Error","result":{"message":"boom"}}`)
 		case r.URL.Path == "/v2/changes/7":
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}}`)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -602,9 +768,9 @@ func TestRemoveSnap_ContextCancellationHasFriendlyMessage(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/smollm2":
 			writeAsyncAccepted(w, "7")
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/changes/7":
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{}}`)
 		case r.URL.Path == "/v2/changes/7":
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Remove \"smollm2\" snap"}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Remove \"smollm2\" snap"}}`)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -631,14 +797,14 @@ func TestRunInstall_ChangeReadyAtCancellationSkipsAbort(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/changes/7":
 			t.Error("abort must not be issued for a change that is already ready")
 			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprint(w, `{"type":"error","status":"Bad Request","result":{"message":"cannot abort change 7 with nothing pending"}}`)
+			_, _ = fmt.Fprint(w, `{"type":"error","status":"Bad Request","result":{"message":"cannot abort change 7 with nothing pending"}}`)
 		case r.URL.Path == "/v2/changes/7":
 			if atomic.AddInt32(&polls, 1) == 1 {
 				cancel()
-				fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}}`)
+				_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Doing","ready":false,"summary":"Install \"smollm2\" snap"}}`)
 				return
 			}
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true,"summary":"Install \"smollm2\" snap"}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true,"summary":"Install \"smollm2\" snap"}}`)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
