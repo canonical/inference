@@ -3,6 +3,7 @@ package common
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -307,6 +308,9 @@ func TestRunInstall_PollsUntilDone(t *testing.T) {
 }
 
 func TestInstallSnap_ConnectsProviderAfterInstallation(t *testing.T) {
+	const snapInstanceName = "inference_gpu"
+	t.Setenv("SNAP_INSTANCE_NAME", snapInstanceName)
+
 	var requests []string
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r.Method+" "+r.URL.Path)
@@ -316,6 +320,31 @@ func TestInstallSnap_ConnectsProviderAfterInstallation(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/v2/changes/install":
 			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/interfaces":
+			var request struct {
+				Plugs []struct {
+					Snap string `json:"snap"`
+					Plug string `json:"plug"`
+				} `json:"plugs"`
+				Slots []struct {
+					Snap string `json:"snap"`
+					Slot string `json:"slot"`
+				} `json:"slots"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("decoding connect request: %v", err)
+			}
+			if got, want := request.Plugs[0].Snap, snapInstanceName; got != want {
+				t.Errorf("got plug snap %q, want %q", got, want)
+			}
+			if got, want := request.Plugs[0].Plug, inferenceProviderPlugName; got != want {
+				t.Errorf("got plug %q, want %q", got, want)
+			}
+			if got, want := request.Slots[0].Snap, "gemma4"; got != want {
+				t.Errorf("got slot snap %q, want %q", got, want)
+			}
+			if got, want := request.Slots[0].Slot, providerSlotName; got != want {
+				t.Errorf("got slot %q, want %q", got, want)
+			}
 			writeAsyncAccepted(w, "connect")
 		case r.Method == http.MethodGet && r.URL.Path == "/v2/changes/connect":
 			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
@@ -345,6 +374,24 @@ func TestInstallSnap_ConnectsProviderAfterInstallation(t *testing.T) {
 	}
 	if got, want := stdout.String(), "Installed gemma4\n"; got != want {
 		t.Fatalf("got output %q, want %q", got, want)
+	}
+}
+
+func TestInferenceSnapInstanceName(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		instanceName string
+		want         string
+	}{
+		{name: "outside snap", want: InferenceSnapName},
+		{name: "parallel instance", instanceName: "inference_gpu", want: "inference_gpu"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("SNAP_INSTANCE_NAME", test.instanceName)
+			if got := inferenceSnapInstanceName(); got != test.want {
+				t.Fatalf("got %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 
