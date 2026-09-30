@@ -76,7 +76,7 @@ func InstallSnap(ctx context.Context, cliCtx *Context, name string) error {
 	}
 
 	if alreadyInstalled {
-		_, err = fmt.Fprintf(cliCtx.Stdout, "%q is already installed\n", name)
+		_, err = fmt.Fprintf(cliCtx.Stdout, "%s is already installed\n", name)
 		return err
 	}
 	_, err = fmt.Fprintf(cliCtx.Stdout, "Installed %s\n", name)
