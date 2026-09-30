@@ -35,10 +35,7 @@ const (
 	ConnectionNotApplicable ConnectionState = "not applicable"
 )
 
-// Engine is a hardware target an inference snap supports, such as cpu or
-// nvidia-gpu, with the runtime and models it uses there. Engines come from the
-// snap catalog, so they describe what the snap ships, not what is installed or
-// usable on this machine.
+// Engine represents an inference provider's runtime and model details  
 type Engine struct {
 	Name         string
 	Runtime      string
