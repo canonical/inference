@@ -99,6 +99,151 @@ state: enabled
 }
 `,
 		},
+		{
+			name: "provider with 2 engines [yaml]",
+			provider: providers.Provider{
+				Name:  "gemma4",
+				Type:  providers.TypeInferenceSnap,
+				State: providers.StateEnabled,
+				Engines: []providers.Engine{
+					{
+						Name:         "cpu",
+						Runtime:      "llamacpp",
+						DefaultModel: "gemma4-e4b",
+						Models:       []string{"gemma4-e2b", "gemma4-e4b"},
+					},
+					{
+						Name:         "nvidia-gpu",
+						Runtime:      "llamacpp-cuda",
+						DefaultModel: "gemma4-e4b",
+						Models:       []string{"gemma4-e4b", "gemma4-26b-a4b"},
+					},
+				},
+			},
+			format: "yaml",
+			want: `name: gemma4
+type: inference-snap
+state: enabled
+engines:
+  cpu:
+    runtime: llamacpp
+    models:
+      - gemma4-e2b
+      - gemma4-e4b (default)
+  nvidia-gpu:
+    runtime: llamacpp-cuda
+    models:
+      - gemma4-e4b (default)
+      - gemma4-26b-a4b
+`,
+		},
+		{
+			name: "provider with 2 engines [json]",
+			provider: providers.Provider{
+				Name:  "gemma4",
+				Type:  providers.TypeInferenceSnap,
+				State: providers.StateEnabled,
+				Engines: []providers.Engine{
+					{
+						Name:         "cpu",
+						Runtime:      "llamacpp",
+						DefaultModel: "gemma4-e4b",
+						Models:       []string{"gemma4-e2b", "gemma4-e4b"},
+					},
+					{
+						Name:         "nvidia-gpu",
+						Runtime:      "llamacpp-cuda",
+						DefaultModel: "gemma4-e4b",
+						Models:       []string{"gemma4-e4b", "gemma4-26b-a4b"},
+					},
+				},
+			},
+			format: "json",
+			want: `{
+  "name": "gemma4",
+  "type": "inference-snap",
+  "state": "enabled",
+  "engines": [
+    {
+      "name": "cpu",
+      "runtime": "llamacpp",
+      "default-model": "gemma4-e4b",
+      "models": [
+        "gemma4-e2b",
+        "gemma4-e4b"
+      ]
+    },
+    {
+      "name": "nvidia-gpu",
+      "runtime": "llamacpp-cuda",
+      "default-model": "gemma4-e4b",
+      "models": [
+        "gemma4-e4b",
+        "gemma4-26b-a4b"
+      ]
+    }
+  ]
+}
+`,
+		},
+		{
+			name: "engine without a default model marks no model [yaml]",
+			provider: providers.Provider{
+				Name:  "gemma4",
+				Type:  providers.TypeInferenceSnap,
+				State: providers.StateEnabled,
+				Engines: []providers.Engine{
+					{
+						Name:    "cpu",
+						Runtime: "llamacpp",
+						Models:  []string{"gemma4-e2b", "gemma4-e4b"},
+					},
+				},
+			},
+			format: "yaml",
+			want: `name: gemma4
+type: inference-snap
+state: enabled
+engines:
+  cpu:
+    runtime: llamacpp
+    models:
+      - gemma4-e2b
+      - gemma4-e4b
+`,
+		},
+		{
+			name: "engine without a default model omits the field [json]",
+			provider: providers.Provider{
+				Name:  "gemma4",
+				Type:  providers.TypeInferenceSnap,
+				State: providers.StateEnabled,
+				Engines: []providers.Engine{
+					{
+						Name:    "cpu",
+						Runtime: "llamacpp",
+						Models:  []string{"gemma4-e2b", "gemma4-e4b"},
+					},
+				},
+			},
+			format: "json",
+			want: `{
+  "name": "gemma4",
+  "type": "inference-snap",
+  "state": "enabled",
+  "engines": [
+    {
+      "name": "cpu",
+      "runtime": "llamacpp",
+      "models": [
+        "gemma4-e2b",
+        "gemma4-e4b"
+      ]
+    }
+  ]
+}
+`,
+		},
 	}
 
 	cmd := &infoCommand{}
@@ -152,28 +297,110 @@ func TestInfo_TooManyPositionalArgsAreRejected(t *testing.T) {
 }
 
 func TestInfo_PrintsProvider(t *testing.T) {
+	const catalog = `[
+		{
+			"snap": "gemma4",
+			"model_name": "Gemma 4",
+			"repo_url": "https://example.com/gemma4",
+			"engines": [
+				{
+					"name": "amd-gpu",
+					"runtime": "llamacpp-rocm",
+					"default_model": "gemma4-e4b",
+					"models": ["gemma4-e2b", "gemma4-e4b"]
+				},
+				{
+					"name": "cpu",
+					"runtime": "llamacpp",
+					"default_model": "gemma4-e4b",
+					"models": ["gemma4-e2b", "gemma4-e4b"]
+				}
+			]
+		}
+	]`
+
 	for _, test := range []struct {
-		name string
-		args []string
-		want string
+		name     string
+		args     []string
+		statuses map[string]string
+		want     string
 	}{
 		{
-			name: "yaml",
-			args: []string{"gemma4"},
-			want: "name: gemma4\ntype: inference-snap\nstate: enabled\n",
+			name:     "enabled [yaml]",
+			args:     []string{"gemma4"},
+			statuses: map[string]string{"gemma4": snapd.SnapStatusActive},
+			want: `name: gemma4
+type: inference-snap
+state: enabled
+engines:
+  amd-gpu:
+    runtime: llamacpp-rocm
+    models:
+      - gemma4-e2b
+      - gemma4-e4b (default)
+  cpu:
+    runtime: llamacpp
+    models:
+      - gemma4-e2b
+      - gemma4-e4b (default)
+`,
 		},
 		{
-			name: "json",
-			args: []string{"gemma4", "--format=json"},
-			want: "{\n  \"name\": \"gemma4\",\n  \"type\": \"inference-snap\",\n  \"state\": \"enabled\"\n}\n",
+			name:     "enabled [json]",
+			args:     []string{"gemma4", "--format=json"},
+			statuses: map[string]string{"gemma4": snapd.SnapStatusActive},
+			want: `{
+  "name": "gemma4",
+  "type": "inference-snap",
+  "state": "enabled",
+  "engines": [
+    {
+      "name": "amd-gpu",
+      "runtime": "llamacpp-rocm",
+      "default-model": "gemma4-e4b",
+      "models": [
+        "gemma4-e2b",
+        "gemma4-e4b"
+      ]
+    },
+    {
+      "name": "cpu",
+      "runtime": "llamacpp",
+      "default-model": "gemma4-e4b",
+      "models": [
+        "gemma4-e2b",
+        "gemma4-e4b"
+      ]
+    }
+  ]
+}
+`,
+		},
+		{
+			name:     "not installed shows installable engines [yaml]",
+			args:     []string{"gemma4"},
+			statuses: nil,
+			want: `name: gemma4
+type: inference-snap
+state: not installed
+engines:
+  amd-gpu:
+    runtime: llamacpp-rocm
+    models:
+      - gemma4-e2b
+      - gemma4-e4b (default)
+  cpu:
+    runtime: llamacpp
+    models:
+      - gemma4-e2b
+      - gemma4-e4b (default)
+`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, stdout, _ := newTestContext()
-			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[
-				{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"}
-			]`)
-			ctx.SnapdClient, _ = snapd.NewFakeServer(t, map[string]string{"gemma4": snapd.SnapStatusActive})
+			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, catalog)
+			ctx.SnapdClient, _ = snapd.NewFakeServer(t, test.statuses)
 
 			if err := execute(Info(ctx), test.args...); err != nil {
 				t.Fatalf("Info: %v", err)

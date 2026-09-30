@@ -8,13 +8,18 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
 
 func publishedEntry(snap, model, repository string) string {
 	return `{"snap":"` + snap + `","model_name":"` + model +
-		`","full_name":"` + repository + `","html_url":"https://github.com/` + repository + `"}`
+		`","repo_url":"https://github.com/` + repository + `"}`
+}
+
+func publishedEntryWithEngines(snap, engines string) string {
+	return `{"snap":"` + snap + `","model_name":"Model","repo_url":"https://example.com","engines":` + engines + `}`
 }
 
 func publishedCatalog(entries ...string) string {
@@ -40,20 +45,106 @@ func TestParseEntriesSortsBySnapName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseEntries: %v", err)
 	}
-	want := Entry{
-		SnapName:      "gemma4",
-		ModelName:     "Gemma 4",
-		Repository:    "canonical/gemma4-snap",
-		RepositoryURL: "https://github.com/canonical/gemma4-snap",
-	}
-	if len(entries) != 2 || entries[0] != want || entries[1].SnapName != "qwen3" {
+
+	if len(entries) != 2 || entries[0].SnapName != "gemma4" || entries[1].SnapName != "qwen3" {
 		t.Fatalf("got %+v", entries)
 	}
 }
 
+func TestParseEntriesEngines(t *testing.T) {
+	tests := []struct {
+		name    string
+		engines string
+		want    []Engine
+	}{
+		{
+			name:    "sorts engines by name",
+			engines: `[{"name":"nvidia-gpu","runtime":"llamacpp-cuda"},{"name":"cpu","runtime":"llamacpp"}]`,
+			want:    []Engine{{Name: "cpu", Runtime: "llamacpp"}, {Name: "nvidia-gpu", Runtime: "llamacpp-cuda"}},
+		},
+		{
+			name:    "engines are already sorted",
+			engines: `[{"name":"cpu","runtime":"llamacpp"},{"name":"nvidia-gpu","runtime":"llamacpp-cuda"}]`,
+			want:    []Engine{{Name: "cpu", Runtime: "llamacpp"}, {Name: "nvidia-gpu", Runtime: "llamacpp-cuda"}},
+		},
+		{
+			name:    "engines without name are skipped",
+			engines: `[{"name":"","runtime":"llamacpp"},{"name":"nvidia-gpu","runtime":"llamacpp-cuda"}]`,
+			want:    []Engine{{Name: "nvidia-gpu", Runtime: "llamacpp-cuda"}},
+		},
+		{
+			name:    "engines with duplicate names are skipped",
+			engines: `[{"name":"cpu","runtime":"llamacpp"},{"name":"cpu","runtime":"llamacpp-other"}]`,
+			want:    []Engine{{Name: "cpu", Runtime: "llamacpp"}},
+		},
+		{
+			name:    "null default model decodes as empty",
+			engines: `[{"name":"cpu","runtime":"llamacpp","default_model":null,"models":["smollm2-135m"]}]`,
+			want:    []Engine{{Name: "cpu", Runtime: "llamacpp", Models: []string{"smollm2-135m"}}},
+		},
+		{
+			name:    "empty engine list",
+			engines: `[]`,
+			want:    []Engine{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := publishedCatalog(publishedEntryWithEngines("smollm2", tt.engines))
+
+			entries, err := ParseEntries([]byte(data))
+			if err != nil {
+				t.Fatalf("ParseEntries: %v", err)
+			}
+			if len(entries) != 1 {
+				t.Fatalf("got %d entries, want 1", len(entries))
+			}
+			if !reflect.DeepEqual(entries[0].Engines, tt.want) {
+				t.Errorf("got:\n%+v\nwant:\n%+v", entries[0].Engines, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseEntriesDecodesPublishedEntry(t *testing.T) {
+	data := `[{"snap":"smollm2","model_name":"SmolLM2","repo_url":"https://github.com/canonical/smollm2-snap",
+		"engines":[{"name":"cpu","runtime":"llamacpp","default_model":"smollm2-135m","models":["smollm2-135m"]},
+		{"name":"nvidia-gpu","runtime":"llamacpp-cuda","default_model":"smollm2-135m","models":["smollm2-135m"]}]}]`
+
+	entries, err := ParseEntries([]byte(data))
+	if err != nil {
+		t.Fatalf("ParseEntries: %v", err)
+	}
+	want := []Entry{{
+		SnapName:      "smollm2",
+		ModelName:     "SmolLM2",
+		RepositoryURL: "https://github.com/canonical/smollm2-snap",
+		Engines: []Engine{
+			{Name: "cpu", Runtime: "llamacpp", DefaultModel: "smollm2-135m", Models: []string{"smollm2-135m"}},
+			{Name: "nvidia-gpu", Runtime: "llamacpp-cuda", DefaultModel: "smollm2-135m", Models: []string{"smollm2-135m"}},
+		},
+	}}
+	if !reflect.DeepEqual(entries, want) {
+		t.Errorf("got:\n%+v\nwant:\n%+v", entries, want)
+	}
+}
+
+func TestParseEntriesAllowsMissingEngines(t *testing.T) {
+	data := publishedCatalog(publishedEntry("smollm2", "SmolLM2", "canonical/smollm2-snap"))
+
+	entries, err := ParseEntries([]byte(data))
+	if err != nil {
+		t.Fatalf("ParseEntries: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Engines != nil {
+		t.Fatalf("got %+v, want one entry without engines", entries)
+	}
+}
+
 func TestParseEntriesIgnoresUnknownFields(t *testing.T) {
-	data := `[{"snap":"qwen3","model_name":"Qwen 3","full_name":"canonical/qwen3-snap",
-		"html_url":"https://github.com/canonical/qwen3-snap","added_at":"2026-01-01"}]`
+	data := `[{"snap":"qwen3","model_name":"Qwen 3",
+		"repo_url":"https://github.com/canonical/qwen3-snap","added_at":"2026-01-01"}]`
 
 	entries, err := ParseEntries([]byte(data))
 	if err != nil {
@@ -76,9 +167,10 @@ func TestParseEntriesAllowsEmptyCatalog(t *testing.T) {
 
 func TestParseEntriesRejectsMalformedJSON(t *testing.T) {
 	for name, data := range map[string]string{
-		"not json":         `not json`,
-		"object not array": `{"snap":"qwen3"}`,
-		"trailing data":    publishedCatalog(publishedEntry("qwen3", "Qwen 3", "canonical/qwen3-snap")) + " extra",
+		"not json":          `not json`,
+		"object not array":  `{"snap":"qwen3"}`,
+		"trailing data":     publishedCatalog(publishedEntry("qwen3", "Qwen 3", "canonical/qwen3-snap")) + " extra",
+		"engines as object": publishedCatalog(publishedEntryWithEngines("qwen3", `{}`)),
 	} {
 		if _, err := ParseEntries([]byte(data)); err == nil {
 			t.Errorf("%s: expected error, got nil", name)

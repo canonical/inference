@@ -25,11 +25,19 @@ const (
 
 var ErrNotConfigured = errors.New("snap catalog path is not configured")
 
+// Engine represents a snap's engine details as published in the catalog
+type Engine struct {
+	Name         string   `json:"name"`
+	Runtime      string   `json:"runtime"`
+	DefaultModel string   `json:"default_model"`
+	Models       []string `json:"models"`
+}
+
 type Entry struct {
-	SnapName      string `json:"snap"`
-	ModelName     string `json:"model_name"`
-	Repository    string `json:"full_name"`
-	RepositoryURL string `json:"html_url"`
+	SnapName      string   `json:"snap"`
+	ModelName     string   `json:"model_name"`
+	RepositoryURL string   `json:"repo_url"`
+	Engines       []Engine `json:"engines"`
 }
 
 func ParseEntries(data []byte) ([]Entry, error) {
@@ -41,7 +49,33 @@ func ParseEntries(data []byte) ([]Entry, error) {
 	slices.SortFunc(entries, func(a, b Entry) int {
 		return strings.Compare(a.SnapName, b.SnapName)
 	})
+
+	for i := range entries {
+		entries[i].Engines = normalizeEngines(entries[i].Engines)
+	}
+
 	return entries, nil
+}
+
+func normalizeEngines(engines []Engine) []Engine {
+	if engines == nil {
+		return nil
+	}
+
+	seen := make(map[string]bool, len(engines))
+	result := make([]Engine, 0, len(engines))
+	for _, engine := range engines {
+		if engine.Name == "" || seen[engine.Name] {
+			continue
+		}
+		seen[engine.Name] = true
+		result = append(result, engine)
+	}
+
+	slices.SortFunc(result, func(a, b Engine) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return result
 }
 
 type Reader struct {

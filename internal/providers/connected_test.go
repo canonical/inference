@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -44,7 +45,7 @@ func TestConnectedSnapProviders(t *testing.T) {
 		Connection: ConnectionConnected,
 		BaseURL:    "https://user:password@example.com/v1/?region=eu#backend",
 	}
-	if len(got) != 1 || got[0] != want {
+	if len(got) != 1 || !reflect.DeepEqual(got[0], want) {
 		t.Fatalf("got %+v, want [%+v]", got, want)
 	}
 }
@@ -105,8 +106,8 @@ func TestConnectedSnapProvidersRejectsDuplicateSnapName(t *testing.T) {
 
 func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
 	catalog := snapcatalog.WriteFakeCatalog(t, `[
-		{"snap":"published","model_name":"Published","full_name":"canonical/published","html_url":"https://example.com/published"},
-		{"snap":"disconnected","model_name":"Disconnected","full_name":"canonical/disconnected","html_url":"https://example.com/disconnected"}
+		{"snap":"published","model_name":"Published","repo_url":"https://example.com/published"},
+		{"snap":"disconnected","model_name":"Disconnected","repo_url":"https://example.com/disconnected"}
 	]`)
 	root := t.TempDir()
 	writeProviderEnv(t, root, "published-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=published\n")
@@ -146,7 +147,7 @@ func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
 		t.Fatalf("got %+v, want %+v", result, want)
 	}
 	for i := range want {
-		if result[i] != want[i] {
+		if !reflect.DeepEqual(result[i], want[i]) {
 			t.Fatalf("provider %d: got %+v, want %+v", i, result[i], want[i])
 		}
 	}

@@ -17,10 +17,11 @@ type infoCommand struct {
 }
 
 type infoOutput struct {
-	Name  string     `json:"name" yaml:"name"`
-	Type  string     `json:"type" yaml:"type"`
-	State string     `json:"state" yaml:"state"`
-	API   *apiOutput `json:"api,omitempty" yaml:"api,omitempty"`
+	Name    string        `json:"name" yaml:"name"`
+	Type    string        `json:"type" yaml:"type"`
+	State   string        `json:"state" yaml:"state"`
+	API     *apiOutput    `json:"api,omitempty" yaml:"api,omitempty"`
+	Engines enginesOutput `json:"engines,omitempty" yaml:"engines,omitempty"`
 }
 
 type apiOutput struct {
@@ -31,12 +32,42 @@ type openAIOutput struct {
 	BaseURL string `json:"base-url" yaml:"base-url"`
 }
 
+type engineOutput struct {
+	Name         string   `json:"name"`
+	Runtime      string   `json:"runtime"`
+	DefaultModel string   `json:"default-model,omitempty"`
+	Models       []string `json:"models"`
+}
+
+type enginesOutput []engineOutput
+
+// MarshalYAML keys engines by name and marks the default model. JSON keeps the plain array.
+func (e enginesOutput) MarshalYAML() (any, error) {
+	type engineYAML struct {
+		Runtime string   `yaml:"runtime"`
+		Models  []string `yaml:"models"`
+	}
+
+	engines := make(map[string]engineYAML, len(e))
+	for _, engine := range e {
+		models := make([]string, len(engine.Models))
+		for i, model := range engine.Models {
+			models[i] = model
+			if model == engine.DefaultModel {
+				models[i] += " (default)"
+			}
+		}
+		engines[engine.Name] = engineYAML{Runtime: engine.Runtime, Models: models}
+	}
+	return engines, nil
+}
+
 func Info(ctx *common.Context) *cobra.Command {
 	cmd := infoCommand{Context: ctx}
 	cobraCmd := &cobra.Command{
 		Use:               "info <provider>",
-        Short:             "Show information about a provider",
-        Long:              "Show information about an inference provider, including its state and API details.",
+		Short:             "Show information about a provider",
+		Long:              "Show information about an inference provider, including its state, API details, and available engines with their models.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: common.CompleteSnapNames,
 		SilenceUsage:      true,
@@ -79,6 +110,15 @@ func (cmd *infoCommand) renderInfo(p providers.Provider, format string) (string,
 			return "", fmt.Errorf("redacting provider base URL: %w", err)
 		}
 		output.API = &apiOutput{OpenAI: openAIOutput{BaseURL: redactedURL}}
+	}
+
+	for _, engine := range p.Engines {
+		output.Engines = append(output.Engines, engineOutput{
+			Name:         engine.Name,
+			Runtime:      engine.Runtime,
+			DefaultModel: engine.DefaultModel,
+			Models:       engine.Models,
+		})
 	}
 
 	var buf bytes.Buffer
