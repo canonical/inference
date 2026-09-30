@@ -6,7 +6,7 @@ description: |
   The `inference` command-line interface (CLI) allows users to interact with and manage local inference models and providers.
 
   A background service runs a proxy that provides a central entry point for local inference, such as listing available models and routing inference requests.
-  The inference proxy served at `http://localhost:8400/v1` by default.
+  The inference proxy is served at `http://localhost:8400/v1` by default.
 license: GPL-3.0-only
 source-code: https://github.com/canonical/inference
 issues: https://github.com/canonical/inference/issues
