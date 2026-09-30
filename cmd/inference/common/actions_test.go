@@ -314,11 +314,11 @@ func TestInstallSnap_ConnectsProviderAfterInstallation(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/gemma4":
 			writeAsyncAccepted(w, "install")
 		case r.Method == http.MethodGet && r.URL.Path == "/v2/changes/install":
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/interfaces":
 			writeAsyncAccepted(w, "connect")
 		case r.Method == http.MethodGet && r.URL.Path == "/v2/changes/connect":
-			fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
+			_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}

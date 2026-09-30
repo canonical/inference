@@ -143,6 +143,9 @@ func (c *Client) Remove(ctx context.Context, name string) (changeID string, err 
 	return c.snapAction(ctx, name, "remove")
 }
 
+// Connect requests that snapd connect the given plug and slot.
+// The plug and slot are specified by their snap and interface names.
+// If the request is accepted, the returned changeID can be used to track the progress of the connection.
 func (c *Client) Connect(ctx context.Context, plugSnap, plug, slotSnap, slot string) (changeID string, err error) {
 	reqBody, err := json.Marshal(struct {
 		Action string `json:"action"`
@@ -184,7 +187,9 @@ func (c *Client) Connect(ctx context.Context, plugSnap, plug, slotSnap, slot str
 	if err != nil {
 		return "", wrapCallErr(err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	return decodeAsyncActionResponse(resp, "connect")
 }
