@@ -46,6 +46,8 @@ func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 				t.Errorf("messages changed to %s", body["messages"])
 			}
 			w.Header().Set("X-Upstream", "reached")
+			w.Header().Set("Access-Control-Allow-Origin", "https://provider.example")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(`{"ok":true}`))
 		default:
@@ -81,6 +83,7 @@ func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 	if response.Code != http.StatusAccepted || response.Header().Get("X-Upstream") != "reached" {
 		t.Fatalf("got status %d headers %v body %s", response.Code, response.Header(), response.Body.String())
 	}
+	assertPermissiveCORS(t, response.Header())
 	if gotMethod != http.MethodPost || gotPath != "/api/v1/chat/completions" {
 		t.Errorf("upstream got %s %s", gotMethod, gotPath)
 	}
@@ -303,7 +306,7 @@ func TestProxyRewritesNonJSONModelRepresentations(t *testing.T) {
 		file          string
 		contentLength int64
 	}
-	requests := make(chan upstreamRequest, 3)
+	requests := make(chan upstreamRequest, 4)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/models" {
 			_, _ = w.Write([]byte(`{"data":[{"id":"native-model"}]}`))
@@ -423,6 +426,27 @@ func TestProxyRewritesNonJSONModelRepresentations(t *testing.T) {
 			got.escapedPath != "/api/v1/realtime%2Fsession" ||
 			got.query.Get("keep") != "a/b" ||
 			got.query.Get("source") != "proxy" {
+			t.Errorf("upstream request = %+v", got)
+		}
+	})
+
+	t.Run("WebSocket OPTIONS is proxied", func(t *testing.T) {
+		request := httptest.NewRequest(
+			http.MethodOptions,
+			"/v1/realtime?model=provider%2Fnative-model",
+			nil,
+		)
+		request.Header.Set("Origin", "https://client.example")
+		request.Header.Set("Access-Control-Request-Method", http.MethodGet)
+		request.Header.Set("Connection", "Upgrade")
+		request.Header.Set("Upgrade", "websocket")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("status = %d body %s", response.Code, response.Body.String())
+		}
+		got := <-requests
+		if got.model != "native-model" || got.path != "/api/v1/realtime" {
 			t.Errorf("upstream request = %+v", got)
 		}
 	})
