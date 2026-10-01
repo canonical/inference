@@ -334,12 +334,14 @@ func assertPermissiveCORS(t *testing.T, header http.Header) {
 	for _, name := range []string{
 		"Access-Control-Allow-Origin",
 		"Access-Control-Allow-Methods",
-		"Access-Control-Allow-Headers",
 		"Access-Control-Expose-Headers",
 	} {
 		if got := header.Values(name); len(got) != 1 || got[0] != "*" {
 			t.Errorf("%s = %q, want one * value", name, got)
 		}
+	}
+	if got := header.Values("Access-Control-Allow-Headers"); len(got) != 1 || got[0] != "*, Authorization" {
+		t.Errorf("Access-Control-Allow-Headers = %q, want one \"*, Authorization\" value", got)
 	}
 	if got := header.Get("Access-Control-Allow-Credentials"); got != "" {
 		t.Errorf("Access-Control-Allow-Credentials = %q, want empty", got)

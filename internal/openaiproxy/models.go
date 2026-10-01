@@ -347,7 +347,7 @@ func setCORSHeaders(header http.Header) {
 	removeCORSHeaders(header)
 	header.Set("Access-Control-Allow-Origin", "*")
 	header.Set("Access-Control-Allow-Methods", "*")
-	header.Set("Access-Control-Allow-Headers", "*")
+	header.Set("Access-Control-Allow-Headers", "*, Authorization")
 	header.Set("Access-Control-Expose-Headers", "*")
 }
 
