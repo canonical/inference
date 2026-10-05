@@ -86,6 +86,7 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"path", r.URL.Path,
 	)
 	responseWriter := &loggingResponseWriter{ResponseWriter: w}
+	setCORSHeaders(responseWriter.Header())
 	defer func() {
 		logger.Info(
 			"handled HTTP request",
@@ -94,6 +95,11 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"duration", time.Since(started),
 		)
 	}()
+
+	if isCORSPreflight(r) {
+		responseWriter.WriteHeader(http.StatusNoContent)
+		return
+	}
 
 	if r.URL.Path == "/v1/models" {
 		h.serveModels(responseWriter, r)
@@ -294,6 +300,7 @@ func (h *ModelsHandler) proxy(
 	}
 	proxy.FlushInterval = -1
 	proxy.ModifyResponse = func(response *http.Response) error {
+		removeCORSHeaders(response.Header)
 		mediaType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
 		if strings.EqualFold(mediaType, "text/event-stream") {
 			response.Header.Set("X-Accel-Buffering", "no")
@@ -327,6 +334,29 @@ func (h *ModelsHandler) proxy(
 		)
 	}()
 	proxy.ServeHTTP(w, r)
+}
+
+func isCORSPreflight(r *http.Request) bool {
+	return r.Method == http.MethodOptions &&
+		r.Header.Get("Origin") != "" &&
+		r.Header.Get("Access-Control-Request-Method") != "" &&
+		!isWebSocketUpgrade(r)
+}
+
+func setCORSHeaders(header http.Header) {
+	removeCORSHeaders(header)
+	header.Set("Access-Control-Allow-Origin", "*")
+	header.Set("Access-Control-Allow-Methods", "*")
+	header.Set("Access-Control-Allow-Headers", "*, Authorization")
+	header.Set("Access-Control-Expose-Headers", "*")
+}
+
+func removeCORSHeaders(header http.Header) {
+	for name := range header {
+		if strings.HasPrefix(strings.ToLower(name), "access-control-") {
+			header.Del(name)
+		}
+	}
 }
 
 type loggingResponseWriter struct {

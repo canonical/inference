@@ -313,6 +313,41 @@ func TestModelsHandlerRejectsOtherMethodsAndPaths(t *testing.T) {
 	}
 }
 
+func TestModelsHandlerCORSPreflight(t *testing.T) {
+	handler := NewModelsHandler(connectedProviderLister(t.TempDir()), http.DefaultClient, discardLogger())
+	request := httptest.NewRequest(http.MethodOptions, "/v1/chat/completions", nil)
+	request.Header.Set("Origin", "https://client.example")
+	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	request.Header.Set("Access-Control-Request-Headers", "Authorization, Content-Type")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("preflight returned status %d body %s", response.Code, response.Body.String())
+	}
+	assertPermissiveCORS(t, response.Header())
+}
+
+func assertPermissiveCORS(t *testing.T, header http.Header) {
+	t.Helper()
+	for _, name := range []string{
+		"Access-Control-Allow-Origin",
+		"Access-Control-Allow-Methods",
+		"Access-Control-Expose-Headers",
+	} {
+		if got := header.Values(name); len(got) != 1 || got[0] != "*" {
+			t.Errorf("%s = %q, want one * value", name, got)
+		}
+	}
+	if got := header.Values("Access-Control-Allow-Headers"); len(got) != 1 || got[0] != "*, Authorization" {
+		t.Errorf("Access-Control-Allow-Headers = %q, want one \"*, Authorization\" value", got)
+	}
+	if got := header.Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Errorf("Access-Control-Allow-Credentials = %q, want empty", got)
+	}
+}
+
 func writeProvider(t *testing.T, root, directory, name, baseURL string) {
 	t.Helper()
 	providerDirectory := filepath.Join(root, directory)
