@@ -1,6 +1,6 @@
 name: inference
 title: Inference Manager
-summary: Manage inference snaps
+summary: Manage local inference providers
 description: |
   Inference Manager provides a management interface for local inference on Ubuntu.
   The `inference` command-line interface (CLI) allows users to interact with and manage local inference models and providers.
@@ -11,6 +11,7 @@ license: GPL-3.0-only
 source-code: https://github.com/canonical/inference
 issues: https://github.com/canonical/inference/issues
 adopt-info: version
+
 base: core24
 grade: stable
 confinement: strict
