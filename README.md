@@ -44,6 +44,38 @@ Hint: run "inference install <provider>" to install providers.
 
 The command lists all installed providers, along with any inference snaps that are available but not installed.
 
+To show details about a provider, including its state and available engines and models, run:
+```
+$ inference info qwen3-5
+name: qwen3-5
+type: inference-snap
+state: not installed
+engines:
+  cpu:
+    runtime: llamacpp
+    models:
+      - qwen3.5-0.8b
+      - qwen3.5-2b
+      - qwen3.5-4b (default)
+      - qwen3.5-9b
+      - qwen3.5-35b-a3b
+  nvidia-gpu:
+    runtime: llamacpp-cuda
+    models:
+      - qwen3.5-0.8b
+      - qwen3.5-2b
+      - qwen3.5-4b (default)
+      - qwen3.5-9b
+      - qwen3.5-35b-a3b
+  nvidia-jetson-orin:
+    runtime: llamacpp-jetson-orin
+    models:
+      - qwen3.5-0.8b
+      - qwen3.5-2b
+      - qwen3.5-4b (default)
+      - qwen3.5-9b
+```
+
 Use `inference install` to install a provider, `inference remove` to remove a provider.
 At the moment, the commands only allow management of [inference snaps](https://github.com/canonical/inference-snaps).
 Support for other types of providers, including remote providers, is planned for future releases.
