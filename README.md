@@ -8,13 +8,10 @@ The inference proxy uses `http://localhost:8400/v1` as its entry point by defaul
 
 ## Usage
 
-Install Inference Manager as a snap:
+Install Inference Manager:
 ```console
 sudo snap install inference
 ```
-
-> [!IMPORTANT]
-> The snap is currently not available in the store. Refer to the [Local development](#local-development) section for instructions on building and installing the snap locally.
 
 ### Manage providers
 
