@@ -198,7 +198,7 @@ func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, er
 		return nil, err
 	}
 	discoveredModels, err := models.Discover(ctx, allProviders, h.client)
-	if err != nil {
+	if err != nil && err != models.ErrSomeProvidersFailed {
 		return nil, err
 	}
 	snapshot := make(routingSnapshot, 0, len(discoveredModels))

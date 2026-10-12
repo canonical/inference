@@ -35,8 +35,12 @@ func TestListProviderModelsAggregatesHealthyProviders(t *testing.T) {
 		{Name: "disabled", Type: providers.TypeInferenceSnap, State: providers.StateDisabled, BaseURL: second.URL + "/v1"},
 	}
 	got, err := Discover(context.Background(), list, first.Client())
-	if err != nil {
-		t.Fatal(err)
+	wantedError := "unable to retrieve models from some providers"
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if !strings.Contains(err.Error(), wantedError) {
+		t.Fatalf("got error %q, want %q", err, wantedError)
 	}
 	want := []Model{
 		{PublicID: "gemma4/gemma4-e2b", NativeID: "gemma4-e2b", ProviderName: "gemma4", ProviderBaseURL: first.URL + "/v1"},
@@ -72,8 +76,9 @@ func TestListProviderModelsFailsWhenEveryProviderIsBroken(t *testing.T) {
 	_, err := Discover(context.Background(), []providers.Provider{
 		{Name: "broken", Type: providers.TypeOpenAI, BaseURL: server.URL + "/v1"},
 	}, server.Client())
-	if err == nil || !strings.Contains(err.Error(), "all providers failed") {
-		t.Fatalf("got error %v, want all providers failed", err)
+	want := "unable to retrieve a model from the providers"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("got error %q, want %q", err, want)
 	}
 }
 

@@ -23,6 +23,9 @@ const (
 	requestTimeout  = 15 * time.Second
 )
 
+var ErrAllProvidersFailed = errors.New("unable to retrieve a model from the providers")
+var ErrSomeProvidersFailed = errors.New("unable to retrieve models from some providers")
+
 type Model struct {
 	PublicID        string
 	NativeID        string
@@ -105,19 +108,27 @@ func Discover(
 
 	models := make([]Model, 0)
 	healthyProviders := 0
+	unhealthyProviders := 0
 	for result := range results {
 		if result.err == nil {
 			healthyProviders++
 			models = append(models, result.models...)
+		} else {
+			unhealthyProviders++
 		}
 	}
 	if healthyProviders == 0 {
-		return nil, errors.New("all providers failed")
+		return nil, ErrAllProvidersFailed
 	}
 	sort.Slice(models, func(i, j int) bool {
 		return models[i].PublicID < models[j].PublicID
 	})
-	return models, nil
+
+	var err error = nil
+	if unhealthyProviders > 0 {
+		err = ErrSomeProvidersFailed
+	}
+	return models, err
 }
 
 func normalizeModels(provider providers.Provider, upstreamModels []upstreamModel) []Model {
