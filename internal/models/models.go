@@ -23,7 +23,10 @@ const (
 	requestTimeout  = 15 * time.Second
 )
 
+// ErrAllProvidersFailed accompanies a nil model list.
 var ErrAllProvidersFailed = errors.New("unable to retrieve a model from the providers")
+
+// ErrSomeProvidersFailed accompanies models from healthy providers.
 var ErrSomeProvidersFailed = errors.New("unable to retrieve models from some providers")
 
 type Model struct {
@@ -124,7 +127,7 @@ func Discover(
 		return models[i].PublicID < models[j].PublicID
 	})
 
-	var err error = nil
+	var err error
 	if unhealthyProviders > 0 {
 		err = ErrSomeProvidersFailed
 	}

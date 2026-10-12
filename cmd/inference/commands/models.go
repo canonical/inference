@@ -3,7 +3,6 @@ package commands
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -55,11 +54,11 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		cmd.ShareProvidersPath,
 	)
 	if err == models.ErrAllProvidersFailed {
-		// Print an error message and an hint
-		return errors.New("Error: unable to retrieve a model from the providers.\n\nHint: Run \"inference status\" for details.")
+		return fmt.Errorf("%w\n\nHint: Run \"inference status\" for details", err)
 	} else if err == models.ErrSomeProvidersFailed {
-		// do not exit but print a warning
-		defer fmt.Fprintf(cmd.Stderr, "\nHint: Unable to retrieve models from some providers. Run \"inference status\" for details.\n")
+		defer func() {
+			_, _ = fmt.Fprintf(cmd.Stderr, "\nHint: Unable to retrieve models from some providers. Run \"inference status\" for details.\n")
+		}()
 	} else if err != nil {
 		return err
 	}
