@@ -63,26 +63,31 @@ func TestModelsOutput(t *testing.T) {
 
 func TestModelsCommandOutputFormats(t *testing.T) {
 	tests := []struct {
-		name string
-		args []string
-		want string
+		name    string
+		args    []string
+		wantErr string
 	}{
-		{name: "table", want: "ID\n"},
-		{name: "json", args: []string{"--format=json"}, want: "{\n  \"models\": []\n}\n"},
+		{name: "table", wantErr: "no providers installed.\n\nHint: Run \"inference providers\" for details"},
+		{name: "json", args: []string{"--format=json"}, wantErr: "no providers installed.\n\nHint: Run \"inference providers\" for details"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, stdout, stderr := newTestContext()
 			ctx.SnapCatalog = &snapcatalog.Reader{}
-			if err := execute(Models(ctx), test.args...); err != nil {
-				t.Fatal(err)
+			err := execute(Models(ctx), test.args...)
+			if err == nil {
+				t.Fatal("expected an error")
 			}
-			if stdout.String() != test.want {
-				t.Fatalf("got:\n%s\nwant:\n%s", stdout.String(), test.want)
+			if err.Error() != test.wantErr {
+				t.Fatalf("expected error %q, got %q", test.wantErr, err)
+			}
+
+			if stdout.Len() != 0 {
+				t.Fatalf("expected no output on stdout, got %q", stdout.String())
 			}
 			if stderr.Len() != 0 {
-				t.Fatalf("unexpected stderr: %q", stderr.String())
+				t.Fatalf("expected no output on stderr, got %q", stderr.String())
 			}
 		})
 	}

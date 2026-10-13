@@ -58,6 +58,10 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	if len(providerModels) == 0 {
+		return fmt.Errorf("no providers installed.\n\nHint: Run \"inference providers\" for details")
+	}
+
 	models := make([]models.Model, 0)
 	someProvidersFailed := false
 	for _, pm := range providerModels {
@@ -68,7 +72,7 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	if len(models) == 0 && someProvidersFailed {
+	if len(models) == 0 {
 		return fmt.Errorf("unable to retrieve a model from the providers\n\nHint: Run \"inference status\" for details")
 	}
 
