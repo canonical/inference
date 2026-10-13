@@ -95,13 +95,18 @@ func Discover(
 	var requests sync.WaitGroup
 	for _, provider := range availableProviders {
 		requests.Go(func() {
+			models := make([]Model, 0)
 			upstreamModels, err := fetchModels(ctx, client, provider.BaseURL)
-			sort.Slice(upstreamModels, func(i, j int) bool {
-				return upstreamModels[i].ID < upstreamModels[j].ID
-			})
+			if err == nil {
+				models = normalizeModels(provider, upstreamModels)
+				sort.Slice(models, func(i, j int) bool {
+					return models[i].NativeID < models[j].NativeID
+				})
+			}
+
 			results <- ProviderModels{
 				ProviderName: provider.Name,
-				Models:       normalizeModels(provider, upstreamModels),
+				Models:       models,
 				Err:          err,
 			}
 		})
