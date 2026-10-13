@@ -31,6 +31,7 @@ type Model struct {
 	ProviderBaseURL string
 }
 
+// ProviderModels holds the outcome of querying one provider; Err is set when its query failed.
 type ProviderModels struct {
 	ProviderName string
 	Models       []Model
