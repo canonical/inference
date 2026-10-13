@@ -59,6 +59,10 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	return cmd.printProviderModels(providerModels)
+}
+
+func (cmd *modelsCommand) printProviderModels(providerModels []models.ProviderModels) error {
 	if len(providerModels) == 0 {
 		return errors.New("no providers installed.\n\nHint: Run \"inference providers\" for details")
 	}
@@ -78,6 +82,7 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	}
 
 	var output string
+	var err error
 
 	if cmd.format == "json" {
 		output, err = cmd.outputJSON(models)
