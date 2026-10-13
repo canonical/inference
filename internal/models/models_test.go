@@ -11,7 +11,7 @@ import (
 	"github.com/canonical/inference/internal/providers"
 )
 
-func TestListProviderModelsAggregatesHealthyProviders(t *testing.T) {
+func TestDiscoverReportsModelsAndErrorsPerProvider(t *testing.T) {
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
 			t.Errorf("path = %q, want /v1/models", r.URL.Path)
@@ -95,7 +95,7 @@ func TestListProviderModelsReturnsEmptyWithoutAvailableProviders(t *testing.T) {
 	}
 }
 
-func TestListProviderModelsFailsWhenEveryProviderIsBroken(t *testing.T) {
+func TestDiscoverReturnsProviderErrorForBrokenProvider(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "broken", http.StatusInternalServerError)
 	}))
