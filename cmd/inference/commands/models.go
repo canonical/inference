@@ -83,6 +83,9 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	} else {
 		output, err = cmd.outputTable(models)
 	}
+	if err != nil {
+		return err
+	}
 
 	_, err = fmt.Fprint(cmd.Stdout, output)
 
