@@ -73,6 +73,10 @@ func TestListProviderModelsAggregatesHealthyProviders(t *testing.T) {
 		} else if got[i].Err == nil && want[i].Err != nil {
 			t.Errorf("missing expected error at index %d: got nil, want %v", i, want[i].Err)
 		}
+		if len(got[i].Models) != len(want[i].Models) {
+			t.Errorf("model count mismatch at index %d: got %d, want %d", i, len(got[i].Models), len(want[i].Models))
+			continue
+		}
 		for j := range want[i].Models {
 			if got[i].Models[j] != want[i].Models[j] {
 				t.Errorf("model %d.%d = %+v, want %+v", i, j, got[i].Models[j], want[i].Models[j])
