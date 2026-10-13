@@ -23,18 +23,18 @@ const (
 	requestTimeout  = 15 * time.Second
 )
 
-// ErrAllProvidersFailed accompanies a nil model list.
-var ErrAllProvidersFailed = errors.New("unable to retrieve a model from the providers")
-
-// ErrSomeProvidersFailed accompanies models from healthy providers.
-var ErrSomeProvidersFailed = errors.New("unable to retrieve models from some providers")
-
 type Model struct {
 	PublicID        string
 	NativeID        string
 	Created         int64
 	ProviderName    string
 	ProviderBaseURL string
+}
+
+type ProviderModels struct {
+	ProviderName string
+	Models       []Model
+	Err          error
 }
 
 type upstreamModel struct {
@@ -47,7 +47,7 @@ func List(
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
-) ([]Model, error) {
+) ([]ProviderModels, error) {
 	allProviders, err := providers.ListAll(
 		ctx,
 		catalog,
@@ -64,7 +64,7 @@ func Discover(
 	ctx context.Context,
 	allProviders []providers.Provider,
 	client *http.Client,
-) ([]Model, error) {
+) ([]ProviderModels, error) {
 	availableProviders := make([]providers.Provider, 0, len(allProviders))
 	providerNames := make(map[string]struct{}, len(allProviders))
 	for _, provider := range allProviders {
@@ -85,53 +85,38 @@ func Discover(
 	}
 
 	if len(availableProviders) == 0 {
-		return []Model{}, nil
+		return []ProviderModels{}, nil
 	}
 	if client == nil {
 		client = http.DefaultClient
 	}
 
-	type providerModels struct {
-		models []Model
-		err    error
-	}
-	results := make(chan providerModels, len(availableProviders))
+	results := make(chan ProviderModels, len(availableProviders))
 	var requests sync.WaitGroup
 	for _, provider := range availableProviders {
 		requests.Go(func() {
 			upstreamModels, err := fetchModels(ctx, client, provider.BaseURL)
-			results <- providerModels{
-				models: normalizeModels(provider, upstreamModels),
-				err:    err,
+			sort.Slice(upstreamModels, func(i, j int) bool {
+				return upstreamModels[i].ID < upstreamModels[j].ID
+			})
+			results <- ProviderModels{
+				ProviderName: provider.Name,
+				Models:       normalizeModels(provider, upstreamModels),
+				Err:          err,
 			}
 		})
 	}
 	requests.Wait()
 	close(results)
 
-	models := make([]Model, 0)
-	healthyProviders := 0
-	unhealthyProviders := 0
+	pm := make([]ProviderModels, 0)
 	for result := range results {
-		if result.err == nil {
-			healthyProviders++
-			models = append(models, result.models...)
-		} else {
-			unhealthyProviders++
-		}
+		pm = append(pm, result)
 	}
-	if healthyProviders == 0 {
-		return nil, ErrAllProvidersFailed
-	}
-	sort.Slice(models, func(i, j int) bool {
-		return models[i].PublicID < models[j].PublicID
+	sort.Slice(pm, func(i, j int) bool {
+		return pm[i].ProviderName < pm[j].ProviderName
 	})
-
-	var err error
-	if unhealthyProviders > 0 {
-		err = ErrSomeProvidersFailed
-	}
-	return models, err
+	return pm, nil
 }
 
 func normalizeModels(provider providers.Provider, upstreamModels []upstreamModel) []Model {

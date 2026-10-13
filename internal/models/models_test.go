@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -35,24 +36,47 @@ func TestListProviderModelsAggregatesHealthyProviders(t *testing.T) {
 		{Name: "disabled", Type: providers.TypeInferenceSnap, State: providers.StateDisabled, BaseURL: second.URL + "/v1"},
 	}
 	got, err := Discover(context.Background(), list, first.Client())
-	wantedError := "unable to retrieve models from some providers"
-	if err == nil {
-		t.Fatal("expected an error, got nil")
+	if err != nil {
+		t.Fatal("expected no error, got", err)
 	}
-	if !strings.Contains(err.Error(), wantedError) {
-		t.Fatalf("got error %q, want %q", err, wantedError)
-	}
-	want := []Model{
-		{PublicID: "gemma4/gemma4-e2b", NativeID: "gemma4-e2b", ProviderName: "gemma4", ProviderBaseURL: first.URL + "/v1"},
-		{PublicID: "gemma4/gemma4-e4b", NativeID: "gemma4-e4b", ProviderName: "gemma4", ProviderBaseURL: first.URL + "/v1"},
-		{PublicID: "openai/gpt4.5", NativeID: "gpt4.5", ProviderName: "openai", ProviderBaseURL: third.URL + "/v1"},
+	want := []ProviderModels{
+		{
+			ProviderName: "broken",
+			Models:       []Model{},
+			Err:          errors.New("requesting models: upstream returned 500 Internal Server Error"),
+		},
+		{
+			ProviderName: "gemma4",
+			Models: []Model{
+				{PublicID: "gemma4/gemma4-e2b", NativeID: "gemma4-e2b", ProviderName: "gemma4", ProviderBaseURL: first.URL + "/v1"},
+				{PublicID: "gemma4/gemma4-e4b", NativeID: "gemma4-e4b", ProviderName: "gemma4", ProviderBaseURL: first.URL + "/v1"},
+			},
+			Err: nil,
+		},
+		{
+			ProviderName: "openai",
+			Models: []Model{
+				{PublicID: "openai/gpt4.5", NativeID: "gpt4.5", ProviderName: "openai", ProviderBaseURL: third.URL + "/v1"},
+			},
+			Err: nil,
+		},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("model %d = %+v, want %+v", i, got[i], want[i])
+		if got[i].ProviderName != want[i].ProviderName {
+			t.Errorf("Provider name mismatch: got %q at index %d, want %q", got[i].ProviderName, i, want[i].ProviderName)
+		}
+		if got[i].Err != nil && want[i].Err == nil {
+			t.Errorf("unexpected error at index %d: got %v, want nil", i, got[i].Err)
+		} else if got[i].Err == nil && want[i].Err != nil {
+			t.Errorf("missing expected error at index %d: got nil, want %v", i, want[i].Err)
+		}
+		for j := range want[i].Models {
+			if got[i].Models[j] != want[i].Models[j] {
+				t.Errorf("model %d.%d = %+v, want %+v", i, j, got[i].Models[j], want[i].Models[j])
+			}
 		}
 	}
 }
@@ -73,12 +97,28 @@ func TestListProviderModelsFailsWhenEveryProviderIsBroken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := Discover(context.Background(), []providers.Provider{
+	got, err := Discover(context.Background(), []providers.Provider{
 		{Name: "broken", Type: providers.TypeOpenAI, BaseURL: server.URL + "/v1"},
 	}, server.Client())
-	want := "unable to retrieve a model from the providers"
-	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("got error %q, want %q", err, want)
+
+	if err != nil {
+		t.Fatalf("got unexpected error %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Fatalf("got %d providers, want 1", len(got))
+	}
+
+	if got[0].ProviderName != "broken" {
+		t.Fatalf("got provider name %q, want %q", got[0].ProviderName, "broken")
+	}
+
+	if got[0].Err == nil {
+		t.Fatalf("expected error for broken provider, got nil")
+	}
+
+	if len(got[0].Models) != 0 {
+		t.Fatalf("expected no models for broken provider, got %d", len(got[0].Models))
 	}
 }
 
