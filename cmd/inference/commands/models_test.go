@@ -62,7 +62,7 @@ func TestModelsOutput(t *testing.T) {
 	}
 }
 
-func TestModelsCommandOutputFormats(t *testing.T) {
+func TestModelsCommandErrorsWithoutProviders(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    []string
@@ -77,8 +77,8 @@ func TestModelsCommandOutputFormats(t *testing.T) {
 			ctx, stdout, stderr := newTestContext()
 			ctx.SnapCatalog = &snapcatalog.Reader{}
 			err := execute(Models(ctx), test.args...)
-			if err == nil {
-				t.Fatal("expected an error")
+			if err == nil || err.Error() != test.wantErr {
+				t.Fatalf("error = %v, want %q", err, test.wantErr)
 			}
 			if err.Error() != test.wantErr {
 				t.Fatalf("expected error %q, got %q", test.wantErr, err)
