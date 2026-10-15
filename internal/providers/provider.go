@@ -45,6 +45,7 @@ type Engine struct {
 
 type Provider struct {
 	Name       string
+	SnapName   string
 	Type       ProviderType
 	State      LifecycleState
 	Connection ConnectionState
@@ -159,6 +160,9 @@ func list(
 			existing.BaseURL = provider.BaseURL
 			merged[key] = existing
 			continue
+		}
+		if catalogProvider, ok := merged[ProviderIdentity{Type: provider.Type, Name: provider.SnapName}]; ok {
+			provider.Engines = catalogProvider.Engines
 		}
 		merged[key] = provider
 	}
