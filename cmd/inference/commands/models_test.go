@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/canonical/inference/cmd/inference/common"
@@ -63,26 +64,31 @@ func TestModelsOutput(t *testing.T) {
 
 func TestModelsCommandOutputFormats(t *testing.T) {
 	tests := []struct {
-		name string
-		args []string
-		want string
+		name    string
+		args    []string
+		wantErr string
 	}{
-		{name: "table", want: "ID\n"},
-		{name: "json", args: []string{"--format=json"}, want: "{\n  \"models\": []\n}\n"},
+		{name: "table", wantErr: "no providers installed.\n\nHint: Run \"inference providers\" for details"},
+		{name: "json", args: []string{"--format=json"}, wantErr: "no providers installed.\n\nHint: Run \"inference providers\" for details"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, stdout, stderr := newTestContext()
 			ctx.SnapCatalog = &snapcatalog.Reader{}
-			if err := execute(Models(ctx), test.args...); err != nil {
-				t.Fatal(err)
+			err := execute(Models(ctx), test.args...)
+			if err == nil {
+				t.Fatal("expected an error")
 			}
-			if stdout.String() != test.want {
-				t.Fatalf("got:\n%s\nwant:\n%s", stdout.String(), test.want)
+			if err.Error() != test.wantErr {
+				t.Fatalf("expected error %q, got %q", test.wantErr, err)
+			}
+
+			if stdout.Len() != 0 {
+				t.Fatalf("expected no output on stdout, got %q", stdout.String())
 			}
 			if stderr.Len() != 0 {
-				t.Fatalf("unexpected stderr: %q", stderr.String())
+				t.Fatalf("expected no output on stderr, got %q", stderr.String())
 			}
 		})
 	}
@@ -122,5 +128,64 @@ func TestModelsEmptyOutput(t *testing.T) {
 		if got != want {
 			t.Fatalf("%s output = %q, want %q", format, got, want)
 		}
+	}
+}
+
+func TestModelsPrintsHintWhenSomeProvidersFail(t *testing.T) {
+	ctx, stdout, stderr := newTestContext()
+	cmd := &modelsCommand{Context: ctx, format: "table"}
+	err := cmd.printProviderModels([]models.ProviderModels{
+		{ProviderName: "broken", Models: []models.Model{}, Err: errors.New("upstream returned 500")},
+		{ProviderName: "gemma4", Models: []models.Model{{PublicID: "gemma4/gemma4-e2b"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if want := "ID\ngemma4/gemma4-e2b\n"; stdout.String() != want {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+	}
+	wantHint := "\nHint: Unable to retrieve models from some providers. Run \"inference status\" for details.\n"
+	if stderr.String() != wantHint {
+		t.Fatalf("stderr = %q, want %q", stderr.String(), wantHint)
+	}
+}
+
+func TestModelsOmitsHintWhenAllProvidersSucceed(t *testing.T) {
+	ctx, _, stderr := newTestContext()
+	cmd := &modelsCommand{Context: ctx, format: "table"}
+	err := cmd.printProviderModels([]models.ProviderModels{
+		{ProviderName: "gemma4", Models: []models.Model{{PublicID: "gemma4/gemma4-e2b"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("unexpected stderr: %q", stderr.String())
+	}
+}
+
+func TestModelsFailsWhenNoModelCanBeRetrieved(t *testing.T) {
+	wantErr := "unable to retrieve a model from the providers\n\nHint: Run \"inference status\" for details"
+	failing := []models.ProviderModels{
+		{ProviderName: "first", Models: []models.Model{}, Err: errors.New("upstream returned 500")},
+		{ProviderName: "second", Models: []models.Model{}, Err: errors.New("connection refused")},
+	}
+
+	for _, format := range []string{"table", "json"} {
+		t.Run(format, func(t *testing.T) {
+			ctx, stdout, stderr := newTestContext()
+			cmd := &modelsCommand{Context: ctx, format: format}
+			err := cmd.printProviderModels(failing)
+			if err == nil || err.Error() != wantErr {
+				t.Fatalf("error = %v, want %q", err, wantErr)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("unexpected stdout: %q", stdout.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("unexpected stderr: %q", stderr.String())
+			}
+		})
 	}
 }

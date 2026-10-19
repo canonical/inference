@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -47,25 +48,57 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	list, err := models.List(
+	providerModels, err := models.List(
 		cobraCmd.Context(),
 		cmd.SnapCatalog,
 		cmd.SnapdClient,
 		cmd.ShareProvidersPath,
 	)
+
 	if err != nil {
 		return err
 	}
+
+	return cmd.printProviderModels(providerModels)
+}
+
+func (cmd *modelsCommand) printProviderModels(providerModels []models.ProviderModels) error {
+	if len(providerModels) == 0 {
+		return errors.New("no providers installed.\n\nHint: Run \"inference providers\" for details")
+	}
+
+	models := make([]models.Model, 0)
+	someProvidersFailed := false
+	for _, pm := range providerModels {
+		if pm.Err == nil {
+			models = append(models, pm.Models...)
+		} else {
+			someProvidersFailed = true
+		}
+	}
+
+	if len(models) == 0 {
+		return errors.New("unable to retrieve a model from the providers\n\nHint: Run \"inference status\" for details")
+	}
+
 	var output string
+	var err error
+
 	if cmd.format == "json" {
-		output, err = cmd.outputJSON(list)
+		output, err = cmd.outputJSON(models)
 	} else {
-		output, err = cmd.outputTable(list)
+		output, err = cmd.outputTable(models)
 	}
 	if err != nil {
 		return err
 	}
+
 	_, err = fmt.Fprint(cmd.Stdout, output)
+
+	if someProvidersFailed {
+		_, _ = fmt.Fprintf(cmd.Stderr, "\nHint: Unable to retrieve models from some providers. Run \"inference status\" for details.\n")
+	}
+
 	return err
 }
 
