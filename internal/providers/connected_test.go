@@ -40,6 +40,7 @@ func TestConnectedSnapProviders(t *testing.T) {
 	}
 	want := Provider{
 		Name:       "custom",
+		SnapName:   "custom",
 		Type:       TypeInferenceSnap,
 		State:      StateUnknown,
 		Connection: ConnectionConnected,
@@ -93,14 +94,14 @@ func TestConnectedSnapProvidersRejectsInvalidEntries(t *testing.T) {
 	}
 }
 
-func TestConnectedSnapProvidersRejectsDuplicateSnapName(t *testing.T) {
+func TestConnectedSnapProvidersRejectsDuplicateInstanceName(t *testing.T) {
 	root := t.TempDir()
-	writeProviderEnv(t, root, "a", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=same\n")
-	writeProviderEnv(t, root, "b", "OPENAI_BASE_URL=http://localhost:8081/v1\nSNAP_NAME=same\n")
+	writeProviderEnv(t, root, "a", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=same\nSNAP_INSTANCE_NAME=same\n")
+	writeProviderEnv(t, root, "b", "OPENAI_BASE_URL=http://localhost:8081/v1\nSNAP_NAME=same\nSNAP_INSTANCE_NAME=same\n")
 
 	_, err := ConnectedSnapProviders(root)
-	if err == nil || !strings.Contains(err.Error(), `duplicate SNAP_NAME "same"`) {
-		t.Fatalf("got error %v, want duplicate SNAP_NAME error", err)
+	if err == nil || !strings.Contains(err.Error(), `duplicate SNAP_INSTANCE_NAME "same"`) {
+		t.Fatalf("got error %v, want duplicate SNAP_INSTANCE_NAME error", err)
 	}
 }
 
@@ -124,6 +125,7 @@ func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
 	want := []Provider{
 		{
 			Name:       "custom",
+			SnapName:   "custom",
 			Type:       TypeInferenceSnap,
 			State:      StateDisabled,
 			Connection: ConnectionConnected,
@@ -131,12 +133,14 @@ func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
 		},
 		{
 			Name:       "disconnected",
+			SnapName:   "disconnected",
 			Type:       TypeInferenceSnap,
 			State:      StateNotInstalled,
 			Connection: ConnectionNotConnected,
 		},
 		{
 			Name:       "published",
+			SnapName:   "published",
 			Type:       TypeInferenceSnap,
 			State:      StateEnabled,
 			Connection: ConnectionConnected,
@@ -150,6 +154,48 @@ func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
 		if !reflect.DeepEqual(result[i], want[i]) {
 			t.Fatalf("provider %d: got %+v, want %+v", i, result[i], want[i])
 		}
+	}
+}
+
+func TestListIncludesParallelSnapInstances(t *testing.T) {
+	catalog := snapcatalog.WriteFakeCatalog(t, `[
+		{"snap":"gemma4","model_name":"Gemma 4","repo_url":"https://example.com/gemma4",
+		 "engines":[{"name":"cpu","runtime":"llamacpp","default_model":"gemma4-e4b","models":["gemma4-e4b"]}]}
+	]`)
+	root := t.TempDir()
+	writeProviderEnv(t, root, "gemma4", "OPENAI_BASE_URL=http://localhost:8336/v1\nSNAP_NAME=gemma4\nSNAP_INSTANCE_NAME=gemma4\n")
+	writeProviderEnv(t, root, "gemma4-12b", "OPENAI_BASE_URL=http://localhost:8436/v1\nSNAP_NAME=gemma4\nSNAP_INSTANCE_NAME=gemma4_12b\n")
+	client, _ := snapd.NewFakeServer(t, map[string]string{
+		"gemma4":     snapd.SnapStatusActive,
+		"gemma4_12b": snapd.SnapStatusInstalled,
+	})
+
+	got, err := ListAll(context.Background(), catalog, client, root)
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	want := []Provider{
+		{
+			Name:       "gemma4",
+			SnapName:   "gemma4",
+			Type:       TypeInferenceSnap,
+			State:      StateEnabled,
+			Connection: ConnectionConnected,
+			BaseURL:    "http://localhost:8336/v1",
+			Engines:    []Engine{{Name: "cpu", Runtime: "llamacpp", DefaultModel: "gemma4-e4b", Models: []string{"gemma4-e4b"}}},
+		},
+		{
+			Name:       "gemma4_12b",
+			SnapName:   "gemma4",
+			Type:       TypeInferenceSnap,
+			State:      StateDisabled,
+			Connection: ConnectionConnected,
+			BaseURL:    "http://localhost:8436/v1",
+			Engines:    []Engine{{Name: "cpu", Runtime: "llamacpp", DefaultModel: "gemma4-e4b", Models: []string{"gemma4-e4b"}}},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
 
