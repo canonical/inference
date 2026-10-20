@@ -3,7 +3,6 @@ package commands
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -63,10 +62,6 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 }
 
 func (cmd *modelsCommand) printProviderModels(providerModels []models.ProviderModels) error {
-	if len(providerModels) == 0 {
-		return errors.New("no providers installed.\n\nHint: Run \"inference providers\" for details")
-	}
-
 	models := make([]models.Model, 0)
 	someProvidersFailed := false
 	for _, pm := range providerModels {
@@ -75,10 +70,6 @@ func (cmd *modelsCommand) printProviderModels(providerModels []models.ProviderMo
 		} else {
 			someProvidersFailed = true
 		}
-	}
-
-	if len(models) == 0 {
-		return errors.New("unable to retrieve a model from the providers\n\nHint: Run \"inference status\" for details")
 	}
 
 	var output string

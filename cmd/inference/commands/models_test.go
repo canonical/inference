@@ -62,14 +62,14 @@ func TestModelsOutput(t *testing.T) {
 	}
 }
 
-func TestModelsCommandOutputFormats(t *testing.T) {
+func TestModelsCommandWithoutProviders(t *testing.T) {
 	tests := []struct {
-		name    string
-		args    []string
-		wantErr string
+		name string
+		args []string
+		want string
 	}{
-		{name: "table", wantErr: "no providers installed.\n\nHint: Run \"inference providers\" for details"},
-		{name: "json", args: []string{"--format=json"}, wantErr: "no providers installed.\n\nHint: Run \"inference providers\" for details"},
+		{name: "table", want: "ID\n"},
+		{name: "json", args: []string{"--format=json"}, want: "{\n  \"models\": []\n}\n"},
 	}
 
 	for _, test := range tests {
@@ -77,15 +77,11 @@ func TestModelsCommandOutputFormats(t *testing.T) {
 			ctx, stdout, stderr := newTestContext()
 			ctx.SnapCatalog = &snapcatalog.Reader{}
 			err := execute(Models(ctx), test.args...)
-			if err == nil {
-				t.Fatal("expected an error")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
-			if err.Error() != test.wantErr {
-				t.Fatalf("expected error %q, got %q", test.wantErr, err)
-			}
-
-			if stdout.Len() != 0 {
-				t.Fatalf("expected no output on stdout, got %q", stdout.String())
+			if stdout.String() != test.want {
+				t.Fatalf("stdout = %q, want %q", stdout.String(), test.want)
 			}
 			if stderr.Len() != 0 {
 				t.Fatalf("expected no output on stderr, got %q", stderr.String())
@@ -165,26 +161,35 @@ func TestModelsOmitsHintWhenAllProvidersSucceed(t *testing.T) {
 	}
 }
 
-func TestModelsFailsWhenNoModelCanBeRetrieved(t *testing.T) {
-	wantErr := "unable to retrieve a model from the providers\n\nHint: Run \"inference status\" for details"
+func TestModelsPrintsEmptyListWithHintWhenNoModelCanBeRetrieved(t *testing.T) {
+	wantStdErr := "\nHint: Unable to retrieve models from some providers. Run \"inference status\" for details.\n"
 	failing := []models.ProviderModels{
 		{ProviderName: "first", Models: []models.Model{}, Err: errors.New("upstream returned 500")},
 		{ProviderName: "second", Models: []models.Model{}, Err: errors.New("connection refused")},
 	}
 
-	for _, format := range []string{"table", "json"} {
-		t.Run(format, func(t *testing.T) {
+	tests := []struct {
+		name   string
+		format string
+		want   string
+	}{
+		{name: "table", format: "table", want: "ID\n"},
+		{name: "json", format: "json", want: "{\n  \"models\": []\n}\n"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			ctx, stdout, stderr := newTestContext()
-			cmd := &modelsCommand{Context: ctx, format: format}
+			cmd := &modelsCommand{Context: ctx, format: test.format}
 			err := cmd.printProviderModels(failing)
-			if err == nil || err.Error() != wantErr {
-				t.Fatalf("error = %v, want %q", err, wantErr)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
-			if stdout.Len() != 0 {
-				t.Fatalf("unexpected stdout: %q", stdout.String())
+			if stdout.String() != test.want {
+				t.Fatalf("stdout = %q, want %q", stdout.String(), test.want)
 			}
-			if stderr.Len() != 0 {
-				t.Fatalf("unexpected stderr: %q", stderr.String())
+			if stderr.String() != wantStdErr {
+				t.Fatalf("stderr = %q, want %q", stderr.String(), wantStdErr)
 			}
 		})
 	}
