@@ -7,25 +7,26 @@ import (
 	"path/filepath"
 )
 
+type ProviderBackend string
+
+const (
+	BackendSnap  ProviderBackend = "snap"
+	BackendProxy ProviderBackend = "proxy"
+)
+
 type Config struct {
 	Version           int                 `json:"version"`
-	DiscoverProviders bool                `json:"discover_providers"`
+	DiscoverProviders bool                `json:"discover-providers"`
 	Providers         map[string]Provider `json:"providers"`
 }
 
-// TODO: this is duplicated from provider.go, needs a refactoring
-type ProviderType string
-
-const (
-	TypeInferenceSnap ProviderType = "inference-snap"
-	TypeOpenAI        ProviderType = "openai"
-)
-
 type Provider struct {
-	Type    ProviderType `json:"type"`
-	BaseUrl string       `json:"base_url"`
-	Snap    *string      `json:"snap,omitempty"`     // only applicable for Inference Snaps providers
-	KeyFile *string      `json:"key_file,omitempty"` // only applicable for OpenAI providers
+	Enabled bool            `json:"enabled"`
+	Backend ProviderBackend `json:"backend"`
+	BaseUrl string          `json:"base-url"`
+	Snap    *string         `json:"snap,omitempty"` // only applicable for Inference Snaps providers
+	Api     *string         `json:"api,omitempty"`
+	KeyFile *string         `json:"key-file,omitempty"` // only applicable for OpenAI providers
 }
 
 const (
@@ -117,10 +118,12 @@ func (c *Config) addProvider(name string, provider Provider) error {
 	return nil
 }
 
-func (c *Config) AddInferenceSnapProvider(name string, baseUrl string, snap string) error {
+func (c *Config) AddInferenceSnapProvider(name string, baseUrl string, snap string, api *string) error {
 	provider := Provider{
-		Type:    TypeInferenceSnap,
+		Enabled: true,
+		Backend: BackendSnap,
 		BaseUrl: baseUrl,
+		Api:     api,
 		Snap:    &snap,
 		KeyFile: nil,
 	}
@@ -136,7 +139,9 @@ func (c *Config) AddOpenAIProvider(name string, baseUrl string, apiKey string) e
 	}
 
 	provider := Provider{
-		Type:    TypeOpenAI,
+		Enabled: true,
+		Api:     new("openai"),
+		Backend: BackendProxy,
 		BaseUrl: baseUrl,
 		Snap:    nil,
 		KeyFile: &keyFilePath,

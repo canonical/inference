@@ -15,8 +15,8 @@ func TestWriteThenReadRoundTrips(t *testing.T) {
 		Version:           1,
 		DiscoverProviders: true,
 		Providers: map[string]Provider{
-			"local":  {Type: TypeInferenceSnap, BaseUrl: "http://localhost:8326/v1", Snap: &snap},
-			"remote": {Type: TypeOpenAI, BaseUrl: "https://api.openai.com/v1", KeyFile: &keyFile},
+			"local":  {Backend: BackendSnap, BaseUrl: "http://localhost:8326/v1", Snap: &snap},
+			"remote": {Backend: BackendProxy, BaseUrl: "https://api.openai.com/v1", KeyFile: &keyFile},
 		},
 	}
 
