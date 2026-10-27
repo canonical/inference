@@ -55,7 +55,7 @@ func ConnectedSnapProviders(root string) ([]Provider, error) {
 
 		providersByName[name] = Provider{
 			Name:       name,
-			Type:       TypeInferenceSnap,
+			Backend:    BackendSnap,
 			State:      StateUnknown,
 			Connection: ConnectionConnected,
 			BaseURL:    baseURL,

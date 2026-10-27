@@ -17,12 +17,12 @@ func TestProviderInstalled(t *testing.T) {
 		p    Provider
 		want bool
 	}{
-		{name: "unknown snap", p: Provider{Type: TypeInferenceSnap, State: StateUnknown}, want: false},
-		{name: "not installed snap", p: Provider{Type: TypeInferenceSnap, State: StateNotInstalled}, want: false},
-		{name: "disabled snap", p: Provider{Type: TypeInferenceSnap, State: StateDisabled}, want: true},
-		{name: "enabled snap", p: Provider{Type: TypeInferenceSnap, State: StateEnabled}, want: true},
-		{name: "configured OpenAI provider", p: Provider{Type: TypeOpenAI}, want: true},
-		{name: "unknown provider type", p: Provider{Type: ProviderType("unknown")}, want: false},
+		{name: "unknown snap", p: Provider{Backend: BackendSnap, State: StateUnknown}, want: false},
+		{name: "not installed snap", p: Provider{Backend: BackendSnap, State: StateNotInstalled}, want: false},
+		{name: "disabled snap", p: Provider{Backend: BackendSnap, State: StateDisabled}, want: true},
+		{name: "enabled snap", p: Provider{Backend: BackendSnap, State: StateEnabled}, want: true},
+		{name: "configured OpenAI provider", p: Provider{Backend: BackendProxy}, want: true},
+		{name: "unknown provider backend", p: Provider{Backend: ProviderBackend("unknown")}, want: false},
 	}
 
 	for _, tt := range tests {
@@ -51,9 +51,9 @@ func TestList(t *testing.T) {
 			t.Fatalf("List: %v", err)
 		}
 		want := []Provider{
-			{Name: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected},
-			{Name: "qwen3", Type: TypeInferenceSnap, State: StateDisabled, Connection: ConnectionNotConnected},
-			{Name: "smollm2", Type: TypeInferenceSnap, State: StateNotInstalled, Connection: ConnectionNotConnected},
+			{Name: "gemma4", Backend: BackendSnap, State: StateEnabled, Connection: ConnectionNotConnected},
+			{Name: "qwen3", Backend: BackendSnap, State: StateDisabled, Connection: ConnectionNotConnected},
+			{Name: "smollm2", Backend: BackendSnap, State: StateNotInstalled, Connection: ConnectionNotConnected},
 		}
 		if len(got) != len(want) {
 			t.Fatalf("got %d providers, want %d: %+v", len(got), len(want), got)
@@ -71,8 +71,8 @@ func TestList(t *testing.T) {
 			t.Fatalf("List: %v", err)
 		}
 		want := []Provider{
-			{Name: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected},
-			{Name: "qwen3", Type: TypeInferenceSnap, State: StateDisabled, Connection: ConnectionNotConnected},
+			{Name: "gemma4", Backend: BackendSnap, State: StateEnabled, Connection: ConnectionNotConnected},
+			{Name: "qwen3", Backend: BackendSnap, State: StateDisabled, Connection: ConnectionNotConnected},
 		}
 		if len(got) != len(want) {
 			t.Fatalf("got %d providers, want %d: %+v", len(got), len(want), got)
@@ -97,7 +97,7 @@ func TestList(t *testing.T) {
 
 		want := Provider{
 			Name:       "gemma4",
-			Type:       TypeInferenceSnap,
+			Backend:    BackendSnap,
 			State:      StateEnabled,
 			Connection: ConnectionNotConnected,
 		}
@@ -127,7 +127,7 @@ func TestFind(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Find: %v", err)
 		}
-		want := Provider{Name: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected}
+		want := Provider{Name: "gemma4", Backend: BackendSnap, State: StateEnabled, Connection: ConnectionNotConnected}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("got %+v, want %+v", got, want)
 		}

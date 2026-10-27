@@ -28,8 +28,8 @@ func execute(cmd *cobra.Command, args ...string) error {
 
 func TestProviders_TableExactOutput(t *testing.T) {
 	list := []providers.Provider{
-		{Name: "gemma4", Type: providers.TypeInferenceSnap, State: providers.StateEnabled},
-		{Name: "qwen3", Type: providers.TypeInferenceSnap, State: providers.StateDisabled},
+		{Name: "gemma4", Backend: providers.BackendSnap, State: providers.StateEnabled},
+		{Name: "qwen3", Backend: providers.BackendSnap, State: providers.StateDisabled},
 	}
 	cmd := &providersCommand{}
 	got, err := cmd.outputTable(list)
@@ -37,32 +37,32 @@ func TestProviders_TableExactOutput(t *testing.T) {
 		t.Fatalf("render table: %v", err)
 	}
 
-	want := "PROVIDER  TYPE            ENABLED\n" +
-		"gemma4    inference-snap  yes\n" +
-		"qwen3     inference-snap  no\n" +
+	want := "PROVIDER  BACKEND  ENABLED\n" +
+		"gemma4    snap     yes\n" +
+		"qwen3     snap     no\n" +
 		"\n" +
-		`Hint: run "inference install <provider>" to install providers.` + "\n"
+		`Hint: run “inference find <keyword>” to find other inference snaps.` + "\n"
 	if got != want {
 		t.Fatalf("got:\n%q\nwant:\n%q", got, want)
 	}
 }
 
 func TestProviders_TableHintWhenAllInstalled(t *testing.T) {
-	list := []providers.Provider{{Name: "gemma4", Type: providers.TypeInferenceSnap, State: providers.StateEnabled}}
+	list := []providers.Provider{{Name: "gemma4", Backend: providers.BackendSnap, State: providers.StateEnabled}}
 	cmd := &providersCommand{}
 	got, err := cmd.outputTable(list)
 	if err != nil {
 		t.Fatalf("render table: %v", err)
 	}
-	if !bytes.Contains([]byte(got), []byte(`Hint: run "inference install <provider>" to install providers.`)) {
-		t.Fatalf("expected installation hint, got:\n%s", got)
+	if !bytes.Contains([]byte(got), []byte(`Hint: run “inference find <keyword>” to find other inference snaps.`)) {
+		t.Fatalf("expected discovery hint, got:\n%s", got)
 	}
 }
 
 func TestProviders_JSONExactOutput(t *testing.T) {
 	list := []providers.Provider{
-		{Name: "gemma4", Type: providers.TypeInferenceSnap, State: providers.StateEnabled},
-		{Name: "qwen3", Type: providers.TypeInferenceSnap, State: providers.StateDisabled},
+		{Name: "gemma4", Backend: providers.BackendSnap, State: providers.StateEnabled},
+		{Name: "qwen3", Backend: providers.BackendSnap, State: providers.StateDisabled},
 	}
 	cmd := &providersCommand{}
 	got, err := cmd.outputJSON(list)
@@ -74,12 +74,12 @@ func TestProviders_JSONExactOutput(t *testing.T) {
   "providers": [
     {
       "provider": "gemma4",
-      "type": "inference-snap",
+      "backend": "snap",
       "enabled": true
     },
     {
       "provider": "qwen3",
-      "type": "inference-snap",
+      "backend": "snap",
       "enabled": false
     }
   ]
@@ -166,8 +166,8 @@ func TestProviders_NoInstalledProviders(t *testing.T) {
 			if err := execute(Providers(ctx), "--format="+format); err != nil {
 				t.Fatalf("Providers: %v", err)
 			}
-			want := "PROVIDER  TYPE  ENABLED\n\n" +
-				`Hint: run "inference install <provider>" to install providers.` + "\n"
+			want := "PROVIDER  BACKEND  ENABLED\n\n" +
+				`Hint: run “inference find <keyword>” to find other inference snaps.` + "\n"
 			if format == "json" {
 				want = "{\n  \"providers\": []\n}\n"
 			}
