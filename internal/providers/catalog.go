@@ -19,7 +19,7 @@ func CatalogSnapProviders(catalog *snapcatalog.Reader) ([]Provider, error) {
 	for i, entry := range entries {
 		result[i] = Provider{
 			Name:       entry.SnapName,
-			Type:       TypeInferenceSnap,
+			Backend:    BackendSnap,
 			State:      StateUnknown,
 			Connection: ConnectionNotConnected,
 			Engines:    enginesFromCatalog(entry.Engines),

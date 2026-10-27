@@ -40,7 +40,7 @@ func TestConnectedSnapProviders(t *testing.T) {
 	}
 	want := Provider{
 		Name:       "custom",
-		Type:       TypeInferenceSnap,
+		Backend:    BackendSnap,
 		State:      StateUnknown,
 		Connection: ConnectionConnected,
 		BaseURL:    "https://user:password@example.com/v1/?region=eu#backend",
@@ -124,20 +124,20 @@ func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
 	want := []Provider{
 		{
 			Name:       "custom",
-			Type:       TypeInferenceSnap,
+			Backend:    BackendSnap,
 			State:      StateDisabled,
 			Connection: ConnectionConnected,
 			BaseURL:    "http://localhost:8081/v1",
 		},
 		{
 			Name:       "disconnected",
-			Type:       TypeInferenceSnap,
+			Backend:    BackendSnap,
 			State:      StateNotInstalled,
 			Connection: ConnectionNotConnected,
 		},
 		{
 			Name:       "published",
-			Type:       TypeInferenceSnap,
+			Backend:    BackendSnap,
 			State:      StateEnabled,
 			Connection: ConnectionConnected,
 			BaseURL:    "http://localhost:8080/v1",

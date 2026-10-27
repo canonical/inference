@@ -11,11 +11,11 @@ import (
 	"github.com/canonical/inference/internal/snapd"
 )
 
-type ProviderType string
+type ProviderBackend string
 
 const (
-	TypeInferenceSnap ProviderType = "inference-snap"
-	TypeOpenAI        ProviderType = "openai"
+	BackendSnap  ProviderBackend = "snap"
+	BackendProxy ProviderBackend = "proxy"
 )
 
 type LifecycleState string
@@ -45,7 +45,7 @@ type Engine struct {
 
 type Provider struct {
 	Name       string
-	Type       ProviderType
+	Backend    ProviderBackend
 	State      LifecycleState
 	Connection ConnectionState
 	BaseURL    string
@@ -53,15 +53,15 @@ type Provider struct {
 }
 
 type ProviderIdentity struct {
-	Type ProviderType
-	Name string
+	Backend ProviderBackend
+	Name    string
 }
 
 func (p Provider) Installed() bool {
-	switch p.Type {
-	case TypeInferenceSnap:
+	switch p.Backend {
+	case BackendSnap:
 		return p.State == StateDisabled || p.State == StateEnabled
-	case TypeOpenAI:
+	case BackendProxy:
 		return true
 	default:
 		return false
@@ -69,7 +69,7 @@ func (p Provider) Installed() bool {
 }
 
 func (p Provider) Identity() ProviderIdentity {
-	return ProviderIdentity{Type: p.Type, Name: p.Name}
+	return ProviderIdentity{Backend: p.Backend, Name: p.Name}
 }
 
 type listOptions struct {
@@ -99,8 +99,7 @@ func Find(
 	case 1:
 		return matches[0], nil
 	default:
-		// only to be hit when we add setup for types other than TypeInferenceSnap (e.g. TypeOpenAI)
-		return Provider{}, fmt.Errorf("ambiguous provider %q: matches multiple provider types", name)
+		return Provider{}, fmt.Errorf("ambiguous provider %q: matches multiple provider backends", name)
 	}
 }
 
@@ -172,7 +171,7 @@ func list(
 		if options.Name != "" && provider.Name != options.Name {
 			continue
 		}
-		if provider.Type == TypeInferenceSnap {
+		if provider.Backend == BackendSnap {
 			state, err := snapProviderLifecycleState(ctx, snapdClient, provider.Name)
 			if err != nil {
 				return nil, err
@@ -187,10 +186,10 @@ func list(
 	}
 
 	sort.Slice(result, func(i, j int) bool {
-		if result[i].Type == result[j].Type {
+		if result[i].Backend == result[j].Backend {
 			return result[i].Name < result[j].Name
 		}
-		return result[i].Type < result[j].Type
+		return result[i].Backend < result[j].Backend
 	})
 	return result, nil
 }

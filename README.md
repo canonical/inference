@@ -18,10 +18,10 @@ sudo snap install inference
 To list providers, run:
 ```
 $ inference providers
-PROVIDER  TYPE            ENABLED
-gemma4    inference-snap  yes
-qwen3     inference-snap  yes
-smollm2   inference-snap  yes
+PROVIDER  BACKEND  ENABLED
+gemma4    snap     yes
+qwen3     snap     yes
+smollm2   snap     yes
 
 Hint: run "inference install <provider>" to install providers.
 ```
@@ -30,7 +30,7 @@ To show details about a provider, including its state and available engines and 
 ```
 $ inference info qwen3-5
 name: qwen3-5
-type: inference-snap
+backend: snap
 state: not installed
 engines:
   cpu:
@@ -60,7 +60,7 @@ engines:
 
 Use `inference install` to install a provider, `inference remove` to remove a provider.
 At the moment, the commands only allow management of [inference snaps](https://github.com/canonical/inference-snaps).
-Support for other types of providers, including remote providers, is planned for future releases.
+Support for other provider backends, including remote providers, is planned for future releases.
 
 Additional commands, including `inference enable` and `inference disable`, are under development. These commands will allow users to manage the state of installed providers.
 

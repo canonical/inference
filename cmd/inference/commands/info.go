@@ -18,7 +18,7 @@ type infoCommand struct {
 
 type infoOutput struct {
 	Name    string        `json:"name" yaml:"name"`
-	Type    string        `json:"type" yaml:"type"`
+	Backend string        `json:"backend" yaml:"backend"`
 	State   string        `json:"state" yaml:"state"`
 	API     *apiOutput    `json:"api,omitempty" yaml:"api,omitempty"`
 	Engines enginesOutput `json:"engines,omitempty" yaml:"engines,omitempty"`
@@ -103,7 +103,7 @@ func (cmd *infoCommand) run(cobraCmd *cobra.Command, args []string) error {
 }
 
 func (cmd *infoCommand) renderInfo(p providers.Provider, format string) (string, error) {
-	output := infoOutput{Name: p.Name, Type: string(p.Type), State: string(p.State)}
+	output := infoOutput{Name: p.Name, Backend: string(p.Backend), State: string(p.State)}
 	if p.BaseURL != "" {
 		redactedURL, err := providers.RedactURL(p.BaseURL)
 		if err != nil {

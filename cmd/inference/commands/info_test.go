@@ -20,13 +20,13 @@ func TestInfoRendering(t *testing.T) {
 			name: "fully configured provider [yaml]",
 			provider: providers.Provider{
 				Name:    "gemma4",
-				Type:    providers.TypeInferenceSnap,
+				Backend: providers.BackendSnap,
 				State:   providers.StateEnabled,
 				BaseURL: "http://localhost:8336/v1",
 			},
 			format: "yaml",
 			want: `name: gemma4
-type: inference-snap
+backend: snap
 state: enabled
 api:
   openai:
@@ -37,14 +37,14 @@ api:
 			name: "fully configured provider [json]",
 			provider: providers.Provider{
 				Name:    "gemma4",
-				Type:    providers.TypeInferenceSnap,
+				Backend: providers.BackendSnap,
 				State:   providers.StateEnabled,
 				BaseURL: "http://localhost:8336/v1",
 			},
 			format: "json",
 			want: `{
   "name": "gemma4",
-  "type": "inference-snap",
+  "backend": "snap",
   "state": "enabled",
   "api": {
     "openai": {
@@ -58,13 +58,13 @@ api:
 			name: "redact BaseURL with credentials and query [yaml]",
 			provider: providers.Provider{
 				Name:    "gemma4",
-				Type:    providers.TypeInferenceSnap,
+				Backend: providers.BackendSnap,
 				State:   providers.StateEnabled,
 				BaseURL: "http://user:token@localhost:8336/v1?api_key=secret",
 			},
 			format: "yaml",
 			want: `name: gemma4
-type: inference-snap
+backend: snap
 state: enabled
 api:
   openai:
@@ -74,27 +74,27 @@ api:
 		{
 			name: "provider without a BaseURL [yaml]",
 			provider: providers.Provider{
-				Name:  "gemma4",
-				Type:  providers.TypeInferenceSnap,
-				State: providers.StateEnabled,
+				Name:    "gemma4",
+				Backend: providers.BackendSnap,
+				State:   providers.StateEnabled,
 			},
 			format: "yaml",
 			want: `name: gemma4
-type: inference-snap
+backend: snap
 state: enabled
 `,
 		},
 		{
 			name: "provider without a BaseURL [json]",
 			provider: providers.Provider{
-				Name:  "gemma4",
-				Type:  providers.TypeInferenceSnap,
-				State: providers.StateEnabled,
+				Name:    "gemma4",
+				Backend: providers.BackendSnap,
+				State:   providers.StateEnabled,
 			},
 			format: "json",
 			want: `{
   "name": "gemma4",
-  "type": "inference-snap",
+  "backend": "snap",
   "state": "enabled"
 }
 `,
@@ -102,9 +102,9 @@ state: enabled
 		{
 			name: "provider with 2 engines [yaml]",
 			provider: providers.Provider{
-				Name:  "gemma4",
-				Type:  providers.TypeInferenceSnap,
-				State: providers.StateEnabled,
+				Name:    "gemma4",
+				Backend: providers.BackendSnap,
+				State:   providers.StateEnabled,
 				Engines: []providers.Engine{
 					{
 						Name:         "cpu",
@@ -122,7 +122,7 @@ state: enabled
 			},
 			format: "yaml",
 			want: `name: gemma4
-type: inference-snap
+backend: snap
 state: enabled
 engines:
   cpu:
@@ -140,9 +140,9 @@ engines:
 		{
 			name: "provider with 2 engines [json]",
 			provider: providers.Provider{
-				Name:  "gemma4",
-				Type:  providers.TypeInferenceSnap,
-				State: providers.StateEnabled,
+				Name:    "gemma4",
+				Backend: providers.BackendSnap,
+				State:   providers.StateEnabled,
 				Engines: []providers.Engine{
 					{
 						Name:         "cpu",
@@ -161,7 +161,7 @@ engines:
 			format: "json",
 			want: `{
   "name": "gemma4",
-  "type": "inference-snap",
+  "backend": "snap",
   "state": "enabled",
   "engines": [
     {
@@ -189,9 +189,9 @@ engines:
 		{
 			name: "engine without a default model marks no model [yaml]",
 			provider: providers.Provider{
-				Name:  "gemma4",
-				Type:  providers.TypeInferenceSnap,
-				State: providers.StateEnabled,
+				Name:    "gemma4",
+				Backend: providers.BackendSnap,
+				State:   providers.StateEnabled,
 				Engines: []providers.Engine{
 					{
 						Name:    "cpu",
@@ -202,7 +202,7 @@ engines:
 			},
 			format: "yaml",
 			want: `name: gemma4
-type: inference-snap
+backend: snap
 state: enabled
 engines:
   cpu:
@@ -215,9 +215,9 @@ engines:
 		{
 			name: "engine without a default model omits the field [json]",
 			provider: providers.Provider{
-				Name:  "gemma4",
-				Type:  providers.TypeInferenceSnap,
-				State: providers.StateEnabled,
+				Name:    "gemma4",
+				Backend: providers.BackendSnap,
+				State:   providers.StateEnabled,
 				Engines: []providers.Engine{
 					{
 						Name:    "cpu",
@@ -229,7 +229,7 @@ engines:
 			format: "json",
 			want: `{
   "name": "gemma4",
-  "type": "inference-snap",
+  "backend": "snap",
   "state": "enabled",
   "engines": [
     {
@@ -263,7 +263,7 @@ engines:
 func TestInfoRendering_InvalidBaseURLReturnsError(t *testing.T) {
 	provider := providers.Provider{
 		Name:    "gemma4",
-		Type:    providers.TypeInferenceSnap,
+		Backend: providers.BackendSnap,
 		State:   providers.StateEnabled,
 		BaseURL: "http://[invalid",
 	}
@@ -330,7 +330,7 @@ func TestInfo_PrintsProvider(t *testing.T) {
 			args:     []string{"gemma4"},
 			statuses: map[string]string{"gemma4": snapd.SnapStatusActive},
 			want: `name: gemma4
-type: inference-snap
+backend: snap
 state: enabled
 engines:
   amd-gpu:
@@ -351,7 +351,7 @@ engines:
 			statuses: map[string]string{"gemma4": snapd.SnapStatusActive},
 			want: `{
   "name": "gemma4",
-  "type": "inference-snap",
+  "backend": "snap",
   "state": "enabled",
   "engines": [
     {
@@ -381,7 +381,7 @@ engines:
 			args:     []string{"gemma4"},
 			statuses: nil,
 			want: `name: gemma4
-type: inference-snap
+backend: snap
 state: not installed
 engines:
   amd-gpu:

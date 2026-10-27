@@ -22,7 +22,7 @@ type providersCommand struct {
 
 type providerJSON struct {
 	Name    string `json:"provider"`
-	Type    string `json:"type"`
+	Backend string `json:"backend"`
 	Enabled bool   `json:"enabled"`
 }
 
@@ -84,7 +84,7 @@ func (cmd *providersCommand) outputJSON(list []providers.Provider) (string, erro
 	for i, p := range list {
 		result.Providers[i] = providerJSON{
 			Name:    p.Name,
-			Type:    string(p.Type),
+			Backend: string(p.Backend),
 			Enabled: p.State == providers.StateEnabled,
 		}
 	}
@@ -129,13 +129,13 @@ func (cmd *providersCommand) outputTable(list []providers.Provider) (string, err
 			},
 		}),
 	)
-	table.Header([]string{"PROVIDER", "TYPE", "ENABLED"})
+	table.Header([]string{"PROVIDER", "BACKEND", "ENABLED"})
 	for _, p := range list {
 		enabled := "no"
 		if p.State == providers.StateEnabled {
 			enabled = "yes"
 		}
-		if err := table.Append([]string{p.Name, string(p.Type), enabled}); err != nil {
+		if err := table.Append([]string{p.Name, string(p.Backend), enabled}); err != nil {
 			return "", err
 		}
 	}
