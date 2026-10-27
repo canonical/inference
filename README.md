@@ -22,8 +22,11 @@ PROVIDER  BACKEND  ENABLED
 gemma4    snap     yes
 qwen3     snap     yes
 smollm2   snap     yes
+```
 
-Hint: run "inference install <provider>" to install providers.
+The command prints a discovery hint to stderr:
+```
+Hint: run "inference find <keyword>" to find other inference snaps.
 ```
 
 To show details about a provider, including its state and available engines and models, run:
