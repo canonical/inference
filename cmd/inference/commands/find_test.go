@@ -46,9 +46,9 @@ func TestFindFiltersStoreResults(t *testing.T) {
 	if err := execute(Find(ctx), "Gemma 4"); err != nil {
 		t.Fatal(err)
 	}
-	want := fmt.Sprintf("%-13s%-17s%s\n", "NAME", "OPTIMIZATIONS", "CAPABILITIES") +
-		fmt.Sprintf("%-13s%-17s%s\n", "gemma4", "cpu, nvidia-gpu", "text, vision") +
-		fmt.Sprintf("%-13s%-17s%s\n", "aaa-related", "-", "-")
+	want := fmt.Sprintf("%-13s%-14s%s\n", "NAME", "CAPABILITIES", "OPTIMIZATIONS") +
+		fmt.Sprintf("%-13s%-14s%s\n", "gemma4", "text, vision", "cpu, nvidia-gpu") +
+		fmt.Sprintf("%-13s%-14s%s\n", "aaa-related", "-", "-")
 	if got := stdout.String(); got != want {
 		t.Fatalf("got:\n%q\nwant:\n%q", got, want)
 	}
@@ -118,8 +118,8 @@ func TestFindTableMissingMetadata(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := fmt.Sprintf("%-8s%-15s%s\n", "NAME", "OPTIMIZATIONS", "CAPABILITIES") +
-			fmt.Sprintf("%-8s%-15s%s\n", "gemma4", "-", "-")
+		want := fmt.Sprintf("%-8s%-14s%s\n", "NAME", "CAPABILITIES", "OPTIMIZATIONS") +
+			fmt.Sprintf("%-8s%-14s%s\n", "gemma4", "-", "-")
 		if got != want {
 			t.Fatalf("got %q, want %q", got, want)
 		}

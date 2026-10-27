@@ -98,10 +98,10 @@ func findMatchCounts(result snapd.FindResult, words []string) [4]int {
 }
 
 func (cmd *findCommand) outputTable(entries []snapcatalog.Entry) (string, error) {
-	headers := []string{"NAME", "OPTIMIZATIONS", "CAPABILITIES"}
+	headers := []string{"NAME", "CAPABILITIES", "OPTIMIZATIONS"}
 	nameMaxLen := len(headers[0])
-	optimizationsMaxLen := len(headers[1])
-	capabilitiesMaxLen := len(headers[2])
+	optimizationsMaxLen := len(headers[2])
+	capabilitiesMaxLen := len(headers[1])
 	rows := make([][]string, 0, len(entries))
 	for _, entry := range entries {
 		optimizations := make([]string, 0, len(entry.Engines))
@@ -128,14 +128,14 @@ func (cmd *findCommand) outputTable(entries []snapcatalog.Entry) (string, error)
 		nameMaxLen = max(nameMaxLen, len(entry.SnapName))
 		optimizationsMaxLen = max(optimizationsMaxLen, len(optimizationText))
 		capabilitiesMaxLen = max(capabilitiesMaxLen, len(capabilityText))
-		rows = append(rows, []string{entry.SnapName, optimizationText, capabilityText})
+		rows = append(rows, []string{entry.SnapName, capabilityText, optimizationText})
 	}
 	tableMaxWidth := 80
-	optimizationsMinWidth := len(headers[1]) + 2
-	capabilitiesMinWidth := len(headers[2]) + 1
+	optimizationsMinWidth := len(headers[2]) + 1
+	capabilitiesMinWidth := len(headers[1]) + 2
 	nameWidth := min(nameMaxLen+1, tableMaxWidth-optimizationsMinWidth-capabilitiesMinWidth)
-	capabilitiesWidth := min(capabilitiesMaxLen+1, tableMaxWidth-nameWidth-optimizationsMinWidth)
-	optimizationsWidth := min(optimizationsMaxLen+2, tableMaxWidth-nameWidth-capabilitiesWidth)
+	capabilitiesWidth := min(capabilitiesMaxLen+2, tableMaxWidth-nameWidth-optimizationsMinWidth)
+	optimizationsWidth := min(optimizationsMaxLen+1, tableMaxWidth-nameWidth-capabilitiesWidth)
 	var output bytes.Buffer
 	padding := tw.CellPadding{PerColumn: []tw.Padding{
 		{Overwrite: true, Right: " "},
@@ -158,8 +158,8 @@ func (cmd *findCommand) outputTable(entries []snapcatalog.Entry) (string, error)
 			MaxWidth: tableMaxWidth,
 			Widths: tw.CellWidth{PerColumn: tw.Mapper[int, int]{
 				0: nameWidth,
-				1: optimizationsWidth,
-				2: capabilitiesWidth,
+				1: capabilitiesWidth,
+				2: optimizationsWidth,
 			}},
 			Header: tw.CellConfig{Alignment: tw.CellAlignment{Global: tw.AlignLeft}, Padding: padding},
 			Row: tw.CellConfig{
