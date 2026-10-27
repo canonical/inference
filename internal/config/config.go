@@ -138,11 +138,6 @@ func (c *Config) AddOpenAIProvider(name string, baseUrl string, apiKey string) e
 		return fmt.Errorf("creating key file directory: %w", err)
 	}
 
-	err := os.WriteFile(keyFilePath, []byte(apiKey), 0o600)
-	if err != nil {
-		return fmt.Errorf("writing key file: %w", err)
-	}
-
 	provider := Provider{
 		Enabled: true,
 		Api:     new("openai"),
@@ -152,7 +147,17 @@ func (c *Config) AddOpenAIProvider(name string, baseUrl string, apiKey string) e
 		KeyFile: &keyFilePath,
 	}
 
-	return c.addProvider(name, provider)
+	err := c.addProvider(name, provider)
+	if err != nil {
+		return fmt.Errorf("adding provider: %w", err)
+	}
+
+	err = os.WriteFile(keyFilePath, []byte(apiKey), 0o600)
+	if err != nil {
+		return fmt.Errorf("writing key file: %w", err)
+	}
+
+	return nil
 }
 
 func (c *Config) RemoveProvider(name string) error {
