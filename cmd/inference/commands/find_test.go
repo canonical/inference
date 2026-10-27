@@ -43,14 +43,17 @@ func TestFindFiltersStoreResults(t *testing.T) {
 	t.Cleanup(server.Close)
 	ctx.SnapdClient = &snapd.Client{Socket: socket}
 
-	if err := execute(Find(ctx), "Gemma 4"); err != nil {
-		t.Fatal(err)
-	}
 	want := fmt.Sprintf("%-13s%-14s%s\n", "NAME", "CAPABILITIES", "OPTIMIZATIONS") +
 		fmt.Sprintf("%-13s%-14s%s\n", "gemma4", "text, vision", "cpu, nvidia-gpu") +
 		fmt.Sprintf("%-13s%-14s%s\n", "aaa-related", "-", "-")
-	if got := stdout.String(); got != want {
-		t.Fatalf("got:\n%q\nwant:\n%q", got, want)
+	for _, args := range [][]string{{"Gemma 4"}, {"Gemma", "4"}} {
+		stdout.Reset()
+		if err := execute(Find(ctx), args...); err != nil {
+			t.Fatal(err)
+		}
+		if got := stdout.String(); got != want {
+			t.Fatalf("args %q: got:\n%q\nwant:\n%q", args, got, want)
+		}
 	}
 }
 
@@ -204,24 +207,42 @@ func TestFindNoMatches(t *testing.T) {
 			if stdout.Len() != 0 {
 				t.Fatalf("expected empty stdout, got %q", stdout.String())
 			}
-			if got := stderr.String(); got != "No inference snaps found.\n" {
+			if got := stderr.String(); got != "No inference snaps matched the query \"unknown\"\n" {
 				t.Fatalf("unexpected stderr %q", got)
 			}
 		})
 	}
 }
 
-func TestFindInvalidArguments(t *testing.T) {
-	for _, args := range [][]string{nil, {"gemma", "4"}, {""}, {"   "}} {
+func TestFindListsCatalogueWithoutQuery(t *testing.T) {
+	for _, args := range [][]string{nil, {""}, {"   "}, {"", " "}} {
 		t.Run(fmt.Sprint(args), func(t *testing.T) {
-			ctx, stdout, _ := newTestContext()
-			if err := execute(Find(ctx), args...); err == nil {
-				t.Fatal("expected argument error")
+			ctx, stdout, stderr := newTestContext()
+			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[{"snap":"qwen3"},{"snap":"gemma4"}]`)
+			if err := execute(Find(ctx), args...); err != nil {
+				t.Fatal(err)
 			}
-			if stdout.Len() != 0 {
-				t.Fatalf("unexpected output %q", stdout.String())
+			want := fmt.Sprintf("%-8s%-14s%s\n", "NAME", "CAPABILITIES", "OPTIMIZATIONS") +
+				fmt.Sprintf("%-8s%-14s%s\n", "gemma4", "-", "-") +
+				fmt.Sprintf("%-8s%-14s%s\n", "qwen3", "-", "-")
+			if got := stdout.String(); got != want {
+				t.Fatalf("got %q, want %q", got, want)
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("unexpected stderr %q", stderr.String())
 			}
 		})
+	}
+}
+
+func TestFindEmptyCatalogueWithoutQuery(t *testing.T) {
+	ctx, stdout, stderr := newTestContext()
+	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[]`)
+	if err := execute(Find(ctx)); err != nil {
+		t.Fatal(err)
+	}
+	if stdout.Len() != 0 || stderr.String() != "No inference snaps matched the query \"\"\n" {
+		t.Fatalf("unexpected stdout %q, stderr %q", stdout.String(), stderr.String())
 	}
 }
 

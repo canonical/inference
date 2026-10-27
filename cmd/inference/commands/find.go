@@ -23,9 +23,10 @@ type findCommand struct {
 func Find(ctx *common.Context) *cobra.Command {
 	cmd := findCommand{Context: ctx}
 	return &cobra.Command{
-		Use:               "find <query>",
-		Short:             "Find inference snaps in the Snap Store",
-		Args:              cobra.ExactArgs(1),
+		Use:               "find [query]...",
+		Short:             "Search for inference snaps",
+		Long:              "List inference snaps in the catalog or search for a particular one",
+		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
 		RunE:              cmd.run,
@@ -33,31 +34,32 @@ func Find(ctx *common.Context) *cobra.Command {
 }
 
 func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
-	if strings.TrimSpace(args[0]) == "" {
-		return fmt.Errorf("search query must not be empty")
-	}
+	query := strings.TrimSpace(strings.Join(args, " "))
 	entries, err := cmd.SnapCatalog.Read()
 	if err != nil {
 		return err
 	}
-	snaps, err := cmd.SnapdClient.Find(cobraCmd.Context(), args[0])
-	if err != nil {
-		return common.FriendlySnapdError(err)
-	}
-	catalog := make(map[string]snapcatalog.Entry, len(entries))
-	for _, entry := range entries {
-		catalog[entry.SnapName] = entry
-	}
-	rankFindResults(snaps, args[0])
-	var results []snapcatalog.Entry
-	for _, snap := range snaps {
-		if entry, ok := catalog[snap.Name]; ok {
-			results = append(results, entry)
-			delete(catalog, snap.Name)
+	results := entries
+	if query != "" {
+		snaps, err := cmd.SnapdClient.Find(cobraCmd.Context(), query)
+		if err != nil {
+			return common.FriendlySnapdError(err)
+		}
+		catalog := make(map[string]snapcatalog.Entry, len(entries))
+		for _, entry := range entries {
+			catalog[entry.SnapName] = entry
+		}
+		rankFindResults(snaps, query)
+		results = nil
+		for _, snap := range snaps {
+			if entry, ok := catalog[snap.Name]; ok {
+				results = append(results, entry)
+				delete(catalog, snap.Name)
+			}
 		}
 	}
 	if len(results) == 0 {
-		_, err := fmt.Fprintln(cmd.Stderr, "No inference snaps found.")
+		_, err := fmt.Fprintf(cmd.Stderr, "No inference snaps matched the query %q\n", query)
 		return err
 	}
 	output, err := cmd.outputTable(results)
