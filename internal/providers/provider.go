@@ -224,7 +224,7 @@ func readConfiguredProviders(config *config.Config) ([]Provider, error) {
 		p := Provider{
 			Name:       name,
 			Backend:    ProviderBackend(cp.Backend),
-			BaseURL:    cp.BaseUrl,
+			BaseURL:    cp.BaseURL,
 			State:      StateUnknown,
 			Connection: ConnectionNotConnected,
 			Engines:    make([]Engine, 0),
