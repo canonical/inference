@@ -15,7 +15,7 @@ import (
 
 const (
 	Filename = "onboarded-snaps.json"
-	URL      = "http://127.0.0.1:8765/onboarded-snaps.json"
+	URL      = "https://canonical.github.io/inference-snaps-admin/onboarded-snaps.json"
 
 	// EnvVar overrides the default catalog location under SNAP_COMMON.
 	EnvVar = "INFERENCE_SNAPS_CATALOG"
