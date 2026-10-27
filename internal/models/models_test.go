@@ -29,11 +29,11 @@ func TestDiscoverReportsModelsAndErrorsPerProvider(t *testing.T) {
 	defer third.Close()
 
 	list := []providers.Provider{
-		{Name: "gemma4", Type: providers.TypeInferenceSnap, State: providers.StateEnabled, BaseURL: first.URL + "/v1"},
-		{Name: "broken", Type: providers.TypeInferenceSnap, State: providers.StateEnabled, BaseURL: second.URL + "/v1"},
-		{Name: "openai", Type: providers.TypeOpenAI, BaseURL: third.URL + "/v1"},
-		{Name: "unavailable", Type: providers.TypeInferenceSnap},
-		{Name: "disabled", Type: providers.TypeInferenceSnap, State: providers.StateDisabled, BaseURL: second.URL + "/v1"},
+		{Name: "gemma4", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: first.URL + "/v1"},
+		{Name: "broken", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: second.URL + "/v1"},
+		{Name: "openai", Backend: providers.BackendProxy, BaseURL: third.URL + "/v1"},
+		{Name: "unavailable", Backend: providers.BackendSnap},
+		{Name: "disabled", Backend: providers.BackendSnap, State: providers.StateDisabled, BaseURL: second.URL + "/v1"},
 	}
 	got, err := Discover(context.Background(), list, first.Client())
 	if err != nil {
@@ -102,7 +102,7 @@ func TestDiscoverReturnsProviderErrorForBrokenProvider(t *testing.T) {
 	defer server.Close()
 
 	got, err := Discover(context.Background(), []providers.Provider{
-		{Name: "broken", Type: providers.TypeOpenAI, BaseURL: server.URL + "/v1"},
+		{Name: "broken", Backend: providers.BackendProxy, BaseURL: server.URL + "/v1"},
 	}, server.Client())
 
 	if err != nil {

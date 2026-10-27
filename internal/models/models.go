@@ -72,7 +72,7 @@ func Discover(
 		if provider.BaseURL == "" {
 			continue
 		}
-		if provider.Type == providers.TypeInferenceSnap && provider.State != providers.StateEnabled {
+		if provider.Backend == providers.BackendSnap && provider.State != providers.StateEnabled {
 			continue
 		}
 		if provider.Name == "" {
