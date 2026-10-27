@@ -35,6 +35,7 @@ const (
 	ConnectionConnected     ConnectionState = "connected"
 	ConnectionNotApplicable ConnectionState = "not applicable"
 )
+
 //revive:enable:exported
 
 // Engine represents an inference provider's runtime and model details

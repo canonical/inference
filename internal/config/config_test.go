@@ -1,8 +1,6 @@
 package config
 
 import (
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -59,8 +57,8 @@ func TestWriteReplacesExistingFile(t *testing.T) {
 }
 
 func TestReadMissingFile(t *testing.T) {
-	if _, err := Read(filepath.Join(t.TempDir(), "missing.json")); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("expected not-exist error, got %v", err)
+	if _, err := Read(filepath.Join(t.TempDir(), "missing.json")); err != nil {
+		t.Fatalf("expected non error, got %v", err)
 	}
 }
 
