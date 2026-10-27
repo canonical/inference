@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
 
 	"github.com/canonical/inference/cmd/inference/commands"
 	"github.com/canonical/inference/cmd/inference/common"
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
 	"github.com/spf13/cobra"
@@ -22,9 +24,15 @@ const (
 )
 
 func main() {
+	config, err := config.Read(config.ConfigFilePath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to read config:", err)
+		os.Exit(1)
+	}
 	ctx := &common.Context{
 		Stdout:             os.Stdout,
 		Stderr:             os.Stderr,
+		Config:             config,
 		SnapdClient:        snapd.NewClient(),
 		SnapCatalog:        snapcatalog.NewReader(),
 		ShareProvidersPath: shareProvidersPath(),

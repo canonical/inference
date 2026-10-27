@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/canonical/inference/cmd/inference/common"
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/providers"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
@@ -13,11 +14,13 @@ import (
 
 func newTestContext() (*common.Context, *bytes.Buffer, *bytes.Buffer) {
 	var stdout, stderr bytes.Buffer
+	config := config.NewConfig()
 	return &common.Context{
 		Stdout:   &stdout,
 		Stderr:   &stderr,
 		HTTPHost: "127.0.0.1",
 		HTTPPort: "8400",
+		Config:   &config,
 	}, &stdout, &stderr
 }
 

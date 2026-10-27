@@ -85,6 +85,7 @@ type listOptions struct {
 
 func Find(
 	ctx context.Context,
+	config *config.Config,
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
@@ -94,7 +95,7 @@ func Find(
 		return Provider{}, fmt.Errorf("provider name can't be empty")
 	}
 
-	matches, err := list(ctx, catalog, snapdClient, shareProvidersPath, listOptions{Name: name})
+	matches, err := list(ctx, config, catalog, snapdClient, shareProvidersPath, listOptions{Name: name})
 	if err != nil {
 		return Provider{}, err
 	}
@@ -111,24 +112,27 @@ func Find(
 
 func ListInstalled(
 	ctx context.Context,
+	config *config.Config,
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
 ) ([]Provider, error) {
-	return list(ctx, catalog, snapdClient, shareProvidersPath, listOptions{InstalledOnly: true})
+	return list(ctx, config, catalog, snapdClient, shareProvidersPath, listOptions{InstalledOnly: true})
 }
 
 func ListAll(
 	ctx context.Context,
+	config *config.Config,
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
 ) ([]Provider, error) {
-	return list(ctx, catalog, snapdClient, shareProvidersPath, listOptions{})
+	return list(ctx, config, catalog, snapdClient, shareProvidersPath, listOptions{})
 }
 
 func list(
 	ctx context.Context,
+	config *config.Config,
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
@@ -142,7 +146,7 @@ func list(
 		return nil, fmt.Errorf("reading catalog providers: %w", err)
 	}
 
-	configuredProviders, err := readConfiguredProviders()
+	configuredProviders, err := readConfiguredProviders(config)
 	if err != nil {
 		return nil, fmt.Errorf("reading configured providers: %w", err)
 	}
@@ -214,12 +218,7 @@ func list(
 	return result, nil
 }
 
-func readConfiguredProviders() ([]Provider, error) {
-	config, err := config.Read(config.ConfigFilePath)
-	if err != nil {
-		return nil, fmt.Errorf("reading config: %w", err)
-	}
-
+func readConfiguredProviders(config *config.Config) ([]Provider, error) {
 	providers := make([]Provider, 0, len(config.Providers))
 	for name, p := range config.Providers {
 		p := Provider{

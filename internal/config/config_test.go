@@ -56,9 +56,13 @@ func TestWriteReplacesExistingFile(t *testing.T) {
 	}
 }
 
-func TestReadMissingFile(t *testing.T) {
-	if _, err := Read(filepath.Join(t.TempDir(), "missing.json")); err != nil {
-		t.Fatalf("expected non error, got %v", err)
+func TestMissingConfigFileReturnsNewConfig(t *testing.T) {
+	c, err := Read(filepath.Join(t.TempDir(), "missing.json"))
+	if err != nil {
+		t.Fatalf("expected no error for missing config file, got %v", err)
+	}
+	if c == nil {
+		t.Fatal("expected non-nil config for missing config file")
 	}
 }
 

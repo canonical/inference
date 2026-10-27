@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/providers"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
@@ -45,12 +46,14 @@ type upstreamModel struct {
 
 func List(
 	ctx context.Context,
+	config *config.Config,
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
 ) ([]ProviderModels, error) {
 	allProviders, err := providers.ListAll(
 		ctx,
+		config,
 		catalog,
 		snapdClient,
 		shareProvidersPath,
