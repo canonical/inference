@@ -75,3 +75,73 @@ func TestReadInvalidJSON(t *testing.T) {
 		t.Fatal("expected error for invalid JSON")
 	}
 }
+
+func TestSetProviderKeyCanBeReadAfterConfigReload(t *testing.T) {
+	snapData := t.TempDir()
+	t.Setenv("SNAP_DATA", snapData)
+	c := NewConfig()
+	c.Providers["openai"] = Provider{Backend: BackendProxy}
+	key := "test-api-key"
+
+	if err := c.SetProviderKey("openai", &key); err != nil {
+		t.Fatalf("SetProviderKey: %v", err)
+	}
+
+	configPath := filepath.Join(snapData, "config.json")
+	if err := Write(configPath, &c); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	reloaded, err := Read(configPath)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	got, err := reloaded.GetProviderKey("openai")
+	if err != nil {
+		t.Fatalf("GetProviderKey: %v", err)
+	}
+	if got == nil || *got != key {
+		t.Fatalf("GetProviderKey = %v, want %q", got, key)
+	}
+}
+
+func TestAddOpenAIProviderWritesReadableKey(t *testing.T) {
+	t.Setenv("SNAP_DATA", t.TempDir())
+	c := NewConfig()
+	key := "test-api-key"
+
+	if err := c.AddOpenAIProvider("openai", "https://api.openai.com/v1", &key); err != nil {
+		t.Fatalf("AddOpenAIProvider: %v", err)
+	}
+	got, err := c.GetProviderKey("openai")
+	if err != nil {
+		t.Fatalf("GetProviderKey: %v", err)
+	}
+	if got == nil || *got != key {
+		t.Fatalf("GetProviderKey = %v, want %q", got, key)
+	}
+}
+
+func TestSetProviderKeyClearsKey(t *testing.T) {
+	t.Setenv("SNAP_DATA", t.TempDir())
+	c := NewConfig()
+	c.Providers["openai"] = Provider{Backend: BackendProxy}
+
+	if err := c.SetProviderKey("openai", nil); err != nil {
+		t.Fatalf("SetProviderKey without existing key: %v", err)
+	}
+
+	key := "test-api-key"
+	if err := c.SetProviderKey("openai", &key); err != nil {
+		t.Fatalf("SetProviderKey: %v", err)
+	}
+	keyFile := *c.Providers["openai"].KeyFile
+	if err := c.SetProviderKey("openai", nil); err != nil {
+		t.Fatalf("SetProviderKey to clear key: %v", err)
+	}
+	if c.Providers["openai"].KeyFile != nil {
+		t.Fatal("expected KeyFile to be cleared")
+	}
+	if _, err := os.Stat(keyFile); !os.IsNotExist(err) {
+		t.Fatalf("expected key file to be removed, stat error = %v", err)
+	}
+}
