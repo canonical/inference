@@ -5,6 +5,13 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SNAP_NAME: inference
+
 jobs:
   lint:
     runs-on: ubuntu-24.04
@@ -54,3 +61,36 @@ jobs:
       - name: Build snap
         uses: snapcore/action-build@v1
         id: snapcraft
+
+      - name: Upload snap artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.SNAP_NAME }}-${{ runner.arch }}
+          path: ${{ steps.snapcraft.outputs.snap }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [ build ]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Download snap artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ${{ env.SNAP_NAME }}-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Install snapcraft
+        run: sudo snap install snapcraft --classic
+
+      - name: Publish snap
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN }}
+          CHANNEL: latest/edge
+        run: |
+          for snap_file in artifacts/*.snap; do
+            snapcraft upload "$snap_file" --release="$CHANNEL"
+          done
