@@ -99,3 +99,123 @@ func replaceFile(path string, data []byte) error {
 	}
 	return os.Rename(tempPath, path)
 }
+
+func (c *Config) addProvider(name string, provider Provider) error {
+	if name == "" {
+		return fmt.Errorf("provider name cannot be empty")
+	}
+
+	if c.Providers == nil {
+		c.Providers = make(map[string]Provider)
+	}
+
+	if _, exists := c.Providers[name]; exists {
+		return fmt.Errorf("provider %s already exists", name)
+	}
+
+	c.Providers[name] = provider
+	return nil
+}
+
+func (c *Config) AddInferenceSnapProvider(name string, baseUrl string, snap string) error {
+	provider := Provider{
+		Type:    TypeInferenceSnap,
+		BaseUrl: baseUrl,
+		Snap:    &snap,
+		KeyFile: nil,
+	}
+
+	return c.addProvider(name, provider)
+}
+
+func (c *Config) AddOpenAIProvider(name string, baseUrl string, apiKey string) error {
+	keyFilePath := os.ExpandEnv(fmt.Sprintf("$SNAP_DATA/.keys/%s", name))
+	err := os.WriteFile(keyFilePath, []byte(apiKey), 0o600)
+	if err != nil {
+		return fmt.Errorf("writing key file: %w", err)
+	}
+
+	provider := Provider{
+		Type:    TypeOpenAI,
+		BaseUrl: baseUrl,
+		Snap:    nil,
+		KeyFile: &keyFilePath,
+	}
+
+	return c.addProvider(name, provider)
+}
+
+func (c *Config) RemoveProvider(name string) error {
+	if c.Providers == nil {
+		return nil
+	}
+
+	var provider Provider
+	var exists bool
+	if provider, exists = c.Providers[name]; !exists {
+		return fmt.Errorf("provider %s does not exist", name)
+	}
+
+	if provider.KeyFile != nil {
+		if err := os.Remove(*provider.KeyFile); err != nil {
+			return fmt.Errorf("deleting key file: %v", err)
+		}
+	}
+
+	delete(c.Providers, name)
+	return nil
+}
+
+func (c *Config) GetProviderKey(providerName string) (*string, error) {
+	if c.Providers == nil {
+		return nil, fmt.Errorf("provider %s does not exist", providerName)
+	}
+
+	provider, exists := c.Providers[providerName]
+	if !exists {
+		return nil, fmt.Errorf("provider %s does not exist", providerName)
+	}
+
+	if provider.KeyFile == nil {
+		return nil, nil
+	}
+
+	data, err := os.ReadFile(*provider.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("reading key file: %w", err)
+	}
+
+	key := string(data)
+	return &key, nil
+}
+
+func (c *Config) SetProviderKey(providerName string, key *string) error {
+	if c.Providers == nil {
+		return fmt.Errorf("provider %s does not exist", providerName)
+	}
+
+	provider, exists := c.Providers[providerName]
+	if !exists {
+		return fmt.Errorf("provider %s does not exist", providerName)
+	}
+
+	if key == nil && provider.KeyFile != nil {
+		// we are removing an existing key
+		if err := os.Remove(*provider.KeyFile); err != nil {
+			return fmt.Errorf("deleting key file: %v", err)
+		}
+		provider.KeyFile = nil
+		c.Providers[providerName] = provider
+		return nil
+	}
+
+	keyFilePath := os.ExpandEnv(fmt.Sprintf("$SNAP_DATA/.keys/%s", providerName))
+	err := os.WriteFile(keyFilePath, []byte(*key), 0o600)
+	if err != nil {
+		return fmt.Errorf("writing key file: %w", err)
+	}
+
+	provider.KeyFile = &keyFilePath
+	c.Providers[providerName] = provider
+	return nil
+}
