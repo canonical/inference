@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/openaiproxy"
 	"github.com/canonical/inference/internal/providers"
 	"github.com/canonical/inference/internal/snapcatalog"
@@ -60,12 +61,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	config := config.NewConfigReader()
+
 	catalog := snapcatalog.NewReader()
 	go refreshCatalogPeriodically(ctx, catalogRefreshInterval, logger)
 
 	snapdClient := snapd.NewClient()
 	listProviders := func(ctx context.Context) ([]providers.Provider, error) {
-		return providers.ListAll(ctx, catalog, snapdClient, providerRoot)
+		return providers.ListAll(ctx, config, catalog, snapdClient, providerRoot)
 	}
 
 	handler := openaiproxy.NewModelsHandler(listProviders, newUpstreamClient(), logger)

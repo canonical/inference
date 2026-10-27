@@ -15,7 +15,7 @@ import (
 )
 
 func TestFindFiltersStoreResults(t *testing.T) {
-	ctx, stdout, stderr := newTestContext()
+	ctx, stdout, stderr := newTestContext(t)
 	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[
 		{"snap":"qwen3"},
 		{"snap":"aaa-related"},
@@ -185,7 +185,7 @@ func TestFindNoMatches(t *testing.T) {
 		{name: "no catalogue matches", result: `[{"name":"box-linux"}]`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			ctx, stdout, stderr := newTestContext()
+			ctx, stdout, stderr := newTestContext(t)
 			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[{"snap":"gemma4"}]`)
 			socket := filepath.Join(t.TempDir(), "snapd.socket")
 			listener, err := net.Listen("unix", socket)
@@ -221,7 +221,7 @@ func TestFindNoMatches(t *testing.T) {
 func TestFindListsCatalogueWithoutQuery(t *testing.T) {
 	for _, args := range [][]string{nil, {""}, {"   "}, {"", " "}} {
 		t.Run(fmt.Sprint(args), func(t *testing.T) {
-			ctx, stdout, stderr := newTestContext()
+			ctx, stdout, stderr := newTestContext(t)
 			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[{"snap":"qwen3"},{"snap":"gemma4"}]`)
 			if err := execute(Find(ctx), args...); err != nil {
 				t.Fatal(err)
@@ -240,7 +240,7 @@ func TestFindListsCatalogueWithoutQuery(t *testing.T) {
 }
 
 func TestFindEmptyCatalogueWithoutQuery(t *testing.T) {
-	ctx, stdout, stderr := newTestContext()
+	ctx, stdout, stderr := newTestContext(t)
 	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[]`)
 	if err := execute(Find(ctx)); err != nil {
 		t.Fatal(err)
@@ -251,7 +251,7 @@ func TestFindEmptyCatalogueWithoutQuery(t *testing.T) {
 }
 
 func TestFindCatalogError(t *testing.T) {
-	ctx, stdout, _ := newTestContext()
+	ctx, stdout, _ := newTestContext(t)
 	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `{`)
 	err := execute(Find(ctx), "gemma")
 	if err == nil || !strings.Contains(err.Error(), "decoding published snap catalog") {
@@ -263,7 +263,7 @@ func TestFindCatalogError(t *testing.T) {
 }
 
 func TestFindSnapdError(t *testing.T) {
-	ctx, stdout, _ := newTestContext()
+	ctx, stdout, _ := newTestContext(t)
 	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[]`)
 	ctx.SnapdClient = &snapd.Client{Socket: filepath.Join(t.TempDir(), "missing.socket")}
 	if err := execute(Find(ctx), "gemma"); err == nil {

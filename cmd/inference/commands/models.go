@@ -51,6 +51,7 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 
 	providerModels, err := models.List(
 		cobraCmd.Context(),
+		cmd.Config,
 		cmd.SnapCatalog,
 		cmd.SnapdClient,
 		cmd.ShareProvidersPath,

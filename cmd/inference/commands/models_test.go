@@ -85,7 +85,7 @@ func TestModelsCommandWithoutProviders(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ctx, stdout, stderr := newTestContext()
+			ctx, stdout, stderr := newTestContext(t)
 			ctx.SnapCatalog = &snapcatalog.Reader{}
 			err := execute(Models(ctx), test.args...)
 			if err != nil {
@@ -139,7 +139,7 @@ func TestModelsEmptyOutput(t *testing.T) {
 }
 
 func TestModelsPrintsHintWhenSomeProvidersFail(t *testing.T) {
-	ctx, stdout, stderr := newTestContext()
+	ctx, stdout, stderr := newTestContext(t)
 	cmd := &modelsCommand{Context: ctx, format: "table"}
 	err := cmd.printProviderModels([]models.ProviderModels{
 		{ProviderName: "broken", Models: []models.Model{}, Err: errors.New("upstream returned 500")},
@@ -159,7 +159,7 @@ func TestModelsPrintsHintWhenSomeProvidersFail(t *testing.T) {
 }
 
 func TestModelsOmitsHintWhenAllProvidersSucceed(t *testing.T) {
-	ctx, _, stderr := newTestContext()
+	ctx, _, stderr := newTestContext(t)
 	cmd := &modelsCommand{Context: ctx, format: "table"}
 	err := cmd.printProviderModels([]models.ProviderModels{
 		{ProviderName: "gemma4", Models: []models.Model{{PublicID: "gemma4/gemma4-e2b", ProviderName: "gemma4", NativeID: "gemma4-e2b"}}},
@@ -190,7 +190,7 @@ func TestModelsPrintsEmptyListWithHintWhenNoModelCanBeRetrieved(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ctx, stdout, stderr := newTestContext()
+			ctx, stdout, stderr := newTestContext(t)
 			cmd := &modelsCommand{Context: ctx, format: test.format}
 			err := cmd.printProviderModels(failing)
 			if err != nil {

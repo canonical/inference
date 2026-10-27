@@ -8,6 +8,7 @@ import (
 
 	"github.com/canonical/inference/cmd/inference/commands"
 	"github.com/canonical/inference/cmd/inference/common"
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
 	"github.com/spf13/cobra"
@@ -25,6 +26,7 @@ func main() {
 	ctx := &common.Context{
 		Stdout:             os.Stdout,
 		Stderr:             os.Stderr,
+		Config:             config.NewConfigReader(),
 		SnapdClient:        snapd.NewClient(),
 		SnapCatalog:        snapcatalog.NewReader(),
 		ShareProvidersPath: shareProvidersPath(),

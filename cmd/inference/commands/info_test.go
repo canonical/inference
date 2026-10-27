@@ -187,7 +187,7 @@ func TestInfoRendering_InvalidBaseURLReturnsError(t *testing.T) {
 }
 
 func TestInfo_PositionalArgsAreRequired(t *testing.T) {
-	ctx, stdout, _ := newTestContext()
+	ctx, stdout, _ := newTestContext(t)
 
 	if err := execute(Info(ctx)); err == nil {
 		t.Fatal("expected error when no provider name is given")
@@ -198,7 +198,7 @@ func TestInfo_PositionalArgsAreRequired(t *testing.T) {
 }
 
 func TestInfo_TooManyPositionalArgsAreRejected(t *testing.T) {
-	ctx, stdout, _ := newTestContext()
+	ctx, stdout, _ := newTestContext(t)
 
 	if err := execute(Info(ctx), "gemma4", "qwen3"); err == nil {
 		t.Fatal("expected error for more than one positional argument")
@@ -279,7 +279,7 @@ func TestInfo_PrintsProvider(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			ctx, stdout, _ := newTestContext()
+			ctx, stdout, _ := newTestContext(t)
 			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, catalog)
 			ctx.SnapdClient, _ = snapd.NewFakeServer(t, test.statuses)
 
@@ -407,7 +407,7 @@ func TestInfoRendering_ProxyTable(t *testing.T) {
 }
 
 func TestInfo_RejectsInvalidFormat(t *testing.T) {
-	ctx, stdout, _ := newTestContext()
+	ctx, stdout, _ := newTestContext(t)
 
 	for _, format := range []string{"xml", "yaml"} {
 		err := execute(Info(ctx), "gemma4", "--format="+format)
@@ -421,7 +421,7 @@ func TestInfo_RejectsInvalidFormat(t *testing.T) {
 }
 
 func TestInfo_UnknownProvider(t *testing.T) {
-	ctx, stdout, _ := newTestContext()
+	ctx, stdout, _ := newTestContext(t)
 	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[]`)
 	ctx.SnapdClient, _ = snapd.NewFakeServer(t, nil)
 
