@@ -131,12 +131,8 @@ func (c *Config) AddInferenceSnapProvider(name string, baseUrl string, snap stri
 	return c.addProvider(name, provider)
 }
 
-func (c *Config) AddOpenAIProvider(name string, baseUrl string, apiKey string) error {
+func (c *Config) AddOpenAIProvider(name string, baseUrl string, apiKey *string) error {
 	keyFilePath := os.ExpandEnv(fmt.Sprintf("$SNAP_DATA/.keys/%s", name))
-
-	if err := os.MkdirAll(filepath.Dir(keyFilePath), 0o700); err != nil {
-		return fmt.Errorf("creating key file directory: %w", err)
-	}
 
 	provider := Provider{
 		Enabled: true,
@@ -152,9 +148,9 @@ func (c *Config) AddOpenAIProvider(name string, baseUrl string, apiKey string) e
 		return fmt.Errorf("adding provider: %w", err)
 	}
 
-	err = os.WriteFile(keyFilePath, []byte(apiKey), 0o600)
+	err = c.SetProviderKey(name, apiKey)
 	if err != nil {
-		return fmt.Errorf("writing key file: %w", err)
+		return fmt.Errorf("setting provider key: %w", err)
 	}
 
 	return nil
@@ -226,6 +222,9 @@ func (c *Config) SetProviderKey(providerName string, key *string) error {
 		}
 	} else {
 		keyFilePath := os.ExpandEnv(fmt.Sprintf("$SNAP_DATA/.keys/%s", providerName))
+		if err := os.MkdirAll(filepath.Dir(keyFilePath), 0o700); err != nil {
+			return fmt.Errorf("creating key file directory: %w", err)
+		}
 		err := os.WriteFile(keyFilePath, []byte(*key), 0o600)
 		if err != nil {
 			return fmt.Errorf("writing key file: %w", err)
