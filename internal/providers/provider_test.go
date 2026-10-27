@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -112,6 +113,72 @@ func TestList(t *testing.T) {
 			t.Fatalf("expected exactly 1 snapd request, got %d", n)
 		}
 	})
+}
+
+func TestListReadsProvidersFromConfigFile(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	configJSON := `{
+		"version": 1,
+		"discover-providers": false,
+		"providers": {
+			"local": {
+				"enabled": true,
+				"backend": "snap",
+				"base-url": "http://localhost:8326/v1",
+				"snap": "gemma4"
+			},
+			"openai": {
+				"enabled": true,
+				"backend": "proxy",
+				"base-url": "https://api.openai.com/v1",
+				"api": "openai",
+				"key-file": "/var/snap/inference/common/.keys/openai"
+			}
+		}
+	}`
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o644); err != nil {
+		t.Fatalf("writing config file: %v", err)
+	}
+
+	providerConfig, err := config.Read(configPath)
+	if err != nil {
+		t.Fatalf("reading config file: %v", err)
+	}
+	catalog := snapcatalog.WriteFakeCatalog(t, `[
+		{"snap":"local","model_name":"Local","repo_url":"https://example.com/local",
+		 "engines":[{"name":"cpu","runtime":"llamacpp","default_model":"gemma4","models":["gemma4"]}]}
+	]`)
+	client, _ := snapd.NewFakeServer(t, map[string]string{
+		"local": snapd.SnapStatusActive,
+	})
+
+	got, err := ListAll(context.Background(), providerConfig, catalog, client, "")
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	want := []Provider{
+		{
+			Name:       "openai",
+			Backend:    BackendProxy,
+			State:      StateUnknown,
+			Connection: ConnectionNotConnected,
+			BaseURL:    "https://api.openai.com/v1",
+			Engines:    []Engine{},
+		},
+		{
+			Name:       "local",
+			Backend:    BackendSnap,
+			State:      StateEnabled,
+			Connection: ConnectionNotConnected,
+			BaseURL:    "http://localhost:8326/v1",
+			Engines: []Engine{
+				{Name: "cpu", Runtime: "llamacpp", DefaultModel: "gemma4", Models: []string{"gemma4"}},
+			},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
 }
 
 func TestFind(t *testing.T) {
