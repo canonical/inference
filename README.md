@@ -15,31 +15,16 @@ sudo snap install inference
 
 ### Manage providers
 
-To list available providers, run:
+To list providers, run:
 ```
 $ inference providers
-PROVIDER                TYPE            STATE        
-deepseek-r1             inference-snap  not installed
-gemma3                  inference-snap  not installed
-gemma4                  inference-snap  enabled      
-glm-4-7-flash           inference-snap  not installed
-glm-ocr                 inference-snap  not installed
-nemotron-3-5-lightning  inference-snap  not installed
-nemotron-3-nano         inference-snap  not installed
-nemotron-3-nano-omni    inference-snap  not installed
-nomic-embed-text-v1-5   inference-snap  not installed
-qwen-vl                 inference-snap  not installed
-qwen3                   inference-snap  enabled      
-qwen3-5                 inference-snap  not installed
-qwen3-6                 inference-snap  not installed
-qwen3-8                 inference-snap  not installed
-qwen3-coder             inference-snap  not installed
-smollm2                 inference-snap  enabled      
+PROVIDER  TYPE            ENABLED
+gemma4    inference-snap  yes
+qwen3     inference-snap  yes
+smollm2   inference-snap  yes
 
 Hint: run "inference install <provider>" to install providers.
 ```
-
-The command lists all installed providers, along with any inference snaps that are available but not installed.
 
 To show details about a provider, including its state and available engines and models, run:
 ```
