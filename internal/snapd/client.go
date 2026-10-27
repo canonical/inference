@@ -79,7 +79,9 @@ func (c *Client) Find(ctx context.Context, query string) ([]FindResult, error) {
 	if err != nil {
 		return nil, wrapCallErr(err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	env, err := decodeEnvelope(resp)
 	if err != nil {

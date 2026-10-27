@@ -52,7 +52,9 @@ func TestFind(t *testing.T) {
 		if got := r.URL.Query().Get("q"); got != "Gemma 4 & vision" {
 			t.Errorf("unexpected query %q", got)
 		}
-		fmt.Fprint(w, `{"type":"sync","result":[{"name":"gemma4","title":"Gemma 4","summary":"Vision model","description":"Supports text and images"},{"name":"box-linux"},{}]}`)
+		if _, err := fmt.Fprint(w, `{"type":"sync","result":[{"name":"gemma4","title":"Gemma 4","summary":"Vision model","description":"Supports text and images"},{"name":"box-linux"},{}]}`); err != nil {
+			t.Errorf("writing find response: %v", err)
+		}
 	})
 	results, err := (&Client{Socket: socket}).Find(context.Background(), "Gemma 4 & vision")
 	if err != nil {
@@ -80,8 +82,10 @@ func TestFindResponses(t *testing.T) {
 		{name: "invalid json", body: `{`, want: "decoding"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
-				fmt.Fprint(w, test.body)
+			socket := newUnixServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				if _, err := fmt.Fprint(w, test.body); err != nil {
+					t.Errorf("writing find response: %v", err)
+				}
 			})
 			names, err := (&Client{Socket: socket}).Find(context.Background(), "gemma")
 			if test.want != "" {

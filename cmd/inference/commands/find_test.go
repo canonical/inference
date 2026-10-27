@@ -31,9 +31,13 @@ func TestFindFiltersStoreResults(t *testing.T) {
 		if request.URL.Path != "/v2/find" || request.URL.Query().Get("q") != "Gemma 4" {
 			t.Errorf("unexpected request %s", request.URL)
 		}
-		fmt.Fprint(w, `{"type":"sync","result":[{"name":"box-linux"},{"name":"aaa-related","title":"Gemma 4"},{"name":"gemma4"},{"name":"gemma4"}]}`)
+		if _, err := fmt.Fprint(w, `{"type":"sync","result":[{"name":"box-linux"},{"name":"aaa-related","title":"Gemma 4"},{"name":"gemma4"},{"name":"gemma4"}]}`); err != nil {
+			t.Errorf("writing find response: %v", err)
+		}
 	}))
-	server.Listener.Close()
+	if err := server.Listener.Close(); err != nil {
+		t.Fatal(err)
+	}
 	server.Listener = listener
 	server.Start()
 	t.Cleanup(server.Close)
