@@ -11,8 +11,9 @@ import (
 
 func TestModelsOutput(t *testing.T) {
 	list := []models.Model{
-		{PublicID: "openai/gpt4.5"},
-		{PublicID: "gemma4/gemma4-e2b"},
+		{PublicID: "gemma4/gemma4-e2b", ProviderName: "gemma4", NativeID: "gemma4-e2b"},
+		{PublicID: "gemma4/gemma4-e4b", ProviderName: "gemma4", NativeID: "gemma4-e4b"},
+		{PublicID: "openai/gpt4.5", ProviderName: "openai", NativeID: "gpt4.5"},
 	}
 	tests := []struct {
 		name   string
@@ -22,9 +23,10 @@ func TestModelsOutput(t *testing.T) {
 		{
 			name:   "table",
 			format: "table",
-			want: "ID\n" +
-				"openai/gpt4.5\n" +
-				"gemma4/gemma4-e2b\n",
+			want: "PROVIDER  MODEL\n" +
+				"gemma4    gemma4-e2b\n" +
+				"          gemma4-e4b\n" +
+				"openai    gpt4.5\n",
 		},
 		{
 			name:   "json",
@@ -32,10 +34,19 @@ func TestModelsOutput(t *testing.T) {
 			want: "{\n" +
 				"  \"models\": [\n" +
 				"    {\n" +
-				"      \"id\": \"openai/gpt4.5\"\n" +
+				"      \"id\": \"gemma4/gemma4-e2b\",\n" +
+				"      \"provider\": \"gemma4\",\n" +
+				"      \"model\": \"gemma4-e2b\"\n" +
 				"    },\n" +
 				"    {\n" +
-				"      \"id\": \"gemma4/gemma4-e2b\"\n" +
+				"      \"id\": \"gemma4/gemma4-e4b\",\n" +
+				"      \"provider\": \"gemma4\",\n" +
+				"      \"model\": \"gemma4-e4b\"\n" +
+				"    },\n" +
+				"    {\n" +
+				"      \"id\": \"openai/gpt4.5\",\n" +
+				"      \"provider\": \"openai\",\n" +
+				"      \"model\": \"gpt4.5\"\n" +
 				"    }\n" +
 				"  ]\n" +
 				"}\n",
@@ -68,7 +79,7 @@ func TestModelsCommandWithoutProviders(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "table", want: "ID\n"},
+		{name: "table", want: "PROVIDER  MODEL\n"},
 		{name: "json", args: []string{"--format=json"}, want: "{\n  \"models\": []\n}\n"},
 	}
 
@@ -117,7 +128,7 @@ func TestModelsEmptyOutput(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := "ID\n"
+		want := "PROVIDER  MODEL\n"
 		if format == "json" {
 			want = "{\n  \"models\": []\n}\n"
 		}
@@ -132,13 +143,13 @@ func TestModelsPrintsHintWhenSomeProvidersFail(t *testing.T) {
 	cmd := &modelsCommand{Context: ctx, format: "table"}
 	err := cmd.printProviderModels([]models.ProviderModels{
 		{ProviderName: "broken", Models: []models.Model{}, Err: errors.New("upstream returned 500")},
-		{ProviderName: "gemma4", Models: []models.Model{{PublicID: "gemma4/gemma4-e2b"}}},
+		{ProviderName: "gemma4", Models: []models.Model{{PublicID: "gemma4/gemma4-e2b", ProviderName: "gemma4", NativeID: "gemma4-e2b"}}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if want := "ID\ngemma4/gemma4-e2b\n"; stdout.String() != want {
+	if want := "PROVIDER  MODEL\ngemma4    gemma4-e2b\n"; stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 	}
 	wantHint := "\nHint: Unable to retrieve models from some providers. Run \"inference status\" for details.\n"
@@ -151,7 +162,7 @@ func TestModelsOmitsHintWhenAllProvidersSucceed(t *testing.T) {
 	ctx, _, stderr := newTestContext()
 	cmd := &modelsCommand{Context: ctx, format: "table"}
 	err := cmd.printProviderModels([]models.ProviderModels{
-		{ProviderName: "gemma4", Models: []models.Model{{PublicID: "gemma4/gemma4-e2b"}}},
+		{ProviderName: "gemma4", Models: []models.Model{{PublicID: "gemma4/gemma4-e2b", ProviderName: "gemma4", NativeID: "gemma4-e2b"}}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -173,7 +184,7 @@ func TestModelsPrintsEmptyListWithHintWhenNoModelCanBeRetrieved(t *testing.T) {
 		format string
 		want   string
 	}{
-		{name: "table", format: "table", want: "ID\n"},
+		{name: "table", format: "table", want: "PROVIDER  MODEL\n"},
 		{name: "json", format: "json", want: "{\n  \"models\": []\n}\n"},
 	}
 
