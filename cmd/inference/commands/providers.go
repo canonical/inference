@@ -152,5 +152,6 @@ func (cmd *providersCommand) outputTable(list []providers.Provider) (string, err
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}
-	return strings.Join(lines, "\n"), nil
+	return strings.Join(lines, "\n") + "\n" +
+		`Hint: run “inference find <keyword>” to find other inference snaps.` + "\n", nil
 }
