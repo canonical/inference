@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
 )
@@ -35,6 +36,7 @@ const (
 	ConnectionConnected     ConnectionState = "connected"
 	ConnectionNotApplicable ConnectionState = "not applicable"
 )
+
 //revive:enable:exported
 
 //revive:enable:exported
@@ -137,25 +139,42 @@ func list(
 	if errors.Is(err, snapcatalog.ErrNotConfigured) || errors.Is(err, os.ErrNotExist) {
 		catalogProviders = []Provider{}
 	} else if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading catalog providers: %w", err)
 	}
 
-	connectedProviders, err := ConnectedSnapProviders(shareProvidersPath)
+	configuredProviders, err := readConfiguredProviders()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading configured providers: %w", err)
 	}
 
-	configuredProviders, err := ConfiguredOpenAIProviders(ctx)
+	connectedSnapProviders, err := ConnectedSnapProviders(shareProvidersPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading configured OpenAI providers: %w", err)
+		return nil, fmt.Errorf("reading connected providers: %w", err)
 	}
 
 	// Union catalog and connected inference snap providers
 	merged := make(map[ProviderIdentity]Provider)
-	for _, provider := range catalogProviders {
+
+	for _, provider := range configuredProviders {
 		merged[provider.Identity()] = provider
 	}
-	for _, provider := range connectedProviders {
+
+	for _, provider := range catalogProviders {
+		key := provider.Identity()
+		existing, exists := merged[key]
+		isSnap := provider.Backend == BackendSnap
+
+		if exists && isSnap {
+			// merge info from catalog
+			existing.Engines = provider.Engines
+			merged[key] = existing
+			continue
+		}
+
+		merged[key] = provider
+	}
+
+	for _, provider := range connectedSnapProviders {
 		key := provider.Identity()
 		if existing, ok := merged[key]; ok {
 			existing.Connection = provider.Connection
@@ -164,9 +183,6 @@ func list(
 			continue
 		}
 		merged[key] = provider
-	}
-	for _, provider := range configuredProviders {
-		merged[provider.Identity()] = provider
 	}
 
 	// Add snap state and optionally filter for only installed providers
@@ -196,6 +212,27 @@ func list(
 		return result[i].Backend < result[j].Backend
 	})
 	return result, nil
+}
+
+func readConfiguredProviders() ([]Provider, error) {
+	config, err := config.Read(config.ConfigFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+
+	providers := make([]Provider, 0, len(config.Providers))
+	for name, p := range config.Providers {
+		p := Provider{
+			Name:       name,
+			Backend:    ProviderBackend(p.Backend),
+			BaseURL:    p.BaseUrl,
+			State:      StateUnknown,
+			Connection: ConnectionNotConnected,
+			Engines:    make([]Engine, 0),
+		}
+		providers = append(providers, p)
+	}
+	return providers, nil
 }
 
 func snapProviderLifecycleState(ctx context.Context, snapdClient *snapd.Client, name string) (LifecycleState, error) {
