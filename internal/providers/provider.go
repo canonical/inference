@@ -35,6 +35,7 @@ const (
 	ConnectionConnected     ConnectionState = "connected"
 	ConnectionNotApplicable ConnectionState = "not applicable"
 )
+//revive:enable:exported
 
 //revive:enable:exported
 
