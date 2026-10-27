@@ -46,9 +46,9 @@ func TestFindFiltersStoreResults(t *testing.T) {
 	if err := execute(Find(ctx), "Gemma 4"); err != nil {
 		t.Fatal(err)
 	}
-	want := fmt.Sprintf("%-13s%-55s%s\n", "NAME", "OPTIMIZATIONS", "CAPABILITIES") +
-		fmt.Sprintf("%-13s%-55s%s\n", "gemma4", "cpu, nvidia-gpu", "text, vision") +
-		fmt.Sprintf("%-13s%-55s%s\n", "aaa-related", "-", "-")
+	want := fmt.Sprintf("%-13s%-17s%s\n", "NAME", "OPTIMIZATIONS", "CAPABILITIES") +
+		fmt.Sprintf("%-13s%-17s%s\n", "gemma4", "cpu, nvidia-gpu", "text, vision") +
+		fmt.Sprintf("%-13s%-17s%s\n", "aaa-related", "-", "-")
 	if got := stdout.String(); got != want {
 		t.Fatalf("got:\n%q\nwant:\n%q", got, want)
 	}
@@ -118,8 +118,8 @@ func TestFindTableMissingMetadata(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := fmt.Sprintf("%-8s%-60s%s\n", "NAME", "OPTIMIZATIONS", "CAPABILITIES") +
-			fmt.Sprintf("%-8s%-60s%s\n", "gemma4", "-", "-")
+		want := fmt.Sprintf("%-8s%-15s%s\n", "NAME", "OPTIMIZATIONS", "CAPABILITIES") +
+			fmt.Sprintf("%-8s%-15s%s\n", "gemma4", "-", "-")
 		if got != want {
 			t.Fatalf("got %q, want %q", got, want)
 		}
@@ -169,13 +169,45 @@ func TestFindTableWidth(t *testing.T) {
 	}
 }
 
-func TestFindTableNoMatches(t *testing.T) {
-	got, err := (&findCommand{}).outputTable(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != fmt.Sprintf("%-6s%-62s%s\n", "NAME", "OPTIMIZATIONS", "CAPABILITIES") {
-		t.Fatalf("unexpected empty output %q", got)
+func TestFindNoMatches(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		result string
+	}{
+		{name: "empty store results", result: `[]`},
+		{name: "no catalogue matches", result: `[{"name":"box-linux"}]`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, stdout, stderr := newTestContext()
+			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[{"snap":"gemma4"}]`)
+			socket := filepath.Join(t.TempDir(), "snapd.socket")
+			listener, err := net.Listen("unix", socket)
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if _, err := fmt.Fprintf(w, `{"type":"sync","result":%s}`, test.result); err != nil {
+					t.Errorf("writing find response: %v", err)
+				}
+			}))
+			if err := server.Listener.Close(); err != nil {
+				t.Fatal(err)
+			}
+			server.Listener = listener
+			server.Start()
+			t.Cleanup(server.Close)
+			ctx.SnapdClient = &snapd.Client{Socket: socket}
+
+			if err := execute(Find(ctx), "unknown"); err != nil {
+				t.Fatalf("expected successful empty search: %v", err)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("expected empty stdout, got %q", stdout.String())
+			}
+			if got := stderr.String(); got != "No inference snaps found.\n" {
+				t.Fatalf("unexpected stderr %q", got)
+			}
+		})
 	}
 }
 

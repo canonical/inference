@@ -56,6 +56,10 @@ func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
 			delete(catalog, snap.Name)
 		}
 	}
+	if len(results) == 0 {
+		_, err := fmt.Fprintln(cmd.Stderr, "No inference snaps found.")
+		return err
+	}
 	output, err := cmd.outputTable(results)
 	if err != nil {
 		return err
@@ -96,6 +100,7 @@ func findMatchCounts(result snapd.FindResult, words []string) [4]int {
 func (cmd *findCommand) outputTable(entries []snapcatalog.Entry) (string, error) {
 	headers := []string{"NAME", "OPTIMIZATIONS", "CAPABILITIES"}
 	nameMaxLen := len(headers[0])
+	optimizationsMaxLen := len(headers[1])
 	capabilitiesMaxLen := len(headers[2])
 	rows := make([][]string, 0, len(entries))
 	for _, entry := range entries {
@@ -121,6 +126,7 @@ func (cmd *findCommand) outputTable(entries []snapcatalog.Entry) (string, error)
 			capabilityText = "-"
 		}
 		nameMaxLen = max(nameMaxLen, len(entry.SnapName))
+		optimizationsMaxLen = max(optimizationsMaxLen, len(optimizationText))
 		capabilitiesMaxLen = max(capabilitiesMaxLen, len(capabilityText))
 		rows = append(rows, []string{entry.SnapName, optimizationText, capabilityText})
 	}
@@ -129,7 +135,7 @@ func (cmd *findCommand) outputTable(entries []snapcatalog.Entry) (string, error)
 	capabilitiesMinWidth := len(headers[2]) + 1
 	nameWidth := min(nameMaxLen+1, tableMaxWidth-optimizationsMinWidth-capabilitiesMinWidth)
 	capabilitiesWidth := min(capabilitiesMaxLen+1, tableMaxWidth-nameWidth-optimizationsMinWidth)
-	optimizationsWidth := tableMaxWidth - nameWidth - capabilitiesWidth
+	optimizationsWidth := min(optimizationsMaxLen+2, tableMaxWidth-nameWidth-capabilitiesWidth)
 	var output bytes.Buffer
 	padding := tw.CellPadding{PerColumn: []tw.Padding{
 		{Overwrite: true, Right: " "},
