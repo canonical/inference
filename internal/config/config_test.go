@@ -1,11 +1,30 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 )
+
+func TestProviderJSONContract(t *testing.T) {
+	const data = `{"enabled":true,"backend":"proxy","base-url":"https://api.openai.com/v1","api":"openai"}`
+	var provider Provider
+	if err := json.Unmarshal([]byte(data), &provider); err != nil {
+		t.Fatal(err)
+	}
+	if provider.BaseURL != "https://api.openai.com/v1" || provider.API == nil || *provider.API != "openai" {
+		t.Fatalf("unexpected provider connection settings: %+v", provider)
+	}
+	got, err := json.Marshal(provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != data {
+		t.Fatalf("got JSON %s, want %s", got, data)
+	}
+}
 
 func TestWriteThenReadRoundTrips(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
@@ -15,8 +34,8 @@ func TestWriteThenReadRoundTrips(t *testing.T) {
 		Version:           1,
 		DiscoverProviders: true,
 		Providers: map[string]Provider{
-			"local":  {Backend: BackendSnap, BaseUrl: "http://localhost:8326/v1", Snap: &snap},
-			"remote": {Backend: BackendProxy, BaseUrl: "https://api.openai.com/v1", KeyFile: &keyFile},
+			"local":  {Backend: BackendSnap, BaseURL: "http://localhost:8326/v1", Snap: &snap},
+			"remote": {Backend: BackendProxy, BaseURL: "https://api.openai.com/v1", KeyFile: &keyFile},
 		},
 	}
 
@@ -63,6 +82,26 @@ func TestMissingConfigFileReturnsNewConfig(t *testing.T) {
 	}
 	if c == nil {
 		t.Fatal("expected non-nil config for missing config file")
+	}
+}
+
+func TestWriteCleansUpTemporaryFileOnRenameFailure(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Write(path, &Config{Version: 1}); err == nil {
+		t.Fatal("expected error when replacing a directory")
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "config.json" || !entries[0].IsDir() {
+		t.Fatalf("expected only the original directory, got %v", entries)
 	}
 }
 
