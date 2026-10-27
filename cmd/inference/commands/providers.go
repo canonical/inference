@@ -17,14 +17,13 @@ import (
 
 type providersCommand struct {
 	*common.Context
-	format    string
-	installed bool
+	format string
 }
 
 type providerJSON struct {
-	Name  string `json:"provider"`
-	Type  string `json:"type"`
-	State string `json:"state"`
+	Name    string `json:"provider"`
+	Type    string `json:"type"`
+	Enabled bool   `json:"enabled"`
 }
 
 type providersJSONOutput struct {
@@ -36,14 +35,13 @@ func Providers(ctx *common.Context) *cobra.Command {
 	cobraCmd := &cobra.Command{
 		Use:               "providers",
 		Short:             "List inference providers",
-		Long:              "List available inference providers and whether they are installed.",
+		Long:              "List inference providers and whether they are enabled.",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
 		RunE:              cmd.run,
 	}
 	cobraCmd.Flags().StringVar(&cmd.format, "format", "table", "output format [table|json]")
-	cobraCmd.Flags().BoolVar(&cmd.installed, "installed", false, "only show providers that are installed")
 	return cobraCmd
 }
 
@@ -52,23 +50,12 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	var list []providers.Provider
-	var err error
-	if cmd.installed {
-		list, err = providers.ListInstalled(
-			cobraCmd.Context(),
-			cmd.SnapCatalog,
-			cmd.SnapdClient,
-			cmd.ShareProvidersPath,
-		)
-	} else {
-		list, err = providers.ListAll(
-			cobraCmd.Context(),
-			cmd.SnapCatalog,
-			cmd.SnapdClient,
-			cmd.ShareProvidersPath,
-		)
-	}
+	list, err := providers.ListInstalled(
+		cobraCmd.Context(),
+		cmd.SnapCatalog,
+		cmd.SnapdClient,
+		cmd.ShareProvidersPath,
+	)
 	if err != nil {
 		return common.FriendlySnapdError(err)
 	}
@@ -96,9 +83,9 @@ func (cmd *providersCommand) outputJSON(list []providers.Provider) (string, erro
 	result := providersJSONOutput{Providers: make([]providerJSON, len(list))}
 	for i, p := range list {
 		result.Providers[i] = providerJSON{
-			Name:  p.Name,
-			Type:  string(p.Type),
-			State: string(p.State),
+			Name:    p.Name,
+			Type:    string(p.Type),
+			Enabled: p.State == providers.StateEnabled,
 		}
 	}
 	if err := encoder.Encode(result); err != nil {
@@ -142,14 +129,14 @@ func (cmd *providersCommand) outputTable(list []providers.Provider) (string, err
 			},
 		}),
 	)
-	table.Header([]string{"PROVIDER", "TYPE", "STATE"})
-	showHint := false
+	table.Header([]string{"PROVIDER", "TYPE", "ENABLED"})
 	for _, p := range list {
-		if err := table.Append([]string{p.Name, string(p.Type), string(p.State)}); err != nil {
-			return "", err
+		enabled := "no"
+		if p.State == providers.StateEnabled {
+			enabled = "yes"
 		}
-		if !p.Installed() {
-			showHint = true
+		if err := table.Append([]string{p.Name, string(p.Type), enabled}); err != nil {
+			return "", err
 		}
 	}
 	if err := table.Render(); err != nil {
@@ -159,9 +146,6 @@ func (cmd *providersCommand) outputTable(list []providers.Provider) (string, err
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}
-	result := strings.Join(lines, "\n")
-	if showHint {
-		result += "\n" + `Hint: run "inference install <provider>" to install providers.` + "\n"
-	}
-	return result, nil
+	return strings.Join(lines, "\n") + "\n" +
+		`Hint: run "inference install <provider>" to install providers.` + "\n", nil
 }

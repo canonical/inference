@@ -29,7 +29,7 @@ func execute(cmd *cobra.Command, args ...string) error {
 func TestProviders_TableExactOutput(t *testing.T) {
 	list := []providers.Provider{
 		{Name: "gemma4", Type: providers.TypeInferenceSnap, State: providers.StateEnabled},
-		{Name: "qwen3", Type: providers.TypeInferenceSnap, State: providers.StateNotInstalled},
+		{Name: "qwen3", Type: providers.TypeInferenceSnap, State: providers.StateDisabled},
 	}
 	cmd := &providersCommand{}
 	got, err := cmd.outputTable(list)
@@ -37,9 +37,9 @@ func TestProviders_TableExactOutput(t *testing.T) {
 		t.Fatalf("render table: %v", err)
 	}
 
-	want := "PROVIDER  TYPE            STATE\n" +
-		"gemma4    inference-snap  enabled\n" +
-		"qwen3     inference-snap  not installed\n" +
+	want := "PROVIDER  TYPE            ENABLED\n" +
+		"gemma4    inference-snap  yes\n" +
+		"qwen3     inference-snap  no\n" +
 		"\n" +
 		`Hint: run "inference install <provider>" to install providers.` + "\n"
 	if got != want {
@@ -47,21 +47,22 @@ func TestProviders_TableExactOutput(t *testing.T) {
 	}
 }
 
-func TestProviders_TableNoHintWhenAllInstalled(t *testing.T) {
+func TestProviders_TableHintWhenAllInstalled(t *testing.T) {
 	list := []providers.Provider{{Name: "gemma4", Type: providers.TypeInferenceSnap, State: providers.StateEnabled}}
 	cmd := &providersCommand{}
 	got, err := cmd.outputTable(list)
 	if err != nil {
 		t.Fatalf("render table: %v", err)
 	}
-	if bytes.Contains([]byte(got), []byte("Hint:")) {
-		t.Fatalf("did not expect a hint, got:\n%s", got)
+	if !bytes.Contains([]byte(got), []byte(`Hint: run "inference install <provider>" to install providers.`)) {
+		t.Fatalf("expected installation hint, got:\n%s", got)
 	}
 }
 
 func TestProviders_JSONExactOutput(t *testing.T) {
 	list := []providers.Provider{
 		{Name: "gemma4", Type: providers.TypeInferenceSnap, State: providers.StateEnabled},
+		{Name: "qwen3", Type: providers.TypeInferenceSnap, State: providers.StateDisabled},
 	}
 	cmd := &providersCommand{}
 	got, err := cmd.outputJSON(list)
@@ -74,7 +75,12 @@ func TestProviders_JSONExactOutput(t *testing.T) {
     {
       "provider": "gemma4",
       "type": "inference-snap",
-      "state": "enabled"
+      "enabled": true
+    },
+    {
+      "provider": "qwen3",
+      "type": "inference-snap",
+      "enabled": false
     }
   ]
 }
@@ -121,35 +127,53 @@ func TestProviders_PositionalArgsAreRejected(t *testing.T) {
 	}
 }
 
-func TestProviders_CatalogProvidersShownByDefault(t *testing.T) {
-	ctx, stdout, _ := newTestContext()
-	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[
-		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"}
-	]`)
-	ctx.SnapdClient, _ = snapd.NewFakeServer(t, nil)
+func TestProviders_OnlyInstalledProviders(t *testing.T) {
+	for _, format := range []string{"table", "json"} {
+		t.Run(format, func(t *testing.T) {
+			ctx, stdout, _ := newTestContext()
+			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[
+				{"snap":"gemma4","model_name":"Gemma 4"},
+				{"snap":"qwen3","model_name":"Qwen 3"},
+				{"snap":"smollm2","model_name":"SmolLM2"}
+			]`)
+			ctx.SnapdClient, _ = snapd.NewFakeServer(t, map[string]string{
+				"gemma4": snapd.SnapStatusActive,
+				"qwen3":  snapd.SnapStatusInstalled,
+			})
 
-	if err := execute(Providers(ctx)); err != nil {
-		t.Fatalf("Providers: %v", err)
-	}
-	if !bytes.Contains(stdout.Bytes(), []byte("gemma4")) {
-		t.Fatalf("expected catalog provider in output, got:\n%s", stdout.String())
-	}
-	if !bytes.Contains(stdout.Bytes(), []byte("not installed")) {
-		t.Fatalf("expected catalog provider state in output, got:\n%s", stdout.String())
+			if err := execute(Providers(ctx), "--format="+format); err != nil {
+				t.Fatalf("Providers: %v", err)
+			}
+			for _, name := range []string{"gemma4", "qwen3"} {
+				if !bytes.Contains(stdout.Bytes(), []byte(name)) {
+					t.Fatalf("expected installed provider %q in output, got:\n%s", name, stdout.String())
+				}
+			}
+			if bytes.Contains(stdout.Bytes(), []byte("smollm2")) {
+				t.Fatalf("did not expect catalog-only provider in output, got:\n%s", stdout.String())
+			}
+		})
 	}
 }
 
-func TestProviders_InstalledExcludesCatalogOnlyProviders(t *testing.T) {
-	ctx, stdout, _ := newTestContext()
-	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[
-		{"snap":"gemma4","model_name":"Gemma 4","full_name":"canonical/gemma4","html_url":"https://example.com/gemma4"}
-	]`)
-	ctx.SnapdClient, _ = snapd.NewFakeServer(t, nil)
+func TestProviders_NoInstalledProviders(t *testing.T) {
+	for _, format := range []string{"table", "json"} {
+		t.Run(format, func(t *testing.T) {
+			ctx, stdout, _ := newTestContext()
+			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[{"snap":"gemma4","model_name":"Gemma 4"}]`)
+			ctx.SnapdClient, _ = snapd.NewFakeServer(t, nil)
 
-	if err := execute(Providers(ctx), "--installed"); err != nil {
-		t.Fatalf("Providers: %v", err)
-	}
-	if bytes.Contains(stdout.Bytes(), []byte("gemma4")) {
-		t.Fatalf("did not expect catalog-only provider in output, got:\n%s", stdout.String())
+			if err := execute(Providers(ctx), "--format="+format); err != nil {
+				t.Fatalf("Providers: %v", err)
+			}
+			want := "PROVIDER  TYPE  ENABLED\n\n" +
+				`Hint: run "inference install <provider>" to install providers.` + "\n"
+			if format == "json" {
+				want = "{\n  \"providers\": []\n}\n"
+			}
+			if got := stdout.String(); got != want {
+				t.Fatalf("got:\n%q\nwant:\n%q", got, want)
+			}
+		})
 	}
 }
