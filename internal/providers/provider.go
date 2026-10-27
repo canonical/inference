@@ -220,15 +220,24 @@ func list(
 
 func readConfiguredProviders(config *config.Config) ([]Provider, error) {
 	providers := make([]Provider, 0, len(config.Providers))
-	for name, p := range config.Providers {
+	for name, cp := range config.Providers {
 		p := Provider{
 			Name:       name,
-			Backend:    ProviderBackend(p.Backend),
-			BaseURL:    p.BaseUrl,
+			Backend:    ProviderBackend(cp.Backend),
+			BaseURL:    cp.BaseUrl,
 			State:      StateUnknown,
 			Connection: ConnectionNotConnected,
 			Engines:    make([]Engine, 0),
 		}
+
+		if p.Backend == BackendProxy {
+			if cp.Enabled {
+				p.State = StateEnabled
+			} else {
+				p.State = StateDisabled
+			}
+		}
+
 		providers = append(providers, p)
 	}
 	return providers, nil
