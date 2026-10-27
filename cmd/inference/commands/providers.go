@@ -147,5 +147,5 @@ func (cmd *providersCommand) outputTable(list []providers.Provider) (string, err
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}
 	return strings.Join(lines, "\n") + "\n" +
-		`Hint: run "inference install <provider>" to install providers.` + "\n", nil
+		`Hint: run “inference find <keyword>” to find other inference snaps.` + "\n", nil
 }
