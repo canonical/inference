@@ -214,23 +214,25 @@ func (c *Config) SetProviderKey(providerName string, key *string) error {
 		return fmt.Errorf("provider %s does not exist", providerName)
 	}
 
-	if key == nil && provider.KeyFile != nil {
-		// we are removing an existing key
-		if err := os.Remove(*provider.KeyFile); err != nil {
-			return fmt.Errorf("deleting key file: %v", err)
+	if key == nil {
+		// remove existing key (if any)
+		if provider.KeyFile != nil {
+			// we are removing an existing key
+			if err := os.Remove(*provider.KeyFile); err != nil {
+				return fmt.Errorf("deleting key file: %v", err)
+			}
+			provider.KeyFile = nil
+			c.Providers[providerName] = provider
 		}
-		provider.KeyFile = nil
-		c.Providers[providerName] = provider
-		return nil
+	} else {
+		keyFilePath := os.ExpandEnv(fmt.Sprintf("$SNAP_DATA/.keys/%s", providerName))
+		err := os.WriteFile(keyFilePath, []byte(*key), 0o600)
+		if err != nil {
+			return fmt.Errorf("writing key file: %w", err)
+		}
+		provider.KeyFile = &keyFilePath
 	}
 
-	keyFilePath := os.ExpandEnv(fmt.Sprintf("$SNAP_DATA/.keys/%s", providerName))
-	err := os.WriteFile(keyFilePath, []byte(*key), 0o600)
-	if err != nil {
-		return fmt.Errorf("writing key file: %w", err)
-	}
-
-	provider.KeyFile = &keyFilePath
 	c.Providers[providerName] = provider
 	return nil
 }
