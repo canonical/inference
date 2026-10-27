@@ -66,7 +66,10 @@ func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprint(cmd.Stdout, output)
+	if _, err := fmt.Fprint(cmd.Stdout, output); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(cmd.Stderr, "\n"+`Hint: run “inference info <name>” for details.`)
 	return err
 }
 
@@ -168,6 +171,5 @@ func (cmd *findCommand) outputTable(entries []snapcatalog.Entry) (string, error)
 	for index := range lines {
 		lines[index] = strings.TrimRight(lines[index], " ")
 	}
-	return strings.Join(lines, "\n") + "\n" +
-		`Hint: run “inference info <name>” for details.` + "\n", nil
+	return strings.Join(lines, "\n"), nil
 }

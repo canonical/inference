@@ -15,7 +15,7 @@ import (
 )
 
 func TestFindFiltersStoreResults(t *testing.T) {
-	ctx, stdout, _ := newTestContext()
+	ctx, stdout, stderr := newTestContext()
 	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[
 		{"snap":"qwen3"},
 		{"snap":"aaa-related"},
@@ -45,15 +45,18 @@ func TestFindFiltersStoreResults(t *testing.T) {
 
 	want := fmt.Sprintf("%-13s%s\n", "NAME", "CAPABILITIES") +
 		fmt.Sprintf("%-13s%s\n", "gemma4", "text, vision") +
-		fmt.Sprintf("%-13s%s\n", "aaa-related", "-") +
-		"\n" + `Hint: run “inference info <name>” for details.` + "\n"
+		fmt.Sprintf("%-13s%s\n", "aaa-related", "-")
 	for _, args := range [][]string{{"Gemma 4"}, {"Gemma", "4"}} {
 		stdout.Reset()
+		stderr.Reset()
 		if err := execute(Find(ctx), args...); err != nil {
 			t.Fatal(err)
 		}
 		if got := stdout.String(); got != want {
 			t.Fatalf("args %q: got:\n%q\nwant:\n%q", args, got, want)
+		}
+		if got := stderr.String(); got != "\n"+`Hint: run “inference info <name>” for details.`+"\n" {
+			t.Fatalf("unexpected stderr %q", got)
 		}
 	}
 }
@@ -123,8 +126,7 @@ func TestFindTableMissingMetadata(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := fmt.Sprintf("%-8s%s\n", "NAME", "CAPABILITIES") +
-			fmt.Sprintf("%-8s%s\n", "gemma4", "-") +
-			"\n" + `Hint: run “inference info <name>” for details.` + "\n"
+			fmt.Sprintf("%-8s%s\n", "gemma4", "-")
 		if got != want {
 			t.Fatalf("got %q, want %q", got, want)
 		}
@@ -161,11 +163,7 @@ func TestFindTableWidth(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			table, hint, ok := strings.Cut(got, "\n\n")
-			if !ok || hint != `Hint: run “inference info <name>” for details.`+"\n" {
-				t.Fatalf("unexpected hint in output %q", got)
-			}
-			lines := strings.Split(table, "\n")
+			lines := strings.Split(strings.TrimSuffix(got, "\n"), "\n")
 			if len(lines) != 2 {
 				t.Fatalf("expected header and one truncated row, got %q", got)
 			}
@@ -230,13 +228,12 @@ func TestFindListsCatalogueWithoutQuery(t *testing.T) {
 			}
 			want := fmt.Sprintf("%-8s%s\n", "NAME", "CAPABILITIES") +
 				fmt.Sprintf("%-8s%s\n", "gemma4", "-") +
-				fmt.Sprintf("%-8s%s\n", "qwen3", "-") +
-				"\n" + `Hint: run “inference info <name>” for details.` + "\n"
+				fmt.Sprintf("%-8s%s\n", "qwen3", "-")
 			if got := stdout.String(); got != want {
 				t.Fatalf("got %q, want %q", got, want)
 			}
-			if stderr.Len() != 0 {
-				t.Fatalf("unexpected stderr %q", stderr.String())
+			if got := stderr.String(); got != "\n"+`Hint: run “inference info <name>” for details.`+"\n" {
+				t.Fatalf("unexpected stderr %q", got)
 			}
 		})
 	}
