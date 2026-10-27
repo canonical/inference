@@ -41,7 +41,7 @@ func TestProviders_TableExactOutput(t *testing.T) {
 		"gemma4    snap     yes\n" +
 		"qwen3     snap     no\n" +
 		"\n" +
-		`Hint: run “inference find <keyword>” to find other inference snaps.` + "\n"
+		`Hint: run "inference find <keyword>" to find other inference snaps.` + "\n"
 	if got != want {
 		t.Fatalf("got:\n%q\nwant:\n%q", got, want)
 	}
@@ -54,7 +54,7 @@ func TestProviders_TableHintWhenAllInstalled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render table: %v", err)
 	}
-	if !bytes.Contains([]byte(got), []byte(`Hint: run “inference find <keyword>” to find other inference snaps.`)) {
+	if !bytes.Contains([]byte(got), []byte(`Hint: run "inference find <keyword>" to find other inference snaps.`)) {
 		t.Fatalf("expected discovery hint, got:\n%s", got)
 	}
 }
@@ -167,7 +167,7 @@ func TestProviders_NoInstalledProviders(t *testing.T) {
 				t.Fatalf("Providers: %v", err)
 			}
 			want := "PROVIDER  BACKEND  ENABLED\n\n" +
-				`Hint: run “inference find <keyword>” to find other inference snaps.` + "\n"
+				`Hint: run "inference find <keyword>" to find other inference snaps.` + "\n"
 			if format == "json" {
 				want = "{\n  \"providers\": []\n}\n"
 			}
