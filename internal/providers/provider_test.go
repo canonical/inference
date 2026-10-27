@@ -160,7 +160,7 @@ func TestListReadsProvidersFromConfigFile(t *testing.T) {
 		{
 			Name:       "openai",
 			Backend:    BackendProxy,
-			State:      StateUnknown,
+			State:      StateEnabled,
 			Connection: ConnectionNotConnected,
 			BaseURL:    "https://api.openai.com/v1",
 			Engines:    []Engine{},
