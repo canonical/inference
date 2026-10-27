@@ -133,6 +133,11 @@ func (c *Config) AddInferenceSnapProvider(name string, baseUrl string, snap stri
 
 func (c *Config) AddOpenAIProvider(name string, baseUrl string, apiKey string) error {
 	keyFilePath := os.ExpandEnv(fmt.Sprintf("$SNAP_DATA/.keys/%s", name))
+
+	if err := os.MkdirAll(filepath.Dir(keyFilePath), 0o700); err != nil {
+		return fmt.Errorf("creating key file directory: %w", err)
+	}
+
 	err := os.WriteFile(keyFilePath, []byte(apiKey), 0o600)
 	if err != nil {
 		return fmt.Errorf("writing key file: %w", err)
