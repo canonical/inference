@@ -51,9 +51,9 @@ func TestList(t *testing.T) {
 			t.Fatalf("List: %v", err)
 		}
 		want := []Provider{
-			{Name: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected},
-			{Name: "qwen3", Type: TypeInferenceSnap, State: StateDisabled, Connection: ConnectionNotConnected},
-			{Name: "smollm2", Type: TypeInferenceSnap, State: StateNotInstalled, Connection: ConnectionNotConnected},
+			{Name: "gemma4", SnapName: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected},
+			{Name: "qwen3", SnapName: "qwen3", Type: TypeInferenceSnap, State: StateDisabled, Connection: ConnectionNotConnected},
+			{Name: "smollm2", SnapName: "smollm2", Type: TypeInferenceSnap, State: StateNotInstalled, Connection: ConnectionNotConnected},
 		}
 		if len(got) != len(want) {
 			t.Fatalf("got %d providers, want %d: %+v", len(got), len(want), got)
@@ -71,8 +71,8 @@ func TestList(t *testing.T) {
 			t.Fatalf("List: %v", err)
 		}
 		want := []Provider{
-			{Name: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected},
-			{Name: "qwen3", Type: TypeInferenceSnap, State: StateDisabled, Connection: ConnectionNotConnected},
+			{Name: "gemma4", SnapName: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected},
+			{Name: "qwen3", SnapName: "qwen3", Type: TypeInferenceSnap, State: StateDisabled, Connection: ConnectionNotConnected},
 		}
 		if len(got) != len(want) {
 			t.Fatalf("got %d providers, want %d: %+v", len(got), len(want), got)
@@ -97,6 +97,7 @@ func TestList(t *testing.T) {
 
 		want := Provider{
 			Name:       "gemma4",
+			SnapName:   "gemma4",
 			Type:       TypeInferenceSnap,
 			State:      StateEnabled,
 			Connection: ConnectionNotConnected,
@@ -127,7 +128,7 @@ func TestFind(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Find: %v", err)
 		}
-		want := Provider{Name: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected}
+		want := Provider{Name: "gemma4", SnapName: "gemma4", Type: TypeInferenceSnap, State: StateEnabled, Connection: ConnectionNotConnected}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("got %+v, want %+v", got, want)
 		}

@@ -40,12 +40,16 @@ func ConnectedSnapProviders(root string) ([]Provider, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading connected provider %q: %w", directoryName, err)
 		}
-		name := values["SNAP_NAME"]
-		if name == "" {
+		snapName := values["SNAP_NAME"]
+		if snapName == "" {
 			return nil, fmt.Errorf("reading connected provider %q: SNAP_NAME is empty", directoryName)
 		}
-		if _, exists := providersByName[name]; exists {
-			return nil, fmt.Errorf("reading connected provider %q: duplicate SNAP_NAME %q", directoryName, name)
+		instanceName := values["SNAP_INSTANCE_NAME"]
+		if instanceName == "" {
+			instanceName = snapName
+		}
+		if _, exists := providersByName[instanceName]; exists {
+			return nil, fmt.Errorf("reading connected provider %q: duplicate SNAP_INSTANCE_NAME %q", directoryName, instanceName)
 		}
 
 		baseURL := values["OPENAI_BASE_URL"]
@@ -53,8 +57,9 @@ func ConnectedSnapProviders(root string) ([]Provider, error) {
 			return nil, fmt.Errorf("reading connected provider %q: %w", directoryName, err)
 		}
 
-		providersByName[name] = Provider{
-			Name:       name,
+		providersByName[instanceName] = Provider{
+			Name:       instanceName,
+			SnapName:   snapName,
 			Type:       TypeInferenceSnap,
 			State:      StateUnknown,
 			Connection: ConnectionConnected,
