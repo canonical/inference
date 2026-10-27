@@ -84,9 +84,9 @@ Additional commands, including `inference enable` and `inference disable`, are u
 To list available models, run:
 ```
 $ inference models
-ID
-gemma4/gemma4-e2b    
-smollm2/smollm2-135m 
+PROVIDER  MODEL
+gemma4    gemma4-e2b
+smollm2   smollm2-135m
 ```
 
 This is the list of models available for inference, through the inference proxy:

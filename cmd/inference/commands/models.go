@@ -21,7 +21,9 @@ type modelsCommand struct {
 }
 
 type modelOutput struct {
-	ID string `json:"id"`
+	ID       string `json:"id"`
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
 }
 
 type modelsOutput struct {
@@ -97,7 +99,9 @@ func (cmd *modelsCommand) outputJSON(list []models.Model) (string, error) {
 	result := modelsOutput{Models: make([]modelOutput, len(list))}
 	for i, model := range list {
 		result.Models[i] = modelOutput{
-			ID: model.PublicID,
+			ID:       model.PublicID,
+			Provider: model.ProviderName,
+			Model:    model.NativeID,
 		}
 	}
 
@@ -143,9 +147,16 @@ func (cmd *modelsCommand) outputTable(list []models.Model) (string, error) {
 			},
 		}),
 	)
-	table.Header([]string{"ID"})
+	table.Header([]string{"PROVIDER", "MODEL"})
+	previousProvider := ""
 	for _, model := range list {
-		if err := table.Append([]string{model.PublicID}); err != nil {
+		provider := model.ProviderName
+		if provider == previousProvider {
+			provider = ""
+		} else {
+			previousProvider = provider
+		}
+		if err := table.Append([]string{provider, model.NativeID}); err != nil {
 			return "", err
 		}
 	}
