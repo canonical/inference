@@ -44,6 +44,63 @@ func writeAsyncAccepted(w http.ResponseWriter, changeID string) {
 	fmt.Fprintf(w, `{"type":"async","status":"Accepted","status-code":202,"change":%q}`, changeID)
 }
 
+func TestFind(t *testing.T) {
+	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v2/find" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.URL.Query().Get("q"); got != "Gemma 4 & vision" {
+			t.Errorf("unexpected query %q", got)
+		}
+		if _, err := fmt.Fprint(w, `{"type":"sync","result":[{"name":"gemma4","title":"Gemma 4","summary":"Vision model","description":"Supports text and images"},{"name":"box-linux"},{}]}`); err != nil {
+			t.Errorf("writing find response: %v", err)
+		}
+	})
+	results, err := (&Client{Socket: socket}).Find(context.Background(), "Gemma 4 & vision")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 || results[0] != (FindResult{
+		Name: "gemma4", Title: "Gemma 4", Summary: "Vision model", Description: "Supports text and images",
+	}) || results[1].Name != "box-linux" {
+		t.Fatalf("unexpected search results %+v", results)
+	}
+}
+
+func TestFindResponses(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "empty", body: `{"type":"sync","result":[]}`},
+		{name: "missing result", body: `{"type":"sync"}`, want: "omitted the result"},
+		{name: "null result", body: `{"type":"sync","result":null}`, want: "omitted the result"},
+		{name: "invalid result", body: `{"type":"sync","result":{}}`, want: "decoding snapd find results"},
+		{name: "async", body: `{"type":"async","result":[]}`, want: "unexpected response type"},
+		{name: "api error", body: `{"type":"error","result":{"message":"store unavailable"}}`, want: "store unavailable"},
+		{name: "invalid json", body: `{`, want: "decoding"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			socket := newUnixServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				if _, err := fmt.Fprint(w, test.body); err != nil {
+					t.Errorf("writing find response: %v", err)
+				}
+			})
+			names, err := (&Client{Socket: socket}).Find(context.Background(), "gemma")
+			if test.want != "" {
+				if err == nil || !strings.Contains(err.Error(), test.want) {
+					t.Fatalf("got %v, want error containing %q", err, test.want)
+				}
+				return
+			}
+			if err != nil || len(names) != 0 {
+				t.Fatalf("got %v, %v; want empty results", names, err)
+			}
+		})
+	}
+}
+
 func TestStatus_ActiveSnapIsEnabled(t *testing.T) {
 	socket := newUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v2/snaps/gemma4" {

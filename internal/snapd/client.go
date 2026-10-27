@@ -24,6 +24,7 @@ var (
 	ErrInterfacesUnchanged = errors.New("interface connection is unchanged")
 	ErrTransient           = errors.New("temporary snapd communication failure")
 )
+
 //revive:enable:exported
 
 const (
@@ -59,6 +60,50 @@ type Client struct {
 
 func NewClient() *Client {
 	return &Client{Socket: DefaultSocket()}
+}
+
+type FindResult struct {
+	Name        string `json:"name"`
+	Title       string `json:"title"`
+	Summary     string `json:"summary"`
+	Description string `json:"description"`
+}
+
+func (c *Client) Find(ctx context.Context, query string) ([]FindResult, error) {
+	params := neturl.Values{"q": []string{query}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost/v2/find?"+params.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("building snapd find request: %w", err)
+	}
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return nil, wrapCallErr(err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	env, err := decodeEnvelope(resp)
+	if err != nil {
+		return nil, err
+	}
+	if env.Type != "sync" {
+		return nil, fmt.Errorf("snapd returned unexpected response type %q", env.Type)
+	}
+	if len(env.Result) == 0 || string(env.Result) == "null" {
+		return nil, fmt.Errorf("snapd response omitted the result")
+	}
+	var snaps []FindResult
+	if err := json.Unmarshal(env.Result, &snaps); err != nil {
+		return nil, fmt.Errorf("decoding snapd find results: %w", err)
+	}
+	results := make([]FindResult, 0, len(snaps))
+	for _, snap := range snaps {
+		if snap.Name != "" {
+			results = append(results, snap)
+		}
+	}
+	return results, nil
 }
 
 func (c *Client) Status(ctx context.Context, name string) (string, error) {

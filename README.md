@@ -58,6 +58,18 @@ engines:
       - qwen3.5-9b
 ```
 
+It is possible to search for a specific provider by using the `inference find` command.
+For example:
+
+```
+$ inference find Gemma
+NAME               OPTIMIZATIONS                   CAPABILITIES                 
+gemma3             amd-gpu, cpu, intel-cpu, int…   text, vision                 
+gemma4             amd-gpu, cpu, intel-cpu, int…   text, thinking, tools, vision
+nemotron-3-5-bolt  cpu, nvidia-gpu                 text, thinking, tools, vision
+
+```
+
 Use `inference install` to install a provider, `inference remove` to remove a provider.
 At the moment, the commands only allow management of [inference snaps](https://github.com/canonical/inference-snaps).
 Support for other provider backends, including remote providers, is planned for future releases.

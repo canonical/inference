@@ -35,6 +35,23 @@ func writeCatalogFile(t *testing.T, dir string, entries ...string) string {
 	return path
 }
 
+func TestParseEntriesModels(t *testing.T) {
+	entries, err := ParseEntries([]byte(`[{"snap":"gemma4","models":[
+		{"name":"gemma4-e2b","quantization":"Q4_K_M","disk_size":"2963M","capabilities":["text","vision"],"component":"model-e2b"},
+		{"name":"embedding","capabilities":null}
+	]}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Model{
+		{Name: "gemma4-e2b", Capabilities: []string{"text", "vision"}},
+		{Name: "embedding"},
+	}
+	if len(entries) != 1 || !reflect.DeepEqual(entries[0].Models, want) {
+		t.Fatalf("got %+v, want models %+v", entries, want)
+	}
+}
+
 func TestParseEntriesSortsBySnapName(t *testing.T) {
 	data := publishedCatalog(
 		publishedEntry("qwen3", "Qwen 3", "canonical/qwen3-snap"),
