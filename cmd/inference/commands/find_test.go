@@ -43,9 +43,10 @@ func TestFindFiltersStoreResults(t *testing.T) {
 	t.Cleanup(server.Close)
 	ctx.SnapdClient = &snapd.Client{Socket: socket}
 
-	want := fmt.Sprintf("%-13s%-14s%s\n", "NAME", "CAPABILITIES", "OPTIMIZATIONS") +
-		fmt.Sprintf("%-13s%-14s%s\n", "gemma4", "text, vision", "cpu, nvidia-gpu") +
-		fmt.Sprintf("%-13s%-14s%s\n", "aaa-related", "-", "-")
+	want := fmt.Sprintf("%-13s%s\n", "NAME", "CAPABILITIES") +
+		fmt.Sprintf("%-13s%s\n", "gemma4", "text, vision") +
+		fmt.Sprintf("%-13s%s\n", "aaa-related", "-") +
+		"\n" + `Hint: run “inference info <name>” for details.` + "\n"
 	for _, args := range [][]string{{"Gemma 4"}, {"Gemma", "4"}} {
 		stdout.Reset()
 		if err := execute(Find(ctx), args...); err != nil {
@@ -121,8 +122,9 @@ func TestFindTableMissingMetadata(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := fmt.Sprintf("%-8s%-14s%s\n", "NAME", "CAPABILITIES", "OPTIMIZATIONS") +
-			fmt.Sprintf("%-8s%-14s%s\n", "gemma4", "-", "-")
+		want := fmt.Sprintf("%-8s%s\n", "NAME", "CAPABILITIES") +
+			fmt.Sprintf("%-8s%s\n", "gemma4", "-") +
+			"\n" + `Hint: run “inference info <name>” for details.` + "\n"
 		if got != want {
 			t.Fatalf("got %q, want %q", got, want)
 		}
@@ -135,7 +137,7 @@ func TestFindTableWidth(t *testing.T) {
 		entry snapcatalog.Entry
 	}{
 		{
-			name: "long optimizations",
+			name: "engines omitted",
 			entry: snapcatalog.Entry{
 				SnapName: "nemotron-3-5-bolt",
 				Engines: []snapcatalog.Engine{
@@ -159,7 +161,11 @@ func TestFindTableWidth(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			lines := strings.Split(strings.TrimSuffix(got, "\n"), "\n")
+			table, hint, ok := strings.Cut(got, "\n\n")
+			if !ok || hint != `Hint: run “inference info <name>” for details.`+"\n" {
+				t.Fatalf("unexpected hint in output %q", got)
+			}
+			lines := strings.Split(table, "\n")
 			if len(lines) != 2 {
 				t.Fatalf("expected header and one truncated row, got %q", got)
 			}
@@ -222,9 +228,10 @@ func TestFindListsCatalogueWithoutQuery(t *testing.T) {
 			if err := execute(Find(ctx), args...); err != nil {
 				t.Fatal(err)
 			}
-			want := fmt.Sprintf("%-8s%-14s%s\n", "NAME", "CAPABILITIES", "OPTIMIZATIONS") +
-				fmt.Sprintf("%-8s%-14s%s\n", "gemma4", "-", "-") +
-				fmt.Sprintf("%-8s%-14s%s\n", "qwen3", "-", "-")
+			want := fmt.Sprintf("%-8s%s\n", "NAME", "CAPABILITIES") +
+				fmt.Sprintf("%-8s%s\n", "gemma4", "-") +
+				fmt.Sprintf("%-8s%s\n", "qwen3", "-") +
+				"\n" + `Hint: run “inference info <name>” for details.` + "\n"
 			if got := stdout.String(); got != want {
 				t.Fatalf("got %q, want %q", got, want)
 			}

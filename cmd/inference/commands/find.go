@@ -100,16 +100,11 @@ func findMatchCounts(result snapd.FindResult, words []string) [4]int {
 }
 
 func (cmd *findCommand) outputTable(entries []snapcatalog.Entry) (string, error) {
-	headers := []string{"NAME", "CAPABILITIES", "OPTIMIZATIONS"}
+	headers := []string{"NAME", "CAPABILITIES"}
 	nameMaxLen := len(headers[0])
-	optimizationsMaxLen := len(headers[2])
 	capabilitiesMaxLen := len(headers[1])
 	rows := make([][]string, 0, len(entries))
 	for _, entry := range entries {
-		optimizations := make([]string, 0, len(entry.Engines))
-		for _, engine := range entry.Engines {
-			optimizations = append(optimizations, engine.Name)
-		}
 		var capabilities []string
 		for _, model := range entry.Models {
 			for _, capability := range model.Capabilities {
@@ -119,29 +114,21 @@ func (cmd *findCommand) outputTable(entries []snapcatalog.Entry) (string, error)
 			}
 		}
 		slices.Sort(capabilities)
-		optimizationText := strings.Join(optimizations, ", ")
-		if optimizationText == "" {
-			optimizationText = "-"
-		}
 		capabilityText := strings.Join(capabilities, ", ")
 		if capabilityText == "" {
 			capabilityText = "-"
 		}
 		nameMaxLen = max(nameMaxLen, len(entry.SnapName))
-		optimizationsMaxLen = max(optimizationsMaxLen, len(optimizationText))
 		capabilitiesMaxLen = max(capabilitiesMaxLen, len(capabilityText))
-		rows = append(rows, []string{entry.SnapName, capabilityText, optimizationText})
+		rows = append(rows, []string{entry.SnapName, capabilityText})
 	}
 	tableMaxWidth := 80
-	optimizationsMinWidth := len(headers[2]) + 1
-	capabilitiesMinWidth := len(headers[1]) + 2
-	nameWidth := min(nameMaxLen+1, tableMaxWidth-optimizationsMinWidth-capabilitiesMinWidth)
-	capabilitiesWidth := min(capabilitiesMaxLen+2, tableMaxWidth-nameWidth-optimizationsMinWidth)
-	optimizationsWidth := min(optimizationsMaxLen+1, tableMaxWidth-nameWidth-capabilitiesWidth)
+	capabilitiesMinWidth := len(headers[1]) + 1
+	nameWidth := min(nameMaxLen+1, tableMaxWidth-capabilitiesMinWidth)
+	capabilitiesWidth := min(capabilitiesMaxLen+1, tableMaxWidth-nameWidth)
 	var output bytes.Buffer
 	padding := tw.CellPadding{PerColumn: []tw.Padding{
 		{Overwrite: true, Right: " "},
-		{Overwrite: true, Left: " ", Right: " "},
 		{Overwrite: true, Left: " "},
 	}}
 	table := tablewriter.NewTable(
@@ -161,7 +148,6 @@ func (cmd *findCommand) outputTable(entries []snapcatalog.Entry) (string, error)
 			Widths: tw.CellWidth{PerColumn: tw.Mapper[int, int]{
 				0: nameWidth,
 				1: capabilitiesWidth,
-				2: optimizationsWidth,
 			}},
 			Header: tw.CellConfig{Alignment: tw.CellAlignment{Global: tw.AlignLeft}, Padding: padding},
 			Row: tw.CellConfig{
@@ -182,5 +168,6 @@ func (cmd *findCommand) outputTable(entries []snapcatalog.Entry) (string, error)
 	for index := range lines {
 		lines[index] = strings.TrimRight(lines[index], " ")
 	}
-	return strings.Join(lines, "\n"), nil
+	return strings.Join(lines, "\n") + "\n" +
+		`Hint: run “inference info <name>” for details.` + "\n", nil
 }
