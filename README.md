@@ -22,6 +22,8 @@ PROVIDER  BACKEND  ENABLED
 gemma4    snap     yes
 qwen3     snap     yes
 smollm2   snap     yes
+
+Hint: run "inference find" to discover other inference snaps.
 ```
 
 To show details about a provider, including its state and available engines and models, run:
