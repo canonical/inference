@@ -33,11 +33,17 @@ type Engine struct {
 	Models       []string `json:"models"`
 }
 
+type Model struct {
+	Name         string   `json:"name"`
+	Capabilities []string `json:"capabilities"`
+}
+
 type Entry struct {
 	SnapName      string   `json:"snap"`
 	ModelName     string   `json:"model_name"`
 	RepositoryURL string   `json:"repo_url"`
 	Engines       []Engine `json:"engines"`
+	Models        []Model  `json:"models"`
 }
 
 func ParseEntries(data []byte) ([]Entry, error) {
@@ -153,7 +159,9 @@ func (r Refresher) Refresh(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("fetching snap catalog: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("fetching snap catalog: HTTP %s", response.Status)
@@ -180,7 +188,9 @@ func replaceFile(path string, data []byte) error {
 		return err
 	}
 	tempPath := file.Name()
-	defer os.Remove(tempPath)
+	defer func() {
+		_ = os.Remove(tempPath)
+	}()
 
 	if err := file.Chmod(0o644); err != nil {
 		_ = file.Close()
