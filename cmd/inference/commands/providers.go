@@ -63,19 +63,19 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	var output string
 	if cmd.format == "json" {
 		output, err = cmd.outputJSON(list)
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprint(cmd.Stdout, output)
 	} else {
 		output, err = cmd.outputTable(list)
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprint(cmd.Stdout, output)
+		_, _ = fmt.Fprintln(cmd.Stderr, `Hint: run "inference find <keyword>" to find other inference snaps.`)
 	}
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprint(cmd.Stdout, output)
-	if err != nil {
-		return err
-	}
-	if cmd.format == "table" {
-		_, err = fmt.Fprintln(cmd.Stderr, `Hint: run "inference find <keyword>" to find other inference snaps.`)
-	}
+
 	return err
 }
 
