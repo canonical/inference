@@ -1,5 +1,6 @@
 name: inference
 title: Inference Manager
+icon: snap/gui/icon-256.png
 summary: Manage local inference providers
 description: |
   Inference Manager provides a management interface for local inference on Ubuntu.
