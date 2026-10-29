@@ -39,23 +39,27 @@ func TestProviders_TableExactOutput(t *testing.T) {
 
 	want := "PROVIDER  BACKEND  ENABLED\n" +
 		"gemma4    snap     yes\n" +
-		"qwen3     snap     no\n" +
-		"\n" +
-		`Hint: run "inference find <keyword>" to find other inference snaps.` + "\n"
+		"qwen3     snap     no\n"
 	if got != want {
 		t.Fatalf("got:\n%q\nwant:\n%q", got, want)
 	}
 }
 
 func TestProviders_TableHintWhenAllInstalled(t *testing.T) {
-	list := []providers.Provider{{Name: "gemma4", Backend: providers.BackendSnap, State: providers.StateEnabled}}
-	cmd := &providersCommand{}
-	got, err := cmd.outputTable(list)
-	if err != nil {
-		t.Fatalf("render table: %v", err)
+	ctx, stdout, stderr := newTestContext()
+	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[{"snap":"gemma4","model_name":"Gemma 4"}]`)
+	ctx.SnapdClient, _ = snapd.NewFakeServer(t, map[string]string{
+		"gemma4": snapd.SnapStatusActive,
+	})
+	if err := execute(Providers(ctx)); err != nil {
+		t.Fatalf("Providers: %v", err)
 	}
-	if !bytes.Contains([]byte(got), []byte(`Hint: run "inference find <keyword>" to find other inference snaps.`)) {
-		t.Fatalf("expected discovery hint, got:\n%s", got)
+	if !bytes.Contains(stdout.Bytes(), []byte("gemma4")) {
+		t.Fatalf("expected provider table on stdout, got:\n%s", stdout.String())
+	}
+	wantHint := `Hint: Run "inference find" to discover other inference snaps.` + "\n"
+	if stderr.String() != wantHint {
+		t.Fatalf("stderr = %q, want %q", stderr.String(), wantHint)
 	}
 }
 
@@ -159,20 +163,24 @@ func TestProviders_OnlyInstalledProviders(t *testing.T) {
 func TestProviders_NoInstalledProviders(t *testing.T) {
 	for _, format := range []string{"table", "json"} {
 		t.Run(format, func(t *testing.T) {
-			ctx, stdout, _ := newTestContext()
+			ctx, stdout, stderr := newTestContext()
 			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[{"snap":"gemma4","model_name":"Gemma 4"}]`)
 			ctx.SnapdClient, _ = snapd.NewFakeServer(t, nil)
 
 			if err := execute(Providers(ctx), "--format="+format); err != nil {
 				t.Fatalf("Providers: %v", err)
 			}
-			want := "PROVIDER  BACKEND  ENABLED\n\n" +
-				`Hint: run "inference find <keyword>" to find other inference snaps.` + "\n"
+			want := "PROVIDER  BACKEND  ENABLED\n"
+			wantHint := `Hint: Run "inference find" to discover other inference snaps.` + "\n"
 			if format == "json" {
 				want = "{\n  \"providers\": []\n}\n"
+				wantHint = ""
 			}
 			if got := stdout.String(); got != want {
 				t.Fatalf("got:\n%q\nwant:\n%q", got, want)
+			}
+			if got := stderr.String(); got != wantHint {
+				t.Fatalf("stderr = %q, want %q", got, wantHint)
 			}
 		})
 	}

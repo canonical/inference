@@ -55,7 +55,7 @@ func TestFindFiltersStoreResults(t *testing.T) {
 		if got := stdout.String(); got != want {
 			t.Fatalf("args %q: got:\n%q\nwant:\n%q", args, got, want)
 		}
-		if got := stderr.String(); got != "\n"+`Hint: run “inference info <name>” for details.`+"\n" {
+		if got := stderr.String(); got != "\n"+`Hint: Run "inference info <name>" for details.`+"\n" {
 			t.Fatalf("unexpected stderr %q", got)
 		}
 	}
@@ -232,7 +232,7 @@ func TestFindListsCatalogueWithoutQuery(t *testing.T) {
 			if got := stdout.String(); got != want {
 				t.Fatalf("got %q, want %q", got, want)
 			}
-			if got := stderr.String(); got != "\n"+`Hint: run “inference info <name>” for details.`+"\n" {
+			if got := stderr.String(); got != "\n"+`Hint: Run "inference info <name>" for details.`+"\n" {
 				t.Fatalf("unexpected stderr %q", got)
 			}
 		})

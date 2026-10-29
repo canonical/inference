@@ -63,13 +63,19 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	var output string
 	if cmd.format == "json" {
 		output, err = cmd.outputJSON(list)
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprint(cmd.Stdout, output)
 	} else {
 		output, err = cmd.outputTable(list)
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprint(cmd.Stdout, output)
+		_, _ = fmt.Fprintln(cmd.Stderr, `Hint: Run "inference find" to discover other inference snaps.`)
 	}
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprint(cmd.Stdout, output)
+
 	return err
 }
 
@@ -146,6 +152,5 @@ func (cmd *providersCommand) outputTable(list []providers.Provider) (string, err
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}
-	return strings.Join(lines, "\n") + "\n" +
-		`Hint: run "inference find <keyword>" to find other inference snaps.` + "\n", nil
+	return strings.Join(lines, "\n"), nil
 }

@@ -67,11 +67,10 @@ func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := fmt.Fprint(cmd.Stdout, output); err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(cmd.Stderr, "\n"+`Hint: run “inference info <name>” for details.`)
-	return err
+	_, _ = fmt.Fprint(cmd.Stdout, output)
+	_, _ = fmt.Fprintln(cmd.Stderr, "\nHint: Run \"inference info <name>\" for details.")
+
+	return nil
 }
 
 func rankFindResults(results []snapd.FindResult, query string) {
