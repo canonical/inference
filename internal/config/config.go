@@ -191,7 +191,7 @@ func (c *ConfigReader) AddOpenAIProvider(name string, baseURL string, apiKey *st
 		return fmt.Errorf("adding provider: %w", err)
 	}
 
-	err = c.SetProviderKey(name, apiKey)
+	err = cfg.setProviderKey(name, apiKey)
 	if err != nil {
 		return fmt.Errorf("setting provider key: %w", err)
 	}
@@ -270,11 +270,18 @@ func (c *ConfigReader) SetProviderKey(providerName string, key *string) error {
 		return fmt.Errorf("reading config: %w", err)
 	}
 
-	if cfg.Providers == nil {
+	if err := cfg.setProviderKey(providerName, key); err != nil {
+		return err
+	}
+	return write(c.Path, cfg)
+}
+
+func (c *Config) setProviderKey(providerName string, key *string) error {
+	if c.Providers == nil {
 		return fmt.Errorf("provider %s does not exist", providerName)
 	}
 
-	provider, exists := cfg.Providers[providerName]
+	provider, exists := c.Providers[providerName]
 	if !exists {
 		return fmt.Errorf("provider %s does not exist", providerName)
 	}
@@ -288,8 +295,8 @@ func (c *ConfigReader) SetProviderKey(providerName string, key *string) error {
 			}
 			provider.KeyFile = nil
 		}
-		cfg.Providers[providerName] = provider
-		return write(c.Path, cfg)
+		c.Providers[providerName] = provider
+		return nil
 	}
 
 	keyFilePath := os.ExpandEnv(fmt.Sprintf("$SNAP_DATA/.keys/%s", providerName))
@@ -298,12 +305,11 @@ func (c *ConfigReader) SetProviderKey(providerName string, key *string) error {
 		return fmt.Errorf("creating key file directory: %w", err)
 	}
 
-	err = os.WriteFile(keyFilePath, []byte(*key), 0o600)
-	if err != nil {
+	if err := os.WriteFile(keyFilePath, []byte(*key), 0o600); err != nil {
 		return fmt.Errorf("writing key file: %w", err)
 	}
 
 	provider.KeyFile = &keyFilePath
-	cfg.Providers[providerName] = provider
-	return write(c.Path, cfg)
+	c.Providers[providerName] = provider
+	return nil
 }

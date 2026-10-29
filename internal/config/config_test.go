@@ -26,6 +26,48 @@ func TestProviderJSONContract(t *testing.T) {
 	}
 }
 
+func TestNewConfigReader(t *testing.T) {
+	snapData := t.TempDir()
+	customPath := filepath.Join(t.TempDir(), "custom.json")
+	t.Setenv("SNAP_DATA", snapData)
+
+	for _, tt := range []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "default", want: filepath.Join(snapData, "config.json")},
+		{name: "custom", path: customPath, want: customPath},
+		{name: "expanded custom", path: "$SNAP_DATA/custom.json", want: filepath.Join(snapData, "custom.json")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(configFilePathEnvVar, tt.path)
+			if got := NewConfigReader().Path; got != tt.want {
+				t.Fatalf("Path = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfigReaderGetProvidersReloadsFile(t *testing.T) {
+	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	for _, baseURL := range []string{"https://example.com/v1", "https://updated.example.com/v1"} {
+		want := map[string]Provider{
+			"remote": {Enabled: true, Backend: BackendProxy, BaseURL: baseURL},
+		}
+		if err := write(c.Path, &Config{Version: 1, Providers: want}); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		got, err := c.GetProviders()
+		if err != nil {
+			t.Fatalf("GetProviders: %v", err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("got %+v, want %+v", got, want)
+		}
+	}
+}
+
 func TestWriteThenReadRoundTrips(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	snap := "gemma3"
@@ -39,12 +81,12 @@ func TestWriteThenReadRoundTrips(t *testing.T) {
 		},
 	}
 
-	if err := Write(path, want); err != nil {
-		t.Fatalf("Write: %v", err)
+	if err := write(path, want); err != nil {
+		t.Fatalf("write: %v", err)
 	}
-	got, err := Read(path)
+	got, err := read(path)
 	if err != nil {
-		t.Fatalf("Read: %v", err)
+		t.Fatalf("read: %v", err)
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)
@@ -56,12 +98,12 @@ func TestWriteReplacesExistingFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := Write(path, &Config{Version: 2}); err != nil {
-		t.Fatalf("Write: %v", err)
+	if err := write(path, &Config{Version: 2}); err != nil {
+		t.Fatalf("write: %v", err)
 	}
-	got, err := Read(path)
+	got, err := read(path)
 	if err != nil {
-		t.Fatalf("Read: %v", err)
+		t.Fatalf("read: %v", err)
 	}
 	if got.Version != 2 {
 		t.Fatalf("got version %d, want 2", got.Version)
@@ -75,13 +117,14 @@ func TestWriteReplacesExistingFile(t *testing.T) {
 	}
 }
 
-func TestMissingConfigFileReturnsNewConfig(t *testing.T) {
-	c, err := Read(filepath.Join(t.TempDir(), "missing.json"))
+func TestConfigReaderMissingFileReturnsEmptyProviders(t *testing.T) {
+	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "missing.json")}
+	providers, err := c.GetProviders()
 	if err != nil {
 		t.Fatalf("expected no error for missing config file, got %v", err)
 	}
-	if c == nil {
-		t.Fatal("expected non-nil config for missing config file")
+	if providers == nil || len(providers) != 0 {
+		t.Fatalf("expected non-nil empty providers, got %v", providers)
 	}
 }
 
@@ -92,7 +135,7 @@ func TestWriteCleansUpTemporaryFileOnRenameFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Write(path, &Config{Version: 1}); err == nil {
+	if err := write(path, &Config{Version: 1}); err == nil {
 		t.Fatal("expected error when replacing a directory")
 	}
 
@@ -110,7 +153,8 @@ func TestReadInvalidJSON(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Read(path); err == nil {
+	c := &ConfigReader{Path: path}
+	if _, err := c.GetProviders(); err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
 }
@@ -118,22 +162,20 @@ func TestReadInvalidJSON(t *testing.T) {
 func TestSetProviderKeyCanBeReadAfterConfigReload(t *testing.T) {
 	snapData := t.TempDir()
 	t.Setenv("SNAP_DATA", snapData)
-	c := NewConfig()
-	c.Providers["openai"] = Provider{Backend: BackendProxy}
+	t.Setenv(configFilePathEnvVar, "")
+	c := NewConfigReader()
+	cfg := newConfig()
+	cfg.Providers["openai"] = Provider{Backend: BackendProxy}
+	if err := write(c.Path, &cfg); err != nil {
+		t.Fatalf("write: %v", err)
+	}
 	key := "test-api-key"
 
 	if err := c.SetProviderKey("openai", &key); err != nil {
 		t.Fatalf("SetProviderKey: %v", err)
 	}
 
-	configPath := filepath.Join(snapData, "config.json")
-	if err := Write(configPath, &c); err != nil {
-		t.Fatalf("Write: %v", err)
-	}
-	reloaded, err := Read(configPath)
-	if err != nil {
-		t.Fatalf("Read: %v", err)
-	}
+	reloaded := NewConfigReader()
 	got, err := reloaded.GetProviderKey("openai")
 	if err != nil {
 		t.Fatalf("GetProviderKey: %v", err)
@@ -144,26 +186,57 @@ func TestSetProviderKeyCanBeReadAfterConfigReload(t *testing.T) {
 }
 
 func TestAddOpenAIProviderWritesReadableKey(t *testing.T) {
-	t.Setenv("SNAP_DATA", t.TempDir())
-	c := NewConfig()
-	key := "test-api-key"
-
-	if err := c.AddOpenAIProvider("openai", "https://api.openai.com/v1", &key); err != nil {
-		t.Fatalf("AddOpenAIProvider: %v", err)
-	}
-	got, err := c.GetProviderKey("openai")
-	if err != nil {
-		t.Fatalf("GetProviderKey: %v", err)
-	}
-	if got == nil || *got != key {
-		t.Fatalf("GetProviderKey = %v, want %q", got, key)
+	for _, tt := range []struct {
+		name string
+		key  *string
+	}{
+		{name: "with key", key: new("test-api-key")},
+		{name: "without key"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("SNAP_DATA", t.TempDir())
+			t.Setenv(configFilePathEnvVar, "")
+			c := NewConfigReader()
+			if err := c.AddOpenAIProvider("openai", "https://api.openai.com/v1", tt.key); err != nil {
+				t.Fatalf("AddOpenAIProvider: %v", err)
+			}
+			reloaded := NewConfigReader()
+			got, err := reloaded.GetProviderKey("openai")
+			if err != nil {
+				t.Fatalf("GetProviderKey: %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.key) {
+				t.Fatalf("GetProviderKey = %v, want %v", got, tt.key)
+			}
+			providers, err := reloaded.GetProviders()
+			if err != nil {
+				t.Fatalf("GetProviders: %v", err)
+			}
+			want := Provider{
+				Enabled: true,
+				Backend: BackendProxy,
+				BaseURL: "https://api.openai.com/v1",
+				API:     new("openai"),
+			}
+			if tt.key != nil {
+				want.KeyFile = new(filepath.Join(os.Getenv("SNAP_DATA"), ".keys", "openai"))
+			}
+			if !reflect.DeepEqual(providers, map[string]Provider{"openai": want}) {
+				t.Fatalf("got providers %+v, want openai: %+v", providers, want)
+			}
+		})
 	}
 }
 
 func TestSetProviderKeyClearsKey(t *testing.T) {
 	t.Setenv("SNAP_DATA", t.TempDir())
-	c := NewConfig()
-	c.Providers["openai"] = Provider{Backend: BackendProxy}
+	t.Setenv(configFilePathEnvVar, "")
+	c := NewConfigReader()
+	cfg := newConfig()
+	cfg.Providers["openai"] = Provider{Backend: BackendProxy}
+	if err := write(c.Path, &cfg); err != nil {
+		t.Fatalf("write: %v", err)
+	}
 
 	if err := c.SetProviderKey("openai", nil); err != nil {
 		t.Fatalf("SetProviderKey without existing key: %v", err)
@@ -173,11 +246,22 @@ func TestSetProviderKeyClearsKey(t *testing.T) {
 	if err := c.SetProviderKey("openai", &key); err != nil {
 		t.Fatalf("SetProviderKey: %v", err)
 	}
-	keyFile := *c.Providers["openai"].KeyFile
+	providers, err := c.GetProviders()
+	if err != nil {
+		t.Fatalf("GetProviders: %v", err)
+	}
+	if providers["openai"].KeyFile == nil {
+		t.Fatal("expected KeyFile to be set")
+	}
+	keyFile := *providers["openai"].KeyFile
 	if err := c.SetProviderKey("openai", nil); err != nil {
 		t.Fatalf("SetProviderKey to clear key: %v", err)
 	}
-	if c.Providers["openai"].KeyFile != nil {
+	providers, err = c.GetProviders()
+	if err != nil {
+		t.Fatalf("GetProviders: %v", err)
+	}
+	if providers["openai"].KeyFile != nil {
 		t.Fatal("expected KeyFile to be cleared")
 	}
 	if _, err := os.Stat(keyFile); !os.IsNotExist(err) {
