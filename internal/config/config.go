@@ -299,11 +299,12 @@ func (c *ConfigReader) ProviderAPIKey(providerName string) (string, error) {
 	}
 
 	provider, exists := cfg.Providers[providerName]
-	if !exists || provider.KeyFile == nil {
+	if !exists || provider.AuthScheme == AuthorizationNone {
 		return "", nil
 	}
 
-	data, err := os.ReadFile(*provider.KeyFile)
+	keyFilePath := getProviderKeyFilePath(providerName)
+	data, err := os.ReadFile(keyFilePath)
 	if err != nil {
 		return "", fmt.Errorf("reading key file: %w", err)
 	}

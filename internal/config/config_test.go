@@ -232,15 +232,18 @@ func TestProviderAPIKey(t *testing.T) {
 	t.Setenv("SNAP_DATA", t.TempDir())
 	t.Setenv(configFilePathEnvVar, "")
 	c := NewConfigReader()
-	keyFile := filepath.Join(t.TempDir(), "key")
+	keyDirectory := filepath.Join(filepath.Dir(c.Path), ".keys")
+	if err := os.MkdirAll(keyDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	keyFile := filepath.Join(keyDirectory, "with-key.key")
 	if err := os.WriteFile(keyFile, []byte("test-api-key\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	missingKeyFile := filepath.Join(t.TempDir(), "missing")
 	cfg := newConfig()
-	cfg.Providers["with-key"] = Provider{Backend: BackendProxy, KeyFile: &keyFile}
-	cfg.Providers["without-key"] = Provider{Backend: BackendProxy}
-	cfg.Providers["missing-key"] = Provider{Backend: BackendProxy, KeyFile: &missingKeyFile}
+	cfg.Providers["with-key"] = Provider{Backend: BackendProxy, AuthScheme: AuthorizationAPIKey}
+	cfg.Providers["without-key"] = Provider{Backend: BackendProxy, AuthScheme: AuthorizationNone}
+	cfg.Providers["missing-key"] = Provider{Backend: BackendProxy, AuthScheme: AuthorizationAPIKey}
 	if err := write(c.Path, &cfg); err != nil {
 		t.Fatalf("write: %v", err)
 	}
