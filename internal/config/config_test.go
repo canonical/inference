@@ -9,12 +9,12 @@ import (
 )
 
 func TestProviderJSONContract(t *testing.T) {
-	const data = `{"enabled":true,"backend":"proxy","base-url":"https://api.openai.com/v1","api":"openai"}`
+	const data = `{"enabled":true,"backend":"proxy","base-url":"https://api.openai.com/v1","api":"openai","auth-scheme":"api-key"}`
 	var provider Provider
 	if err := json.Unmarshal([]byte(data), &provider); err != nil {
 		t.Fatal(err)
 	}
-	if provider.BaseURL != "https://api.openai.com/v1" || provider.API == nil || *provider.API != "openai" {
+	if provider.BaseURL != "https://api.openai.com/v1" || provider.API == nil || *provider.API != "openai" || provider.AuthScheme != AuthorizationAPIKey {
 		t.Fatalf("unexpected provider connection settings: %+v", provider)
 	}
 	got, err := json.Marshal(provider)
@@ -71,13 +71,12 @@ func TestConfigReaderGetProvidersReloadsFile(t *testing.T) {
 func TestWriteThenReadRoundTrips(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	snap := "gemma3"
-	keyFile := "/var/snap/inference/common/openai.key"
 	want := &Config{
 		Version:           1,
 		DiscoverProviders: true,
 		Providers: map[string]Provider{
-			"local":  {Backend: BackendSnap, BaseURL: "http://localhost:8326/v1", Snap: &snap},
-			"remote": {Backend: BackendProxy, BaseURL: "https://api.openai.com/v1", KeyFile: &keyFile},
+			"local":  {Backend: BackendSnap, BaseURL: "http://localhost:8326/v1", Snap: &snap, AuthScheme: AuthorizationNone},
+			"remote": {Backend: BackendProxy, BaseURL: "https://api.openai.com/v1", AuthScheme: AuthorizationAPIKey},
 		},
 	}
 
@@ -165,7 +164,7 @@ func TestSetProviderKeyCanBeReadAfterConfigReload(t *testing.T) {
 	t.Setenv(configFilePathEnvVar, "")
 	c := NewConfigReader()
 	cfg := newConfig()
-	cfg.Providers["openai"] = Provider{Backend: BackendProxy}
+	cfg.Providers["openai"] = Provider{Backend: BackendProxy, AuthScheme: AuthorizationNone}
 	if err := write(c.Path, &cfg); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -213,13 +212,14 @@ func TestAddOpenAIProviderWritesReadableKey(t *testing.T) {
 				t.Fatalf("GetProviders: %v", err)
 			}
 			want := Provider{
-				Enabled: true,
-				Backend: BackendProxy,
-				BaseURL: "https://api.openai.com/v1",
-				API:     new("openai"),
+				Enabled:    true,
+				Backend:    BackendProxy,
+				BaseURL:    "https://api.openai.com/v1",
+				API:        new("openai"),
+				AuthScheme: AuthorizationNone,
 			}
 			if tt.key != nil {
-				want.KeyFile = new(filepath.Join(os.Getenv("SNAP_DATA"), ".keys", "openai"))
+				want.AuthScheme = AuthorizationAPIKey
 			}
 			if !reflect.DeepEqual(providers, map[string]Provider{"openai": want}) {
 				t.Fatalf("got providers %+v, want openai: %+v", providers, want)
@@ -233,7 +233,7 @@ func TestSetProviderKeyClearsKey(t *testing.T) {
 	t.Setenv(configFilePathEnvVar, "")
 	c := NewConfigReader()
 	cfg := newConfig()
-	cfg.Providers["openai"] = Provider{Backend: BackendProxy}
+	cfg.Providers["openai"] = Provider{Backend: BackendProxy, AuthScheme: AuthorizationNone}
 	if err := write(c.Path, &cfg); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -250,10 +250,10 @@ func TestSetProviderKeyClearsKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProviders: %v", err)
 	}
-	if providers["openai"].KeyFile == nil {
-		t.Fatal("expected KeyFile to be set")
+	keyFile := filepath.Join(os.Getenv("SNAP_DATA"), ".keys", "openai.key")
+	if providers["openai"].AuthScheme != AuthorizationAPIKey {
+		t.Fatalf("AuthScheme = %q, want %q", providers["openai"].AuthScheme, AuthorizationAPIKey)
 	}
-	keyFile := *providers["openai"].KeyFile
 	if err := c.SetProviderKey("openai", nil); err != nil {
 		t.Fatalf("SetProviderKey to clear key: %v", err)
 	}
@@ -261,8 +261,8 @@ func TestSetProviderKeyClearsKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProviders: %v", err)
 	}
-	if providers["openai"].KeyFile != nil {
-		t.Fatal("expected KeyFile to be cleared")
+	if providers["openai"].AuthScheme != AuthorizationNone {
+		t.Fatalf("AuthScheme = %q, want %q", providers["openai"].AuthScheme, AuthorizationNone)
 	}
 	if _, err := os.Stat(keyFile); !os.IsNotExist(err) {
 		t.Fatalf("expected key file to be removed, stat error = %v", err)

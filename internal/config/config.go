@@ -9,6 +9,15 @@ import (
 	"path/filepath"
 )
 
+// ProviderAuthorizationScheme defines the type of authorization used by a provider.
+type ProviderAuthorizationScheme string
+
+// Supported provider authorization schemes.
+const (
+	AuthorizationNone   ProviderAuthorizationScheme = "none"
+	AuthorizationAPIKey ProviderAuthorizationScheme = "api-key"
+)
+
 // ProviderBackend distinguishes local snaps from remote proxies.
 type ProviderBackend string
 
@@ -27,12 +36,12 @@ type Config struct {
 
 // Provider stores connection settings and optional snap or credential references.
 type Provider struct {
-	Enabled bool            `json:"enabled"`
-	Backend ProviderBackend `json:"backend"`
-	BaseURL string          `json:"base-url"`
-	Snap    *string         `json:"snap,omitempty"` // only applicable for Inference Snaps providers
-	API     *string         `json:"api,omitempty"`
-	KeyFile *string         `json:"key-file,omitempty"` // only applicable for OpenAI providers
+	Enabled    bool                        `json:"enabled"`
+	Backend    ProviderBackend             `json:"backend"`
+	BaseURL    string                      `json:"base-url"`
+	Snap       *string                     `json:"snap,omitempty"` // only applicable for Inference Snaps providers
+	API        *string                     `json:"api,omitempty"`
+	AuthScheme ProviderAuthorizationScheme `json:"auth-scheme"`
 }
 
 // ConfigFilePath is expanded against the snap environment when read or written.
@@ -57,6 +66,13 @@ func configFilePath() string {
 		return os.ExpandEnv(customFilePath)
 	}
 	return os.ExpandEnv(defaultConfigFilePath)
+}
+
+func getProviderKeyFilePath(providerName string) string {
+	configFilePath := configFilePath()
+	configFileDir := filepath.Dir(configFilePath)
+
+	return filepath.Join(configFileDir, ".keys", providerName+".key")
 }
 
 type ConfigReader struct {
@@ -159,12 +175,12 @@ func (c *Config) addProvider(name string, provider Provider) error {
 // AddInferenceSnapProvider registers an enabled snap, rejecting empty or duplicate names.
 func (c *Config) AddInferenceSnapProvider(name string, baseURL string, snap string, api *string) error {
 	provider := Provider{
-		Enabled: true,
-		Backend: BackendSnap,
-		BaseURL: baseURL,
-		API:     api,
-		Snap:    &snap,
-		KeyFile: nil,
+		Enabled:    true,
+		Backend:    BackendSnap,
+		BaseURL:    baseURL,
+		API:        api,
+		Snap:       &snap,
+		AuthScheme: AuthorizationNone,
 	}
 
 	return c.addProvider(name, provider)
@@ -173,12 +189,12 @@ func (c *Config) AddInferenceSnapProvider(name string, baseURL string, snap stri
 // AddOpenAIProvider registers an enabled proxy and persists its optional API key.
 func (c *ConfigReader) AddOpenAIProvider(name string, baseURL string, apiKey *string) error {
 	provider := Provider{
-		Enabled: true,
-		API:     new("openai"),
-		Backend: BackendProxy,
-		BaseURL: baseURL,
-		Snap:    nil,
-		KeyFile: nil,
+		Enabled:    true,
+		API:        new("openai"),
+		Backend:    BackendProxy,
+		BaseURL:    baseURL,
+		Snap:       nil,
+		AuthScheme: AuthorizationNone,
 	}
 
 	cfg, err := read(c.Path)
@@ -221,8 +237,9 @@ func (c *ConfigReader) RemoveProvider(name string) error {
 		return fmt.Errorf("provider %s does not exist", name)
 	}
 
-	if provider.KeyFile != nil {
-		if err := os.Remove(*provider.KeyFile); err != nil {
+	if provider.AuthScheme != AuthorizationNone {
+		keyFilePath := getProviderKeyFilePath(name)
+		if err := os.Remove(keyFilePath); err != nil {
 			return fmt.Errorf("deleting key file: %v", err)
 		}
 	}
@@ -250,11 +267,12 @@ func (c *ConfigReader) GetProviderKey(providerName string) (*string, error) {
 		return nil, fmt.Errorf("provider %s does not exist", providerName)
 	}
 
-	if provider.KeyFile == nil {
+	if provider.AuthScheme == AuthorizationNone {
 		return nil, nil // no key configured
 	}
 
-	data, err := os.ReadFile(*provider.KeyFile)
+	keyFilePath := getProviderKeyFilePath(providerName)
+	data, err := os.ReadFile(keyFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading key file: %w", err)
 	}
@@ -288,18 +306,19 @@ func (c *Config) setProviderKey(providerName string, key *string) error {
 
 	if key == nil {
 		// remove existing key (if any)
-		if provider.KeyFile != nil {
+		if provider.AuthScheme != AuthorizationNone {
 			// we are removing an existing key
-			if err := os.Remove(*provider.KeyFile); err != nil {
+			keyFilePath := getProviderKeyFilePath(providerName)
+			if err := os.Remove(keyFilePath); err != nil {
 				return fmt.Errorf("deleting key file: %v", err)
 			}
-			provider.KeyFile = nil
+			provider.AuthScheme = AuthorizationNone
 		}
 		c.Providers[providerName] = provider
 		return nil
 	}
 
-	keyFilePath := os.ExpandEnv(fmt.Sprintf("$SNAP_DATA/.keys/%s", providerName))
+	keyFilePath := getProviderKeyFilePath(providerName)
 
 	if err := os.MkdirAll(filepath.Dir(keyFilePath), 0o700); err != nil {
 		return fmt.Errorf("creating key file directory: %w", err)
@@ -309,7 +328,7 @@ func (c *Config) setProviderKey(providerName string, key *string) error {
 		return fmt.Errorf("writing key file: %w", err)
 	}
 
-	provider.KeyFile = &keyFilePath
+	provider.AuthScheme = AuthorizationAPIKey
 	c.Providers[providerName] = provider
 	return nil
 }
