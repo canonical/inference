@@ -1,7 +1,11 @@
 package commands
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/canonical/inference/cmd/inference/common"
+	"github.com/canonical/inference/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -16,7 +20,7 @@ func Remove(ctx *common.Context) *cobra.Command {
 	cobraCmd := &cobra.Command{
 		Use:               "remove <provider>",
 		Short:             "Remove an inference provider",
-		Long:              "Remove the inference snap with the provided name.",
+		Long:              "Remove a custom provider or an inference snap with the provided name.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: common.CompleteSnapNames,
 		SilenceUsage:      true,
@@ -30,9 +34,32 @@ func (cmd *removeCommand) run(cobraCmd *cobra.Command, args []string) error {
 }
 
 func (cmd *removeCommand) remove(cobraCmd *cobra.Command, name string) error {
+	provider, existsInConfig := cmd.ctx.Config.Providers[name]
+	if existsInConfig {
+		return cmd.removeConfiguredProvider(provider, name)
+	}
+
 	// Validation of the provider is important to only allow snaps from the catalog to be removed
 	if err := common.ValidateSnapName(cmd.ctx.SnapCatalog, name); err != nil {
 		return err
 	}
 	return common.RemoveSnap(cobraCmd.Context(), cmd.ctx, name)
+}
+
+func (cmd *removeCommand) removeConfiguredProvider(provider config.Provider, name string) error {
+	if provider.Backend != config.BackendProxy {
+		return errors.New("removing non-proxy providers from config is not supported")
+	}
+
+	err := cmd.ctx.Config.RemoveProvider(name)
+	if err != nil {
+		return fmt.Errorf("removing provider: %w", err)
+	}
+
+	err = config.Write(config.ConfigFilePath, cmd.ctx.Config)
+	if err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
+
+	return nil
 }
