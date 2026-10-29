@@ -19,10 +19,8 @@ var providerTypes = []string{providerOpenAI}
 var addGeteuid = os.Geteuid
 
 type addCommand struct {
-	ctx     *common.Context
-	name    string
-	api     string
-	baseURL string
+	ctx  *common.Context
+	name string
 }
 
 func Add(ctx *common.Context) *cobra.Command {
@@ -91,7 +89,10 @@ func (cmd *addCommand) add(_ *cobra.Command, provider string) error {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		fmt.Printf("Enter API Key: ")
-		fmt.Scanln(&apiKey)
+		_, err := fmt.Scanln(&apiKey)
+		if err != nil {
+			return fmt.Errorf("reading API key: %w", err)
+		}
 	}
 	apiKey = strings.TrimSpace(apiKey)
 
