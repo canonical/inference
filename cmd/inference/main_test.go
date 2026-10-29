@@ -71,7 +71,7 @@ func TestRootIncludesCommands(t *testing.T) {
 	ctx := &common.Context{Stdout: &stdout, Stderr: &stderr}
 	rootCmd := root(ctx)
 
-	for _, name := range []string{"find", "providers", "install", "remove", "status"} {
+	for _, name := range []string{"add", "find", "providers", "install", "remove", "status"} {
 		cmd, _, err := rootCmd.Find([]string{name})
 		if err != nil {
 			t.Fatal(err)
