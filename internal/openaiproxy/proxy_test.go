@@ -620,3 +620,107 @@ func mustJSON(t *testing.T, value string) string {
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
+
+func TestProxyInjectsProviderAPIKeyAndStripsResponseAuthorization(t *testing.T) {
+	var apiKey atomic.Value
+	apiKey.Store("sk-first")
+	var unauthorized atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := apiKey.Load().(string)
+		if r.Header.Get("Authorization") != "Bearer "+key {
+			unauthorized.Add(1)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"native-model"}]}`))
+		default:
+			w.Header().Set("Authorization", "Bearer "+key)
+			_, _ = w.Write([]byte(`{"path":"` + r.URL.Path + `"}`))
+		}
+	}))
+	defer upstream.Close()
+
+	var lookups []string
+	handler := NewModelsHandler(
+		func(context.Context) ([]providers.Provider, error) {
+			return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
+		},
+		func(name string) (string, error) {
+			lookups = append(lookups, name)
+			return apiKey.Load().(string), nil
+		},
+		upstream.Client(),
+		discardLogger(),
+	)
+	if err := handler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, key := range []string{"sk-first", "sk-rotated"} {
+		apiKey.Store(key)
+		request := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(`{"model":"provider/native-model"}`))
+		request.Header.Set("Authorization", "Bearer client-token")
+		response := httptest.NewRecorder()
+
+		handler.ServeHTTP(response, request)
+
+		if response.Code != http.StatusOK {
+			t.Fatalf("got status %d body %s", response.Code, response.Body.String())
+		}
+		if _, exists := response.Header()["Authorization"]; exists {
+			t.Errorf("response leaks Authorization header: %v", response.Header())
+		}
+		if response.Body.String() != `{"path":"/v1/embeddings"}` {
+			t.Errorf("unexpected body %s", response.Body.String())
+		}
+	}
+	if unauthorized.Load() != 0 {
+		t.Errorf("upstream rejected %d requests", unauthorized.Load())
+	}
+	if len(lookups) != 3 {
+		t.Errorf("API key looked up %d times, want once per upstream request", len(lookups))
+	}
+}
+
+func TestProxyRejectsRequestWhenAPIKeyCannotBeRead(t *testing.T) {
+	var upstreamCalls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			_, _ = w.Write([]byte(`{"data":[{"id":"native-model"}]}`))
+			return
+		}
+		upstreamCalls.Add(1)
+	}))
+	defer upstream.Close()
+
+	var fail atomic.Bool
+	handler := NewModelsHandler(
+		func(context.Context) ([]providers.Provider, error) {
+			return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
+		},
+		func(string) (string, error) {
+			if fail.Load() {
+				return "", errors.New("permission denied")
+			}
+			return "", nil
+		},
+		upstream.Client(),
+		discardLogger(),
+	)
+	if err := handler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fail.Store(true)
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"provider/native-model"}`)))
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("got status %d, want 500", response.Code)
+	}
+	if upstreamCalls.Load() != 0 {
+		t.Errorf("request forwarded upstream without credentials")
+	}
+}
