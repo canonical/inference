@@ -2,10 +2,8 @@ name: Snap CI
 
 on:
   pull_request:
-    branches: [ main ]
-  
-  # Allow manual trigger
-  workflow_dispatch:
+    branches:
+      - main
 
 jobs:
   lint:
