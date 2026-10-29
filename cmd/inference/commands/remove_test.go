@@ -127,6 +127,8 @@ func TestRemove_Completion(t *testing.T) {
 }
 
 func TestRemove_CustomProvider(t *testing.T) {
+	setRemoveEffectiveUID(t, 0)
+
 	for _, test := range []struct {
 		name    string
 		enabled bool
@@ -196,6 +198,8 @@ func TestRemove_CustomProvider(t *testing.T) {
 }
 
 func TestRemove_ConfiguredProviderFailurePreservesConfig(t *testing.T) {
+	setRemoveEffectiveUID(t, 0)
+
 	for _, test := range []struct {
 		name      string
 		backend   config.ProviderBackend
@@ -247,6 +251,7 @@ func TestRemove_ConfiguredProviderFailurePreservesConfig(t *testing.T) {
 }
 
 func TestRemove_UsesConfigReaderFile(t *testing.T) {
+	setRemoveEffectiveUID(t, 0)
 	ctx, _, _ := newTestContext(t)
 	writeRemoveTestConfig(t, ctx.Config, config.Config{
 		Version: 1,
@@ -268,6 +273,7 @@ func TestRemove_UsesConfigReaderFile(t *testing.T) {
 }
 
 func TestRemove_ConfigReadFailure(t *testing.T) {
+	setRemoveEffectiveUID(t, 0)
 	ctx, _, _ := newTestContext(t)
 	if err := os.WriteFile(ctx.Config.Path, []byte("not json"), 0o600); err != nil {
 		t.Fatal(err)
@@ -277,4 +283,29 @@ func TestRemove_ConfigReadFailure(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "reading configured providers: reading config:") {
 		t.Fatalf("got error %v, want config read error", err)
 	}
+}
+
+func TestRemove_RequiresRoot(t *testing.T) {
+	setRemoveEffectiveUID(t, 1000)
+
+	for _, name := range []string{"custom", "smollm2"} {
+		t.Run(name, func(t *testing.T) {
+			ctx, _, _ := newTestContext(t)
+			command := Remove(ctx)
+			ctx.Config = nil
+
+			err := execute(command, name)
+			want := "removing a provider requires root privileges. Try again using sudo"
+			if err == nil || err.Error() != want {
+				t.Fatalf("error = %v, want %q", err, want)
+			}
+		})
+	}
+}
+
+func setRemoveEffectiveUID(t *testing.T, uid int) {
+	t.Helper()
+	previous := removeGeteuid
+	removeGeteuid = func() int { return uid }
+	t.Cleanup(func() { removeGeteuid = previous })
 }

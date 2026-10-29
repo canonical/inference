@@ -3,11 +3,14 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/config"
 	"github.com/spf13/cobra"
 )
+
+var removeGeteuid = os.Geteuid
 
 type removeCommand struct {
 	ctx *common.Context
@@ -34,6 +37,10 @@ func (cmd *removeCommand) run(cobraCmd *cobra.Command, args []string) error {
 }
 
 func (cmd *removeCommand) remove(cobraCmd *cobra.Command, name string) error {
+	if removeGeteuid() != 0 {
+		return errors.New("removing a provider requires root privileges. Try again using sudo")
+	}
+
 	providers, err := cmd.ctx.Config.GetProviders()
 	if err != nil {
 		return fmt.Errorf("reading configured providers: %w", err)
