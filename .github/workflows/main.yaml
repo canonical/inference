@@ -2,7 +2,9 @@ name: Snap CI
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - ci-main
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
