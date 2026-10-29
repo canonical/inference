@@ -44,7 +44,7 @@ func TestModelsHandlerRefreshesAndAggregatesProviders(t *testing.T) {
 	root := t.TempDir()
 	writeProvider(t, root, "z-provider", "zeta", first.URL+"/v1")
 	writeProvider(t, root, "a-provider", "alpha", second.URL+"/v1/")
-	handler := NewModelsHandler(connectedProviderLister(root), first.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(connectedProviderLister(root), nil, first.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	for request := int64(1); request <= 2; request++ {
 		response := httptest.NewRecorder()
@@ -88,7 +88,7 @@ func TestModelsHandlerRetrievesModelFromSnapshot(t *testing.T) {
 
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
 		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
-	}, upstream.Client(), discardLogger())
+	}, nil, upstream.Client(), discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestModelsHandlerRejectsUnavailableUnqualifiedAndUnknownModelRetrieval(t *t
 			{Name: "first", BaseURL: first.URL + "/v1"},
 			{Name: "second", BaseURL: second.URL + "/v1"},
 		}, nil
-	}, first.Client(), discardLogger())
+	}, nil, first.Client(), discardLogger())
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models/anything", nil))
@@ -174,7 +174,7 @@ func TestModelsHandlerSkipsUnavailableProvider(t *testing.T) {
 	root := t.TempDir()
 	writeProvider(t, root, "healthy", "healthy", healthy.URL+"/v1")
 	writeProvider(t, root, "broken", "broken", "http://127.0.0.1:1/v1")
-	handler := NewModelsHandler(connectedProviderLister(root), healthy.Client(), discardLogger())
+	handler := NewModelsHandler(connectedProviderLister(root), nil, healthy.Client(), discardLogger())
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -195,7 +195,7 @@ func TestModelsHandlerSkipsProviderWithoutBaseURL(t *testing.T) {
 			{Name: "healthy", BaseURL: healthy.URL + "/v1"},
 		}, nil
 	}
-	handler := NewModelsHandler(listProviders, healthy.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(listProviders, nil, healthy.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -210,7 +210,7 @@ func TestModelsHandlerRejectsDuplicateProviderNames(t *testing.T) {
 			{Name: "duplicate", BaseURL: "http://first.example/v1"},
 			{Name: "duplicate", BaseURL: "http://second.example/v1"},
 		}, nil
-	}, http.DefaultClient, discardLogger())
+	}, nil, http.DefaultClient, discardLogger())
 
 	err := handler.Refresh(context.Background())
 	if err == nil || !strings.Contains(err.Error(), `duplicate provider name "duplicate"`) {
@@ -225,7 +225,7 @@ func TestModelsHandlerRefreshesProviderFiles(t *testing.T) {
 	defer upstream.Close()
 
 	root := t.TempDir()
-	handler := NewModelsHandler(connectedProviderLister(root), upstream.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(connectedProviderLister(root), nil, upstream.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -242,7 +242,7 @@ func TestModelsHandlerRefreshesProviderFiles(t *testing.T) {
 }
 
 func TestModelsHandlerReturnsEmptyListWithoutAvailableProviders(t *testing.T) {
-	handler := NewModelsHandler(connectedProviderLister(t.TempDir()), http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(connectedProviderLister(t.TempDir()), nil, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -277,7 +277,7 @@ func TestModelsHandlerPreservesSnapshotWhenRefreshFails(t *testing.T) {
 			return nil, errors.New("provider inventory unavailable")
 		}
 		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
-	}, upstream.Client(), discardLogger())
+	}, nil, upstream.Client(), discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +298,7 @@ func TestModelsHandlerPreservesSnapshotWhenRefreshFails(t *testing.T) {
 }
 
 func TestModelsHandlerRejectsOtherMethodsAndPaths(t *testing.T) {
-	handler := NewModelsHandler(connectedProviderLister(t.TempDir()), http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(connectedProviderLister(t.TempDir()), nil, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/models", nil))
@@ -314,7 +314,7 @@ func TestModelsHandlerRejectsOtherMethodsAndPaths(t *testing.T) {
 }
 
 func TestModelsHandlerCORSPreflight(t *testing.T) {
-	handler := NewModelsHandler(connectedProviderLister(t.TempDir()), http.DefaultClient, discardLogger())
+	handler := NewModelsHandler(connectedProviderLister(t.TempDir()), nil, http.DefaultClient, discardLogger())
 	request := httptest.NewRequest(http.MethodOptions, "/v1/chat/completions", nil)
 	request.Header.Set("Origin", "https://client.example")
 	request.Header.Set("Access-Control-Request-Method", http.MethodPost)

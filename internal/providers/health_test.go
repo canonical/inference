@@ -84,7 +84,7 @@ func TestCheckHealth(t *testing.T) {
 		{Name: "offline", State: StateEnabled, BaseURL: offlineURL},
 		{Name: "disabled", State: StateDisabled, BaseURL: healthy.URL + "/v1"},
 		{Name: "no-url", State: StateEnabled},
-	})
+	}, nil)
 
 	want := map[string]HealthStatus{
 		"healthy":              HealthOK,

@@ -62,6 +62,7 @@ func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 	}
 	handler := NewModelsHandler(
 		listProviders,
+		nil,
 		upstream.Client(),
 		slog.New(slog.NewTextHandler(&logs, nil)),
 	)
@@ -141,7 +142,7 @@ func TestProxyDoesNotRefreshWithoutSnapshot(t *testing.T) {
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
 		listCalls.Add(1)
 		return nil, nil
-	}, http.DefaultClient, discardLogger())
+	}, nil, http.DefaultClient, discardLogger())
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(
@@ -178,7 +179,7 @@ func TestProxyRejectsUnqualifiedModel(t *testing.T) {
 		listCalls.Add(1)
 		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
 	}
-	handler := NewModelsHandler(listProviders, upstream.Client(), discardLogger())
+	handler := NewModelsHandler(listProviders, nil, upstream.Client(), discardLogger())
 
 	modelsResponse := httptest.NewRecorder()
 	handler.ServeHTTP(modelsResponse, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -220,7 +221,7 @@ func TestProxyQualifiedModelsDoNotCollideWithNativeModelIDs(t *testing.T) {
 			{Name: "first", BaseURL: first.URL + "/v1"},
 			{Name: "second", BaseURL: second.URL + "/v1"},
 		}, nil
-	}, first.Client(), discardLogger())
+	}, nil, first.Client(), discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +267,7 @@ func TestProxyFlushesStreamingResponse(t *testing.T) {
 
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
 		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
-	}, upstream.Client(), discardLogger())
+	}, nil, upstream.Client(), discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +355,7 @@ func TestProxyRewritesNonJSONModelRepresentations(t *testing.T) {
 
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
 		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/api/v1?source=proxy"}}, nil
-	}, upstream.Client(), discardLogger())
+	}, nil, upstream.Client(), discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -551,7 +552,7 @@ func TestProxyRecoversTruncatedUpstreamStream(t *testing.T) {
 	})
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
 		return []providers.Provider{{Name: "provider", BaseURL: "http://provider.test/v1"}}, nil
-	}, &http.Client{Transport: transport}, discardLogger())
+	}, nil, &http.Client{Transport: transport}, discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}

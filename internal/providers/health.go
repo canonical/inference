@@ -23,7 +23,7 @@ const (
 	HealthError         HealthStatus = "error"
 )
 
-func CheckHealth(ctx context.Context, providers []Provider) map[string]HealthStatus {
+func CheckHealth(ctx context.Context, providers []Provider, apiKeys APIKeyLookup) map[string]HealthStatus {
 	type result struct {
 		name   string
 		health HealthStatus
@@ -49,7 +49,7 @@ func CheckHealth(ctx context.Context, providers []Provider) map[string]HealthSta
 			defer checks.Done()
 			results <- result{
 				name:   provider.Name,
-				health: checkHealth(ctx, provider.BaseURL),
+				health: checkHealth(ctx, provider, apiKeys),
 			}
 		}()
 	}
@@ -63,8 +63,12 @@ func CheckHealth(ctx context.Context, providers []Provider) map[string]HealthSta
 	return health
 }
 
-func checkHealth(ctx context.Context, baseURL string) HealthStatus {
-	endpoint, err := url.Parse(baseURL)
+func checkHealth(ctx context.Context, provider Provider, apiKeys APIKeyLookup) HealthStatus {
+	apiKey, err := apiKeys.Get(provider.Name)
+	if err != nil {
+		return HealthError
+	}
+	endpoint, err := url.Parse(provider.BaseURL)
 	if err != nil {
 		return HealthError
 	}
@@ -76,7 +80,7 @@ func checkHealth(ctx context.Context, baseURL string) HealthStatus {
 
 	checkCtx, cancel := context.WithTimeout(ctx, healthCheckTimeout)
 	defer cancel()
-	status, models, err := requestModels(checkCtx, modelsURL.String())
+	status, models, err := requestModels(checkCtx, modelsURL.String(), apiKey)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return HealthNotResponsive
@@ -102,16 +106,18 @@ type modelsResponse struct {
 	Models []json.RawMessage `json:"models"`
 }
 
-func requestModels(ctx context.Context, endpoint string) (int, modelsResponse, error) {
+func requestModels(ctx context.Context, endpoint string, apiKey string) (int, modelsResponse, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return 0, modelsResponse{}, err
 	}
+	AuthorizeRequest(request, apiKey)
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return 0, modelsResponse{}, err
 	}
 	defer response.Body.Close()
+	StripCredentials(response)
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return response.StatusCode, modelsResponse{}, nil
 	}
