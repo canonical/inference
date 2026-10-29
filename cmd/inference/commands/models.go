@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -59,7 +60,7 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	return cmd.printModels(list)
 }
 
-func (cmd *modelsCommand) fetchModels(ctx context.Context) ([]modelOutput, error) {
+func (cmd *modelsCommand) fetchModels(ctx context.Context) (_ []modelOutput, err error) {
 	// request models from the daemon
 	endpoint := "http://" + net.JoinHostPort(cmd.HTTPHost, cmd.HTTPPort) + "/v1/models"
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
@@ -72,7 +73,11 @@ func (cmd *modelsCommand) fetchModels(ctx context.Context) ([]modelOutput, error
 	if err != nil {
 		return nil, fmt.Errorf("requesting models from daemon: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() {
+		if closeErr := response.Body.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("closing daemon models response: %w", closeErr))
+		}
+	}()
 
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("requesting models from daemon: returned %s", response.Status)

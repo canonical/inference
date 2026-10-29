@@ -215,12 +215,14 @@ func TestModelsDaemonUnreachable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx.HTTPHost, ctx.HTTPPort, err = net.SplitHostPort(listener.Addr().String())
-	if err != nil {
-		listener.Close()
+	address := listener.Addr().String()
+	if err := listener.Close(); err != nil {
 		t.Fatal(err)
 	}
-	listener.Close()
+	ctx.HTTPHost, ctx.HTTPPort, err = net.SplitHostPort(address)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := execute(Models(ctx)); err == nil || !strings.Contains(err.Error(), "requesting models from daemon") {
 		t.Fatalf("unexpected error: %v", err)
 	}
