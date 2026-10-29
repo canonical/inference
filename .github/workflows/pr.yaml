@@ -55,7 +55,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Install snapcraft
         run: sudo snap install snapcraft --classic
@@ -64,7 +64,7 @@ jobs:
         run: sudo snapcraft pack --destructive-mode
 
       - name: Publish snap to PR branch
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN_PR }}
         run: snapcraft upload *.snap --release=latest/edge/pr-${{ github.event.pull_request.number }}
