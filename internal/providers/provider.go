@@ -85,7 +85,7 @@ type listOptions struct {
 
 func Find(
 	ctx context.Context,
-	config *config.Config,
+	config *config.ConfigReader,
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
@@ -112,7 +112,7 @@ func Find(
 
 func ListInstalled(
 	ctx context.Context,
-	config *config.Config,
+	config *config.ConfigReader,
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
@@ -122,7 +122,7 @@ func ListInstalled(
 
 func ListAll(
 	ctx context.Context,
-	config *config.Config,
+	config *config.ConfigReader,
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
@@ -132,7 +132,7 @@ func ListAll(
 
 func list(
 	ctx context.Context,
-	config *config.Config,
+	config *config.ConfigReader,
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
@@ -218,9 +218,13 @@ func list(
 	return result, nil
 }
 
-func readConfiguredProviders(config *config.Config) ([]Provider, error) {
-	providers := make([]Provider, 0, len(config.Providers))
-	for name, cp := range config.Providers {
+func readConfiguredProviders(cfg *config.ConfigReader) ([]Provider, error) {
+	configuredProviders, err := cfg.GetProviders()
+	if err != nil {
+		return nil, fmt.Errorf("reading configured providers: %w", err)
+	}
+	providers := make([]Provider, 0, len(configuredProviders))
+	for name, cp := range configuredProviders {
 		p := Provider{
 			Name:       name,
 			Backend:    ProviderBackend(cp.Backend),

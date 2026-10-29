@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -24,15 +23,10 @@ const (
 )
 
 func main() {
-	config, err := config.Read(config.ConfigFilePath)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to read config:", err)
-		os.Exit(1)
-	}
 	ctx := &common.Context{
 		Stdout:             os.Stdout,
 		Stderr:             os.Stderr,
-		Config:             config,
+		Config:             config.NewConfigReader(),
 		SnapdClient:        snapd.NewClient(),
 		SnapCatalog:        snapcatalog.NewReader(),
 		ShareProvidersPath: shareProvidersPath(),

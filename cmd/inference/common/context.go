@@ -11,7 +11,7 @@ import (
 type Context struct {
 	Stdout             io.Writer
 	Stderr             io.Writer
-	Config             *config.Config
+	Config             *config.ConfigReader
 	SnapdClient        *snapd.Client
 	SnapCatalog        *snapcatalog.Reader
 	ShareProvidersPath string

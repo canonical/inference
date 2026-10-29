@@ -61,11 +61,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	config, err := config.Read(config.ConfigFilePath)
-	if err != nil {
-		logger.Error("reading config", "error", err)
-		os.Exit(1)
-	}
+	config := config.NewConfigReader()
 
 	catalog := snapcatalog.NewReader()
 	go refreshCatalogPeriodically(ctx, catalogRefreshInterval, logger)

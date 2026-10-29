@@ -46,7 +46,7 @@ type upstreamModel struct {
 
 func List(
 	ctx context.Context,
-	config *config.Config,
+	config *config.ConfigReader,
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,

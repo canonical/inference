@@ -37,11 +37,12 @@ type Provider struct {
 
 // ConfigFilePath is expanded against the snap environment when read or written.
 const (
-	ConfigFilePath = "$SNAP_DATA/config.json"
+	configFilePathEnvVar  = "INFERENCE_CONFIG_FILE"
+	defaultConfigFilePath = "$SNAP_DATA/config.json"
 )
 
 // NewConfig enables provider discovery with an empty provider registry.
-func NewConfig() Config {
+func newConfig() Config {
 	c := Config{
 		Version:           1,
 		DiscoverProviders: true,
@@ -50,13 +51,37 @@ func NewConfig() Config {
 	return c
 }
 
-// Read expands environment variables in path and returns defaults if it is absent.
-func Read(path string) (*Config, error) {
+func configFilePath() string {
+	customFilePath := os.Getenv(configFilePathEnvVar)
+	if customFilePath != "" {
+		return os.ExpandEnv(customFilePath)
+	}
+	return os.ExpandEnv(defaultConfigFilePath)
+}
+
+type ConfigReader struct {
+	Path string
+}
+
+func NewConfigReader() *ConfigReader {
+	return &ConfigReader{Path: configFilePath()}
+}
+
+func (c *ConfigReader) GetProviders() (map[string]Provider, error) {
+	cfg, err := read(c.Path)
+	if err != nil {
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+	return cfg.Providers, nil
+}
+
+// Read config content or default values if the file is absent.
+func read(path string) (*Config, error) {
 	path = os.ExpandEnv(path)
 
 	// config file does not exist
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		config := NewConfig()
+		config := newConfig()
 		return &config, nil
 	}
 
@@ -71,8 +96,7 @@ func Read(path string) (*Config, error) {
 	return &config, nil
 }
 
-// Write expands environment variables in path and atomically replaces its contents.
-func Write(path string, config *Config) error {
+func write(path string, config *Config) error {
 	path = os.ExpandEnv(path)
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
@@ -147,7 +171,7 @@ func (c *Config) AddInferenceSnapProvider(name string, baseURL string, snap stri
 }
 
 // AddOpenAIProvider registers an enabled proxy and persists its optional API key.
-func (c *Config) AddOpenAIProvider(name string, baseURL string, apiKey *string) error {
+func (c *ConfigReader) AddOpenAIProvider(name string, baseURL string, apiKey *string) error {
 	provider := Provider{
 		Enabled: true,
 		API:     new("openai"),
@@ -157,7 +181,12 @@ func (c *Config) AddOpenAIProvider(name string, baseURL string, apiKey *string) 
 		KeyFile: nil,
 	}
 
-	err := c.addProvider(name, provider)
+	cfg, err := read(c.Path)
+	if err != nil {
+		return fmt.Errorf("reading config: %w", err)
+	}
+
+	err = cfg.addProvider(name, provider)
 	if err != nil {
 		return fmt.Errorf("adding provider: %w", err)
 	}
@@ -167,18 +196,28 @@ func (c *Config) AddOpenAIProvider(name string, baseURL string, apiKey *string) 
 		return fmt.Errorf("setting provider key: %w", err)
 	}
 
+	err = write(c.Path, cfg)
+	if err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
+
 	return nil
 }
 
 // RemoveProvider deletes a provider's credential file before removing its settings.
-func (c *Config) RemoveProvider(name string) error {
-	if c.Providers == nil {
+func (c *ConfigReader) RemoveProvider(name string) error {
+	cfg, err := read(c.Path)
+	if err != nil {
+		return fmt.Errorf("reading config: %w", err)
+	}
+
+	if cfg.Providers == nil {
 		return nil
 	}
 
 	var provider Provider
 	var exists bool
-	if provider, exists = c.Providers[name]; !exists {
+	if provider, exists = cfg.Providers[name]; !exists {
 		return fmt.Errorf("provider %s does not exist", name)
 	}
 
@@ -188,17 +227,25 @@ func (c *Config) RemoveProvider(name string) error {
 		}
 	}
 
-	delete(c.Providers, name)
+	delete(cfg.Providers, name)
+	if err = write(c.Path, cfg); err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
 	return nil
 }
 
 // GetProviderKey reads stored credentials, returning nil if no key file is configured.
-func (c *Config) GetProviderKey(providerName string) (*string, error) {
-	if c.Providers == nil {
+func (c *ConfigReader) GetProviderKey(providerName string) (*string, error) {
+	cfg, err := read(c.Path)
+	if err != nil {
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+
+	if cfg.Providers == nil {
 		return nil, fmt.Errorf("provider %s does not exist", providerName)
 	}
 
-	provider, exists := c.Providers[providerName]
+	provider, exists := cfg.Providers[providerName]
 	if !exists {
 		return nil, fmt.Errorf("provider %s does not exist", providerName)
 	}
@@ -217,12 +264,17 @@ func (c *Config) GetProviderKey(providerName string) (*string, error) {
 }
 
 // SetProviderKey persists credentials for a given provider, or removes them if the key is nil.
-func (c *Config) SetProviderKey(providerName string, key *string) error {
-	if c.Providers == nil {
+func (c *ConfigReader) SetProviderKey(providerName string, key *string) error {
+	cfg, err := read(c.Path)
+	if err != nil {
+		return fmt.Errorf("reading config: %w", err)
+	}
+
+	if cfg.Providers == nil {
 		return fmt.Errorf("provider %s does not exist", providerName)
 	}
 
-	provider, exists := c.Providers[providerName]
+	provider, exists := cfg.Providers[providerName]
 	if !exists {
 		return fmt.Errorf("provider %s does not exist", providerName)
 	}
@@ -236,8 +288,8 @@ func (c *Config) SetProviderKey(providerName string, key *string) error {
 			}
 			provider.KeyFile = nil
 		}
-		c.Providers[providerName] = provider
-		return nil
+		cfg.Providers[providerName] = provider
+		return write(c.Path, cfg)
 	}
 
 	keyFilePath := os.ExpandEnv(fmt.Sprintf("$SNAP_DATA/.keys/%s", providerName))
@@ -246,12 +298,12 @@ func (c *Config) SetProviderKey(providerName string, key *string) error {
 		return fmt.Errorf("creating key file directory: %w", err)
 	}
 
-	err := os.WriteFile(keyFilePath, []byte(*key), 0o600)
+	err = os.WriteFile(keyFilePath, []byte(*key), 0o600)
 	if err != nil {
 		return fmt.Errorf("writing key file: %w", err)
 	}
 
 	provider.KeyFile = &keyFilePath
-	c.Providers[providerName] = provider
-	return nil
+	cfg.Providers[providerName] = provider
+	return write(c.Path, cfg)
 }
