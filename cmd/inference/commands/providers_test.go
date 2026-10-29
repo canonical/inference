@@ -57,7 +57,7 @@ func TestProviders_TableHintWhenAllInstalled(t *testing.T) {
 	if !bytes.Contains(stdout.Bytes(), []byte("gemma4")) {
 		t.Fatalf("expected provider table on stdout, got:\n%s", stdout.String())
 	}
-	wantHint := `Hint: Run "inference find" to discover other inference snaps.` + "\n"
+	wantHint := "\nHint: Run \"inference find\" to discover other inference snaps.\n"
 	if stderr.String() != wantHint {
 		t.Fatalf("stderr = %q, want %q", stderr.String(), wantHint)
 	}
@@ -171,7 +171,7 @@ func TestProviders_NoInstalledProviders(t *testing.T) {
 				t.Fatalf("Providers: %v", err)
 			}
 			want := "PROVIDER  BACKEND  ENABLED\n"
-			wantHint := `Hint: Run "inference find" to discover other inference snaps.` + "\n"
+			wantHint := "\nHint: Run \"inference find\" to discover other inference snaps.\n"
 			if format == "json" {
 				want = "{\n  \"providers\": []\n}\n"
 				wantHint = ""
