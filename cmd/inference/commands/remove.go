@@ -34,7 +34,12 @@ func (cmd *removeCommand) run(cobraCmd *cobra.Command, args []string) error {
 }
 
 func (cmd *removeCommand) remove(cobraCmd *cobra.Command, name string) error {
-	provider, existsInConfig := cmd.ctx.Config.Providers[name]
+	providers, err := cmd.ctx.Config.GetProviders()
+	if err != nil {
+		return fmt.Errorf("reading configured providers: %w", err)
+	}
+
+	provider, existsInConfig := providers[name]
 	if existsInConfig {
 		return cmd.removeConfiguredProvider(provider, name)
 	}
@@ -54,11 +59,6 @@ func (cmd *removeCommand) removeConfiguredProvider(provider config.Provider, nam
 	err := cmd.ctx.Config.RemoveProvider(name)
 	if err != nil {
 		return fmt.Errorf("removing provider: %w", err)
-	}
-
-	err = config.Write(config.ConfigFilePath, cmd.ctx.Config)
-	if err != nil {
-		return fmt.Errorf("writing config: %w", err)
 	}
 
 	return nil
