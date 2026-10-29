@@ -146,14 +146,16 @@ func TestRemove_CustomProvider(t *testing.T) {
 				DiscoverProviders: false,
 				Providers: map[string]config.Provider{
 					"custom": {
-						Backend: config.BackendProxy,
-						Enabled: test.enabled,
-						BaseURL: "https://example.com/v1",
+						Backend:    config.BackendProxy,
+						Enabled:    test.enabled,
+						BaseURL:    "https://example.com/v1",
+						AuthScheme: config.AuthorizationNone,
 					},
 					"keep": {
-						Backend: config.BackendProxy,
-						Enabled: true,
-						BaseURL: "https://keep.example.com/v1",
+						Backend:    config.BackendProxy,
+						Enabled:    true,
+						BaseURL:    "https://keep.example.com/v1",
+						AuthScheme: config.AuthorizationNone,
 					},
 				},
 			})
@@ -167,7 +169,10 @@ func TestRemove_CustomProvider(t *testing.T) {
 				if err != nil {
 					t.Fatalf("GetProviders: %v", err)
 				}
-				keyFile = *providers["custom"].KeyFile
+				if providers["custom"].AuthScheme != config.AuthorizationAPIKey {
+					t.Fatalf("AuthScheme = %q, want %q", providers["custom"].AuthScheme, config.AuthorizationAPIKey)
+				}
+				keyFile = filepath.Join(os.Getenv("SNAP_DATA"), ".keys", "custom.key")
 			}
 
 			if err := execute(Remove(ctx), "custom"); err != nil {
@@ -180,9 +185,10 @@ func TestRemove_CustomProvider(t *testing.T) {
 			}
 			want := map[string]config.Provider{
 				"keep": {
-					Backend: config.BackendProxy,
-					Enabled: true,
-					BaseURL: "https://keep.example.com/v1",
+					Backend:    config.BackendProxy,
+					Enabled:    true,
+					BaseURL:    "https://keep.example.com/v1",
+					AuthScheme: config.AuthorizationNone,
 				},
 			}
 			if !reflect.DeepEqual(got, want) {
@@ -222,10 +228,9 @@ func TestRemove_ConfiguredProviderFailurePreservesConfig(t *testing.T) {
 			snapData := t.TempDir()
 			t.Setenv("SNAP_DATA", snapData)
 			ctx, _, _ := newTestContext(t)
-			provider := config.Provider{Backend: test.backend, Enabled: true}
+			provider := config.Provider{Backend: test.backend, Enabled: true, AuthScheme: config.AuthorizationNone}
 			if test.withKey {
-				keyFile := filepath.Join(snapData, "missing.key")
-				provider.KeyFile = &keyFile
+				provider.AuthScheme = config.AuthorizationAPIKey
 			}
 			writeRemoveTestConfig(t, ctx.Config, config.Config{
 				Version: 1,
@@ -256,7 +261,7 @@ func TestRemove_UsesConfigReaderFile(t *testing.T) {
 	writeRemoveTestConfig(t, ctx.Config, config.Config{
 		Version: 1,
 		Providers: map[string]config.Provider{
-			"custom": {Backend: config.BackendProxy},
+			"custom": {Backend: config.BackendProxy, AuthScheme: config.AuthorizationNone},
 		},
 	})
 
