@@ -22,7 +22,7 @@ func Remove(ctx *common.Context) *cobra.Command {
 		Short:             "Remove an inference provider",
 		Long:              "Remove a custom provider or an inference snap with the provided name.",
 		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: common.CompleteSnapNames,
+		ValidArgsFunction: common.CompleteProviderName(ctx.Config),
 		SilenceUsage:      true,
 		RunE:              cmd.run,
 	}
