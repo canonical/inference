@@ -24,6 +24,7 @@ func Find(ctx *common.Context) *cobra.Command {
 	cmd := findCommand{Context: ctx}
 	return &cobra.Command{
 		Use:               "find [query]...",
+		Aliases:           []string{"catalog"},
 		Short:             "Search for inference snaps",
 		Long:              "List inference snaps in the catalog or search for a particular one",
 		Args:              cobra.ArbitraryArgs,
