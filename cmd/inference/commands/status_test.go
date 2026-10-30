@@ -38,7 +38,9 @@ func statusSnapdClient(t *testing.T, snapName string, active bool) *snapd.Client
 		if got := r.URL.Query().Get("names"); got != snapName+".d" {
 			t.Errorf("unexpected names query %q", got)
 		}
-		fmt.Fprintf(w, `{"type":"sync","status":"OK","result":[{"snap":%q,"name":"d","active":%t}]}`, snapName, active)
+		if _, err := fmt.Fprintf(w, `{"type":"sync","status":"OK","result":[{"snap":%q,"name":"d","active":%t}]}`, snapName, active); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	server.Listener.Close()
 	server.Listener = listener
@@ -177,11 +179,13 @@ func TestStatusHealthUsesDaemonWithoutCredentials(t *testing.T) {
 				if got := r.Header.Get("Authorization"); got != "" {
 					t.Errorf("unexpected daemon authorization: %q", got)
 				}
-				fmt.Fprint(w, `{"data":[
+				if _, err := fmt.Fprint(w, `{"data":[
 					{"id":"authenticated/first","owned_by":"authenticated"},
 					{"id":"authenticated/second","owned_by":"authenticated"},
 					{"id":"unknown/model","owned_by":"unknown"}
-				]}`)
+				]}`); err != nil {
+					t.Errorf("writing response: %v", err)
+				}
 			}))
 			t.Cleanup(daemon.Close)
 
@@ -309,7 +313,9 @@ func TestStatusHealthDiagnosesMissingModelsWithoutCredentials(t *testing.T) {
 					return
 				}
 				w.WriteHeader(test.status)
-				fmt.Fprint(w, test.body)
+				if _, err := fmt.Fprint(w, test.body); err != nil {
+					t.Errorf("writing response: %v", err)
+				}
 			}))
 			t.Cleanup(upstream.Close)
 			if test.name == "offline" {
@@ -367,7 +373,9 @@ func TestStatusReportsDaemonErrors(t *testing.T) {
 			var upstreamRequests atomic.Int32
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				upstreamRequests.Add(1)
-				fmt.Fprint(w, `{"data":[{"id":"model"}]}`)
+				if _, err := fmt.Fprint(w, `{"data":[{"id":"model"}]}`); err != nil {
+					t.Errorf("writing response: %v", err)
+				}
 			}))
 			t.Cleanup(upstream.Close)
 			writeStatusProviders(t, ctx, map[string]config.Provider{
@@ -426,7 +434,9 @@ func TestStatusProbesConcurrentlyWithShortTimeouts(t *testing.T) {
 	started := make(chan string, 4)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthy/v1/models" {
-			fmt.Fprint(w, `{"data":[{"id":"model"}]}`)
+			if _, err := fmt.Fprint(w, `{"data":[{"id":"model"}]}`); err != nil {
+				t.Errorf("writing response: %v", err)
+			}
 			return
 		}
 		started <- r.URL.Path
