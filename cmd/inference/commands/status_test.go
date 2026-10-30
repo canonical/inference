@@ -17,6 +17,8 @@ import (
 
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/config"
+	"github.com/canonical/inference/internal/openaiproxy"
+	"github.com/canonical/inference/internal/providers"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
 	"go.yaml.in/yaml/v4"
@@ -416,5 +418,103 @@ func TestStatusSkipsDaemonWithoutEligibleProviders(t *testing.T) {
 	}
 	if got != nil {
 		t.Fatalf("health = %v, want nil", got)
+	}
+}
+
+func TestStatusProbesConcurrentlyWithShortTimeouts(t *testing.T) {
+	t.Setenv("SNAP_INSTANCE_NAME", "")
+	started := make(chan string, 4)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthy/v1/models" {
+			fmt.Fprint(w, `{"data":[{"id":"model"}]}`)
+			return
+		}
+		started <- r.URL.Path
+		<-r.Context().Done()
+	}))
+	t.Cleanup(upstream.Close)
+
+	ctx, stdout, _ := newTestContext(t)
+	ctx.SnapCatalog = &snapcatalog.Reader{}
+	ctx.SnapdClient = statusSnapdClient(t, common.InferenceSnapName, true)
+	configured := make(map[string]config.Provider)
+	for _, name := range []string{"healthy", "slow-one", "slow-two"} {
+		configured[name] = config.Provider{
+			Enabled: true, Backend: config.BackendProxy,
+			BaseURL: upstream.URL + "/" + name + "/v1",
+		}
+	}
+	writeStatusProviders(t, ctx, configured)
+	daemon := httptest.NewServer(openaiproxy.NewModelsHandler(
+		func(requestCtx context.Context) ([]providers.Provider, error) {
+			return providers.ListInstalled(requestCtx, ctx.Config, ctx.SnapCatalog, ctx.SnapdClient, "")
+		}, nil, upstream.Client(), nil,
+	))
+	t.Cleanup(daemon.Close)
+	var err error
+	ctx.HTTPHost, ctx.HTTPPort, err = net.SplitHostPort(daemon.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	commandCtx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	cmd := Status(ctx)
+	cmd.SetContext(commandCtx)
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		done <- execute(cmd, "--format=json")
+	}()
+
+	for _, phase := range []string{"daemon discovery", "fallback diagnostics"} {
+		wait := 4 * time.Second
+		if phase == "daemon discovery" {
+			wait = time.Second
+		}
+		timer := time.NewTimer(wait)
+		seen := make(map[string]bool)
+		for len(seen) < 2 {
+			select {
+			case path := <-started:
+				if path != "/slow-one/v1/models" && path != "/slow-two/v1/models" {
+					t.Fatalf("%s: unexpected probe %q", phase, path)
+				}
+				if seen[path] {
+					t.Fatalf("%s: duplicate probe %q", phase, path)
+				}
+				seen[path] = true
+				if len(seen) == 1 {
+					timer.Reset(time.Second)
+				}
+			case err := <-done:
+				t.Fatalf("%s: status finished before both probes started: %v", phase, err)
+			case <-timer.C:
+				t.Fatalf("%s: probes did not start concurrently within %s", phase, wait)
+			}
+		}
+		timer.Stop()
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("fallback diagnostics exceeded their 2-second timeout")
+	}
+	if elapsed := time.Since(start); elapsed > 7*time.Second {
+		t.Fatalf("status took %s, want less than 7 seconds", elapsed)
+	}
+	var got statusOutput
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"healthy": "ok", "slow-one": "not responsive", "slow-two": "not responsive",
+	}
+	if !maps.Equal(got.Health, want) {
+		t.Fatalf("health = %v, want %v", got.Health, want)
 	}
 }

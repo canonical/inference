@@ -68,7 +68,7 @@ func fetchDaemonModels(ctx context.Context, host, port string) (_ []modelOutput,
 		return nil, fmt.Errorf("creating models request: %w", err)
 	}
 	request.Header.Set("Accept", "application/json")
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("requesting models from daemon: %w", err)
