@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ProviderAuthorizationScheme defines the type of authorization used by a provider.
@@ -288,6 +289,26 @@ func (c *ConfigReader) GetProviderKey(providerName string) (*string, error) {
 
 	key := string(data)
 	return &key, nil
+}
+
+// ProviderAPIKey returns an empty key when the provider is not configured or has no key file.
+func (c *ConfigReader) ProviderAPIKey(providerName string) (string, error) {
+	cfg, err := read(c.Path)
+	if err != nil {
+		return "", fmt.Errorf("reading config: %w", err)
+	}
+
+	provider, exists := cfg.Providers[providerName]
+	if !exists || provider.AuthScheme == AuthorizationNone {
+		return "", nil
+	}
+
+	keyFilePath := getProviderKeyFilePath(providerName)
+	data, err := os.ReadFile(keyFilePath)
+	if err != nil {
+		return "", fmt.Errorf("reading key file: %w", err)
+	}
+	return strings.TrimSpace(string(data)), nil
 }
 
 // SetProviderKey persists credentials for a given provider, or removes them if the key is nil.

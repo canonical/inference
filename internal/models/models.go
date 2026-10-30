@@ -61,13 +61,14 @@ func List(
 	if err != nil {
 		return nil, err
 	}
-	return Discover(ctx, allProviders, http.DefaultClient)
+	return Discover(ctx, allProviders, http.DefaultClient, config.ProviderAPIKey)
 }
 
 func Discover(
 	ctx context.Context,
 	allProviders []providers.Provider,
 	client *http.Client,
+	apiKeys providers.APIKeyLookup,
 ) ([]ProviderModels, error) {
 	availableProviders := make([]providers.Provider, 0, len(allProviders))
 	providerNames := make(map[string]struct{}, len(allProviders))
@@ -100,7 +101,7 @@ func Discover(
 	for _, provider := range availableProviders {
 		requests.Go(func() {
 			models := make([]Model, 0)
-			upstreamModels, err := fetchModels(ctx, client, provider.BaseURL)
+			upstreamModels, err := fetchProviderModels(ctx, client, provider, apiKeys)
 			if err == nil {
 				models = normalizeModels(provider, upstreamModels)
 				sort.Slice(models, func(i, j int) bool {
@@ -150,7 +151,20 @@ func normalizeModels(provider providers.Provider, upstreamModels []upstreamModel
 	return output
 }
 
-func fetchModels(ctx context.Context, client *http.Client, baseURL string) ([]upstreamModel, error) {
+func fetchProviderModels(
+	ctx context.Context,
+	client *http.Client,
+	provider providers.Provider,
+	apiKeys providers.APIKeyLookup,
+) ([]upstreamModel, error) {
+	apiKey, err := apiKeys.Get(provider.Name)
+	if err != nil {
+		return nil, err
+	}
+	return fetchModels(ctx, client, provider.BaseURL, apiKey)
+}
+
+func fetchModels(ctx context.Context, client *http.Client, baseURL string, apiKey string) ([]upstreamModel, error) {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
@@ -163,12 +177,14 @@ func fetchModels(ctx context.Context, client *http.Client, baseURL string) ([]up
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	request.Header.Set("Accept", "application/json")
+	providers.AuthorizeRequest(request, apiKey)
 
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("requesting models: %w", redactURLError(err))
 	}
 	defer response.Body.Close()
+	providers.StripCredentials(response)
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return nil, fmt.Errorf("requesting models: upstream returned %s", response.Status)
 	}

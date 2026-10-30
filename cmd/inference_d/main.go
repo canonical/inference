@@ -71,7 +71,7 @@ func main() {
 		return providers.ListAll(ctx, config, catalog, snapdClient, providerRoot)
 	}
 
-	handler := openaiproxy.NewModelsHandler(listProviders, newUpstreamClient(), logger)
+	handler := openaiproxy.NewModelsHandler(listProviders, config.ProviderAPIKey, newUpstreamClient(), logger)
 	if err := handler.Refresh(ctx); err != nil {
 		logger.Warn("initializing provider models", "error", err)
 	}

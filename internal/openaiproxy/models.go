@@ -26,6 +26,7 @@ const (
 
 type ModelsHandler struct {
 	listProviders func(context.Context) ([]providers.Provider, error)
+	apiKeys       providers.APIKeyLookup
 	client        *http.Client
 	logger        *slog.Logger
 	refreshMu     sync.Mutex
@@ -65,6 +66,7 @@ type routingSnapshot []modelRoute
 
 func NewModelsHandler(
 	listProviders func(context.Context) ([]providers.Provider, error),
+	apiKeys providers.APIKeyLookup,
 	client *http.Client,
 	logger *slog.Logger,
 ) *ModelsHandler {
@@ -74,7 +76,7 @@ func NewModelsHandler(
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &ModelsHandler{listProviders: listProviders, client: client, logger: logger}
+	return &ModelsHandler{listProviders: listProviders, apiKeys: apiKeys, client: client, logger: logger}
 }
 
 func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +199,7 @@ func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, er
 	if err != nil {
 		return nil, err
 	}
-	providerModels, err := models.Discover(ctx, allProviders, h.client)
+	providerModels, err := models.Discover(ctx, allProviders, h.client, h.apiKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -275,6 +277,12 @@ func (h *ModelsHandler) proxy(
 		writeError(w, http.StatusInternalServerError, "Unable to encode request body.", "internal_error")
 		return
 	}
+	apiKey, err := h.apiKeys.Get(route.providerName)
+	if err != nil {
+		logger.Error("reading provider credentials", "provider", route.providerName, "model", requestedModel, "error", err)
+		writeError(w, http.StatusInternalServerError, "Unable to read inference provider credentials.", "internal_error")
+		return
+	}
 	target, err := url.Parse(route.baseURL)
 	if err != nil {
 		logger.Error(
@@ -297,6 +305,7 @@ func (h *ModelsHandler) proxy(
 		request.Out.Host = target.Host
 		request.SetXForwarded()
 		request.Out.Header.Del("Authorization")
+		providers.AuthorizeRequest(request.Out, apiKey)
 	}
 	proxy.Transport = h.client.Transport
 	if proxy.Transport == nil {
@@ -304,6 +313,7 @@ func (h *ModelsHandler) proxy(
 	}
 	proxy.FlushInterval = -1
 	proxy.ModifyResponse = func(response *http.Response) error {
+		providers.StripCredentials(response)
 		removeCORSHeaders(response.Header)
 		mediaType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
 		if strings.EqualFold(mediaType, "text/event-stream") {

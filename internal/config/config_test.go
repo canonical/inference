@@ -228,6 +228,48 @@ func TestAddOpenAIProviderWritesReadableKey(t *testing.T) {
 	}
 }
 
+func TestProviderAPIKey(t *testing.T) {
+	t.Setenv("SNAP_DATA", t.TempDir())
+	t.Setenv(configFilePathEnvVar, "")
+	c := NewConfigReader()
+	keyDirectory := filepath.Join(filepath.Dir(c.Path), ".keys")
+	if err := os.MkdirAll(keyDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	keyFile := filepath.Join(keyDirectory, "with-key.key")
+	if err := os.WriteFile(keyFile, []byte("test-api-key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := newConfig()
+	cfg.Providers["with-key"] = Provider{Backend: BackendProxy, AuthScheme: AuthorizationAPIKey}
+	cfg.Providers["without-key"] = Provider{Backend: BackendProxy, AuthScheme: AuthorizationNone}
+	cfg.Providers["missing-key"] = Provider{Backend: BackendProxy, AuthScheme: AuthorizationAPIKey}
+	if err := write(c.Path, &cfg); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	for _, tt := range []struct {
+		provider string
+		want     string
+		wantErr  bool
+	}{
+		{provider: "with-key", want: "test-api-key"},
+		{provider: "without-key"},
+		{provider: "unconfigured"},
+		{provider: "missing-key", wantErr: true},
+	} {
+		t.Run(tt.provider, func(t *testing.T) {
+			got, err := c.ProviderAPIKey(tt.provider)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ProviderAPIKey error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Fatalf("ProviderAPIKey = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSetProviderKeyClearsKey(t *testing.T) {
 	t.Setenv("SNAP_DATA", t.TempDir())
 	t.Setenv(configFilePathEnvVar, "")
