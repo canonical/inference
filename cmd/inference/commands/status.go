@@ -111,14 +111,41 @@ func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string
 		return nil, common.FriendlySnapdError(err)
 	}
 
-	// Check health only returns results for providers that are enabled and have an openai base url defined
-	health := providers.CheckHealth(ctx, list, cmd.Config.ProviderAPIKey)
-	if health == nil {
+	enabled := make([]providers.Provider, 0, len(list))
+	for _, provider := range list {
+		if provider.State == providers.StateEnabled && provider.BaseURL != "" {
+			enabled = append(enabled, provider)
+		}
+	}
+	if len(enabled) == 0 {
 		return nil, nil
 	}
-	output := make(map[string]string, len(health))
-	for name, status := range health {
-		output[name] = string(status)
+
+	models, err := fetchDaemonModels(ctx, cmd.HTTPHost, cmd.HTTPPort)
+	if err != nil {
+		return nil, err
+	}
+	available := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		available[model.Provider] = struct{}{}
+	}
+
+	output := make(map[string]string, len(enabled))
+	missing := make([]providers.Provider, 0, len(enabled))
+	for _, provider := range enabled {
+		if _, ok := available[provider.Name]; ok {
+			output[provider.Name] = string(providers.HealthOK)
+		} else {
+			output[provider.Name] = string(providers.HealthError)
+			missing = append(missing, provider)
+		}
+	}
+
+	// Unauthenticated probes can refine failures, but only the daemon establishes availability.
+	for name, status := range providers.CheckHealth(ctx, missing, nil) {
+		if status == providers.HealthOffline || status == providers.HealthNotResponsive {
+			output[name] = string(status)
+		}
 	}
 	return output, nil
 }
