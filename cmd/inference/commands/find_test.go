@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -212,11 +213,15 @@ func TestFindTableWidth(t *testing.T) {
 
 func TestFindNoMatches(t *testing.T) {
 	for _, test := range []struct {
-		name   string
-		result string
+		name       string
+		result     string
+		format     string
+		wantStdout string
+		wantStderr string
 	}{
-		{name: "empty store results", result: `[]`},
-		{name: "no catalogue matches", result: `[{"name":"box-linux"}]`},
+		{name: "empty store results", result: `[]`, wantStderr: "No inference snaps matched the query \"unknown\"\n"},
+		{name: "no catalogue matches", result: `[{"name":"box-linux"}]`, wantStderr: "No inference snaps matched the query \"unknown\"\n"},
+		{name: "json empty array", result: `[]`, format: "json", wantStdout: "{\n  \"results\": []\n}\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, stdout, stderr := newTestContext()
@@ -239,13 +244,17 @@ func TestFindNoMatches(t *testing.T) {
 			t.Cleanup(server.Close)
 			ctx.SnapdClient = &snapd.Client{Socket: socket}
 
-			if err := execute(Find(ctx), "unknown"); err != nil {
+			args := []string{"unknown"}
+			if test.format != "" {
+				args = append(args, "--format="+test.format)
+			}
+			if err := execute(Find(ctx), args...); err != nil {
 				t.Fatalf("expected successful empty search: %v", err)
 			}
-			if stdout.Len() != 0 {
-				t.Fatalf("expected empty stdout, got %q", stdout.String())
+			if got := stdout.String(); got != test.wantStdout {
+				t.Fatalf("unexpected stdout %q", got)
 			}
-			if got := stderr.String(); got != "No inference snaps matched the query \"unknown\"\n" {
+			if got := stderr.String(); got != test.wantStderr {
 				t.Fatalf("unexpected stderr %q", got)
 			}
 		})
@@ -305,5 +314,34 @@ func TestFindSnapdError(t *testing.T) {
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("unexpected output %q", stdout.String())
+	}
+}
+
+func TestFindJSONCatalogue(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		catalog string
+		want    int
+	}{
+		{name: "populated", catalog: `[{"snap":"gemma4","models":[{"capabilities":["vision","text"]}]},{"snap":"qwen3"}]`, want: 2},
+		{name: "empty", catalog: `[]`, want: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, stdout, stderr := newTestContext()
+			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, test.catalog)
+			if err := execute(Find(ctx), "--format=json"); err != nil {
+				t.Fatal(err)
+			}
+			var out findOutput
+			if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+				t.Fatalf("invalid JSON %q: %v", stdout.String(), err)
+			}
+			if len(out.Results) != test.want {
+				t.Fatalf("expected %d results, got %d: %q", test.want, len(out.Results), stdout.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("expected empty stderr, got %q", stderr.String())
+			}
+		})
 	}
 }
