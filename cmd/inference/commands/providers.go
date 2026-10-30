@@ -73,7 +73,7 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 			return err
 		}
 		_, _ = fmt.Fprint(cmd.Stdout, output)
-		_, _ = fmt.Fprintln(cmd.Stderr, `Hint: Run "inference find" to discover other inference snaps.`)
+		_, _ = fmt.Fprintln(cmd.Stderr, "\nHint: Run \"inference find\" to discover other inference snaps.")
 	}
 
 	return err
