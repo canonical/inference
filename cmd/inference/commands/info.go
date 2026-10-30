@@ -259,9 +259,7 @@ func isSupersetModel(model, other string) bool {
 
 func (cmd *infoCommand) proxyOpenAIBaseURL() string {
 	host := cmd.HTTPHost
-	if host == "" || host == "0.0.0.0" {
-		host = "localhost"
-	} else if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+	if host == "127.0.0.1" || host == "0.0.0.0" {
 		host = "localhost"
 	}
 	return "http://" + net.JoinHostPort(host, cmd.HTTPPort) + "/v1"
