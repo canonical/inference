@@ -26,37 +26,17 @@ smollm2   snap     yes
 Hint: Run "inference find" to discover other inference snaps.
 ```
 
-To show details about a provider, including its state and available engines and models, run:
-```
+To show a provider's state and available engines and models, run:
+```console
 $ inference info qwen3-5
-name: qwen3-5
-backend: snap
-state: not installed
-engines:
-  cpu:
-    runtime: llamacpp
-    models:
-      - qwen3.5-0.8b
-      - qwen3.5-2b
-      - qwen3.5-4b (default)
-      - qwen3.5-9b
-      - qwen3.5-35b-a3b
-  nvidia-gpu:
-    runtime: llamacpp-cuda
-    models:
-      - qwen3.5-0.8b
-      - qwen3.5-2b
-      - qwen3.5-4b (default)
-      - qwen3.5-9b
-      - qwen3.5-35b-a3b
-  nvidia-jetson-orin:
-    runtime: llamacpp-jetson-orin
-    models:
-      - qwen3.5-0.8b
-      - qwen3.5-2b
-      - qwen3.5-4b (default)
-      - qwen3.5-9b
+qwen3-5 [snap] - not installed ✗
+
+ENGINE               qwen3.5-0.8b  qwen3.5-2b  qwen3.5-4b  qwen3.5-9b  qwen3.5-35b-a3b
+cpu                  ✓             ✓           ✓           ✓           ✓
+nvidia-gpu           ✓             ✓           ✓           ✓           ✓
+nvidia-jetson-orin   ✓             ✓           ✓           ✓
 ```
+Use `--format=json` for machine-readable output.
 
 It is possible to search for a specific provider by using the `inference find` command.
 For example:
