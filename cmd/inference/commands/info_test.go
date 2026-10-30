@@ -379,7 +379,7 @@ func TestInfoRendering_ProxyTable(t *testing.T) {
 			name:  "enabled",
 			state: providers.StateEnabled,
 			want: "openai [proxy] - enabled ✓\n\n" +
-				"API: http://localhost:8400/v1 (proxy)\n" +
+				"API: http://127.0.0.1:8400/v1 (proxy)\n" +
 				"     └── https://api.openai.com/v1 (upstream)\n",
 		},
 		{
@@ -434,5 +434,14 @@ func TestInfo_UnknownProvider(t *testing.T) {
 	}
 	if stdout.String() != "" {
 		t.Fatalf("expected no stdout output on error, got %q", stdout.String())
+	}
+}
+
+func TestInfo_ProxyOpenAIBaseURL(t *testing.T) {
+	cmd := &infoCommand{Context: &common.Context{HTTPHost: "0.0.0.0", HTTPPort: "8400"}}
+	got := cmd.proxyOpenAIBaseURL()
+	want := "http://localhost:8400/v1"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
