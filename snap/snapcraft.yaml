@@ -1,19 +1,26 @@
 name: inference
 title: Inference Manager
 icon: snap/gui/icon-256.png
-summary: Manage local inference
+summary: Your models. One endpoint.
 description: |
-  Inference Manager provides a management interface and API gateway for local inference on Ubuntu.
+  Discover, install and connect to inference models on Ubuntu — from one place.
 
-  **Install:**   `snap install inference`
+  Inference Manager from Canonical brings provider management and model access together. Use the command line to manage inference snaps, and connect your applications to a single endpoint that routes requests to the providers running on your machine.
 
-  **Discover providers:**  `inference find`
+  Inference Manager allows you to:
+  - Discover available inference providers and inspect their models and engines.
+  - Install and remove inference snaps from the command line.
+  - List models available through the inference proxy.
+  - Check service status and provider health.
+  - Send inference requests through a single local endpoint.
 
-  **Install an optimized provider:**   `inference install gemma4`
+  **Get started**
 
-  **Explore models:**  `inference models`
-
-  **Integrate:**  `curl http://localhost:8400/v1/models` (OpenAI and SystemOne)
+  * Install:  `snap install inference`
+  * Discover providers:  `inference find`
+  * Install an optimized provider:   `inference install gemma4`
+  * Explore models:  `inference models`
+  * Integrate your agent:  `curl http://localhost:8400/v1/models` (OpenAI and SystemOne)
 
   Use `snap get|set inference` to view and modify configurations.
 
