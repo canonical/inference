@@ -91,6 +91,15 @@ func (c *ConfigReader) GetProviders() (map[string]Provider, error) {
 	return cfg.Providers, nil
 }
 
+func (c *ConfigReader) ProviderExists(name string) (bool, error) {
+	providers, err := c.GetProviders()
+	if err != nil {
+		return false, err
+	}
+	_, exists := providers[name]
+	return exists, nil
+}
+
 // Read config content or default values if the file is absent.
 func read(path string) (*Config, error) {
 	path = os.ExpandEnv(path)
