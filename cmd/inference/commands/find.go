@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -18,11 +19,21 @@ import (
 
 type findCommand struct {
 	*common.Context
+	format string
+}
+
+type findResultOutput struct {
+	Name         string   `json:"name"`
+	Capabilities []string `json:"capabilities"`
+}
+
+type findOutput struct {
+	Results []findResultOutput `json:"results"`
 }
 
 func Find(ctx *common.Context) *cobra.Command {
 	cmd := findCommand{Context: ctx}
-	return &cobra.Command{
+	cobraCmd := &cobra.Command{
 		Use:               "find [query]...",
 		Aliases:           []string{"catalog"},
 		Short:             "Search for inference snaps",
@@ -32,9 +43,14 @@ func Find(ctx *common.Context) *cobra.Command {
 		SilenceUsage:      true,
 		RunE:              cmd.run,
 	}
+	cobraCmd.Flags().StringVar(&cmd.format, "format", "table", "output format [table|json]")
+	return cobraCmd
 }
 
 func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
+	if cmd.format != "table" && cmd.format != "json" {
+		return fmt.Errorf("unknown format %q", cmd.format)
+	}
 	query := strings.TrimSpace(strings.Join(args, " "))
 	entries, err := cmd.SnapCatalog.Read()
 	if err != nil {
@@ -60,17 +76,60 @@ func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
 		}
 	}
 	if len(results) == 0 {
+		if cmd.format == "json" {
+			output, err := cmd.outputJSON(nil)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprint(cmd.Stdout, output)
+			return err
+		}
 		_, err := fmt.Fprintf(cmd.Stderr, "No inference snaps matched the query %q\n", query)
 		return err
 	}
-	output, err := cmd.outputTable(results)
+
+	var output string
+	if cmd.format == "json" {
+		output, err = cmd.outputJSON(results)
+	} else {
+		output, err = cmd.outputTable(results)
+	}
 	if err != nil {
 		return err
 	}
 	_, _ = fmt.Fprint(cmd.Stdout, output)
-	_, _ = fmt.Fprintln(cmd.Stderr, "\nHint: Run \"inference info <name>\" for details.")
+	if cmd.format != "json" {
+		_, _ = fmt.Fprintln(cmd.Stderr, "\nHint: Run \"inference info <name>\" for details.")
+	}
 
 	return nil
+}
+
+func (cmd *findCommand) outputJSON(entries []snapcatalog.Entry) (string, error) {
+	result := findOutput{Results: make([]findResultOutput, 0, len(entries))}
+	for _, entry := range entries {
+		var capabilities []string
+		for _, model := range entry.Models {
+			for _, capability := range model.Capabilities {
+				if capability != "" && !slices.Contains(capabilities, capability) {
+					capabilities = append(capabilities, capability)
+				}
+			}
+		}
+		slices.Sort(capabilities)
+		result.Results = append(result.Results, findResultOutput{
+			Name:         entry.SnapName,
+			Capabilities: capabilities,
+		})
+	}
+
+	var output bytes.Buffer
+	encoder := json.NewEncoder(&output)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(result); err != nil {
+		return "", err
+	}
+	return output.String(), nil
 }
 
 func rankFindResults(results []snapd.FindResult, query string) {

@@ -16,7 +16,7 @@ sudo snap install inference
 ### Manage providers
 
 To list providers, run:
-```
+```console
 $ inference providers
 PROVIDER  BACKEND  ENABLED
 gemma4    snap     yes
@@ -41,7 +41,7 @@ Use `--format=json` for machine-readable output.
 It is possible to search for a specific provider by using the `inference find` command.
 For example:
 
-```
+```console
 $ inference find Gemma
 NAME               CAPABILITIES                 
 gemma3             text, vision                 
@@ -60,7 +60,7 @@ Additional commands, including `inference enable` and `inference disable`, are u
 ### List models
 
 To list available models, run:
-```
+```console
 $ inference models
 PROVIDER  MODEL
 gemma4    gemma4-e2b
@@ -68,7 +68,7 @@ smollm2   smollm2-135m
 ```
 
 This is the list of models available for inference, through the inference proxy:
-```
+```console
 $ curl --silent http://localhost:8400/v1/models | jq
 {
   "object": "list",
@@ -92,7 +92,7 @@ $ curl --silent http://localhost:8400/v1/models | jq
 ### Show status
 
 To check the status of the Inference Manager, run:
-```
+```console
 $ inference status
 services:
   inference.d: active
