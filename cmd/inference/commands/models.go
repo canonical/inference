@@ -53,16 +53,16 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	list, err := cmd.fetchModels(cobraCmd.Context())
+	list, err := fetchDaemonModels(cobraCmd.Context(), cmd.HTTPHost, cmd.HTTPPort)
 	if err != nil {
 		return err
 	}
 	return cmd.printModels(list)
 }
 
-func (cmd *modelsCommand) fetchModels(ctx context.Context) (_ []modelOutput, err error) {
+func fetchDaemonModels(ctx context.Context, host, port string) (_ []modelOutput, err error) {
 	// request models from the daemon
-	endpoint := "http://" + net.JoinHostPort(cmd.HTTPHost, cmd.HTTPPort) + "/v1/models"
+	endpoint := "http://" + net.JoinHostPort(host, port) + "/v1/models"
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating models request: %w", err)
