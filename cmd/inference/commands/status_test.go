@@ -56,7 +56,7 @@ func TestStatusServicesOutput(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("SNAP", "")
 			t.Setenv("SNAP_INSTANCE_NAME", "")
-			ctx, stdout, stderr := newTestContext()
+			ctx, stdout, stderr := newTestContext(t)
 			ctx.SnapdClient = statusSnapdClient(t, common.InferenceSnapName, true)
 			ctx.SnapCatalog = &snapcatalog.Reader{}
 			if err := execute(Status(ctx), test.args...); err != nil {
@@ -76,7 +76,7 @@ func TestStatusUsesSnapInstanceName(t *testing.T) {
 	const instanceName = "inference_gpu"
 	t.Setenv("SNAP", "")
 	t.Setenv("SNAP_INSTANCE_NAME", instanceName)
-	ctx, stdout, _ := newTestContext()
+	ctx, stdout, _ := newTestContext(t)
 	ctx.SnapdClient = statusSnapdClient(t, instanceName, true)
 	ctx.SnapCatalog = &snapcatalog.Reader{}
 

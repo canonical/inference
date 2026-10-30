@@ -66,6 +66,7 @@ func (cmd *infoCommand) run(cobraCmd *cobra.Command, args []string) error {
 
 	provider, err := providers.Find(
 		cobraCmd.Context(),
+		cmd.Config,
 		cmd.SnapCatalog,
 		cmd.SnapdClient,
 		cmd.ShareProvidersPath,
