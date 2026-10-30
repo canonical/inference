@@ -133,6 +133,40 @@ func TestFindTableMissingMetadata(t *testing.T) {
 	}
 }
 
+func Example_findCommand_outputJSON() {
+	cmd := findCommand{}
+	results := newFindResults([]snapcatalog.Entry{
+		{SnapName: "gemma4", Models: []snapcatalog.Model{
+			{Capabilities: []string{"vision", "text"}},
+			{Capabilities: []string{"text"}},
+		}},
+		{SnapName: "qwen3"},
+	})
+
+	output, err := cmd.outputJSON(results)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Print(output)
+
+	// Output:
+	// {
+	//   "results": [
+	//     {
+	//       "name": "gemma4",
+	//       "capabilities": [
+	//         "text",
+	//         "vision"
+	//       ]
+	//     },
+	//     {
+	//       "name": "qwen3",
+	//       "capabilities": null
+	//     }
+	//   ]
+	// }
+}
+
 func TestFindTableWidth(t *testing.T) {
 	for _, test := range []struct {
 		name  string
