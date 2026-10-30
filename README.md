@@ -43,11 +43,12 @@ For example:
 
 ```
 $ inference find Gemma
-NAME               OPTIMIZATIONS                   CAPABILITIES                 
-gemma3             amd-gpu, cpu, intel-cpu, int…   text, vision                 
-gemma4             amd-gpu, cpu, intel-cpu, int…   text, thinking, tools, vision
-nemotron-3-5-bolt  cpu, nvidia-gpu                 text, thinking, tools, vision
+NAME               CAPABILITIES                 
+gemma3             text, vision                 
+gemma4             text, thinking, tools, vision
+nemotron-3-5-bolt  text, thinking, tools, vision
 
+Hint: Run "inference info <name>" for details.
 ```
 
 Use `inference install` to install a provider, `inference remove` to remove a provider.
