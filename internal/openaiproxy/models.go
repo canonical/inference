@@ -25,6 +25,7 @@ const (
 )
 
 type ModelsHandler struct {
+	statusHandler http.Handler
 	listProviders func(context.Context) ([]providers.Provider, error)
 	client        *http.Client
 	logger        *slog.Logger
@@ -64,6 +65,7 @@ type modelRoute struct {
 type routingSnapshot []modelRoute
 
 func NewModelsHandler(
+	statusHandler http.Handler,
 	listProviders func(context.Context) ([]providers.Provider, error),
 	client *http.Client,
 	logger *slog.Logger,
@@ -74,7 +76,7 @@ func NewModelsHandler(
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &ModelsHandler{listProviders: listProviders, client: client, logger: logger}
+	return &ModelsHandler{statusHandler: statusHandler, listProviders: listProviders, client: client, logger: logger}
 }
 
 func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -98,6 +100,21 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if isCORSPreflight(r) {
 		responseWriter.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	if r.URL.Path == "/v1" || r.URL.Path == "/v1/" {
+		if r.Method != http.MethodGet {
+			responseWriter.Header().Set("Allow", http.MethodGet)
+			writeError(responseWriter, http.StatusMethodNotAllowed, "Only GET is supported for "+r.URL.Path+".", "invalid_request_error")
+			return
+		}
+		if h.statusHandler == nil {
+			logger.Error("status handler is not configured")
+			writeError(responseWriter, http.StatusServiceUnavailable, "Inference status is unavailable.", "service_unavailable")
+			return
+		}
+		h.statusHandler.ServeHTTP(responseWriter, r)
 		return
 	}
 

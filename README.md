@@ -103,6 +103,18 @@ health:
   smollm2: ok
 ```
 
+The proxy also returns the same status data as `inference status --format=json`
+at `GET /v1` (or `/v1/`):
+
+```console
+$ curl --silent http://localhost:8400/v1 | jq
+```
+
+Status is collected on each request, including when no models are available.
+Unhealthy providers are reported in `health`; failures to collect status return
+HTTP 503. The proxy discovers installed snap providers and configured external
+OpenAI providers, excluding uninstalled snaps.
+
 ## Local development
 
 Download the snap catalog and point the CLI at it with `INFERENCE_SNAPS_CATALOG`:

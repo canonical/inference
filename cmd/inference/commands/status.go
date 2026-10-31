@@ -7,9 +7,8 @@ import (
 	"fmt"
 	"net"
 
-	snapctlenv "github.com/canonical/go-snapctl/env"
 	"github.com/canonical/inference/cmd/inference/common"
-	"github.com/canonical/inference/internal/providers"
+	"github.com/canonical/inference/internal/status"
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v4"
 )
@@ -71,55 +70,27 @@ func (cmd *statusCommand) run(cobraCmd *cobra.Command, _ []string) error {
 }
 
 func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error) {
-	snapInstanceName := snapctlenv.SnapInstanceName()
-	if snapInstanceName == "" {
-		// Fall back to snap name when not inside a snap
-		snapInstanceName = common.InferenceSnapName
+	collector := status.Collector{
+		SnapdClient:        cmd.SnapdClient,
+		SnapCatalog:        cmd.SnapCatalog,
+		ShareProvidersPath: cmd.ShareProvidersPath,
+		BaseURL:            cmd.proxyOpenAIBaseURL(),
 	}
-	serviceStatus, err := cmd.SnapdClient.ServiceStatus(ctx, snapInstanceName, common.InferenceService)
+	result, err := collector.Collect(ctx)
 	if err != nil {
 		return statusOutput{}, common.FriendlySnapdError(err)
 	}
 
-	health, err := cmd.providerHealth(ctx)
-	if err != nil {
-		return statusOutput{}, err
-	}
-
-	// TODO look up warnings like GPU not working
-
 	return statusOutput{
-		Services: map[string]string{snapInstanceName + "." + common.InferenceService: serviceStatus},
+		Services: result.Services,
 		Proxy: &statusProxy{
 			OpenAI: statusOpenAIProxy{
-				BaseURL: cmd.proxyOpenAIBaseURL(),
+				BaseURL: result.BaseURL,
 			},
 		},
-		Health: health,
+		Health:   result.Health,
+		Warnings: result.Warnings,
 	}, nil
-}
-
-func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string, error) {
-	list, err := providers.ListInstalled(
-		ctx,
-		cmd.SnapCatalog,
-		cmd.SnapdClient,
-		cmd.ShareProvidersPath,
-	)
-	if err != nil {
-		return nil, common.FriendlySnapdError(err)
-	}
-
-	// Check health only returns results for providers that are enabled and have an openai base url defined
-	health := providers.CheckHealth(ctx, list)
-	if health == nil {
-		return nil, nil
-	}
-	output := make(map[string]string, len(health))
-	for name, status := range health {
-		output[name] = string(status)
-	}
-	return output, nil
 }
 
 func (cmd *statusCommand) proxyOpenAIBaseURL() string {

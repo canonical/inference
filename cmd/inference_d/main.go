@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/canonical/inference/internal/openaiproxy"
-	"github.com/canonical/inference/internal/providers"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/status"
 )
 
 const (
@@ -64,11 +64,14 @@ func main() {
 	go refreshCatalogPeriodically(ctx, catalogRefreshInterval, logger)
 
 	snapdClient := snapd.NewClient()
-	listProviders := func(ctx context.Context) ([]providers.Provider, error) {
-		return providers.ListAll(ctx, catalog, snapdClient, providerRoot)
+	collector := status.Collector{
+		SnapdClient:        snapdClient,
+		SnapCatalog:        catalog,
+		ShareProvidersPath: providerRoot,
+		BaseURL:            "http://" + address + "/v1",
 	}
 
-	handler := openaiproxy.NewModelsHandler(listProviders, newUpstreamClient(), logger)
+	handler := openaiproxy.NewModelsHandler(newStatusHandler(collector.Collect, logger), collector.ListProviders, newUpstreamClient(), logger)
 	if err := handler.Refresh(ctx); err != nil {
 		logger.Warn("initializing provider models", "error", err)
 	}
