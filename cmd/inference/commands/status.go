@@ -112,7 +112,7 @@ func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string
 	}
 
 	// Check health only returns results for providers that are enabled and have an openai base url defined
-	health := providers.CheckHealth(ctx, list)
+	health := providers.CheckHealth(ctx, list, cmd.Config.ProviderAPIKey)
 	if health == nil {
 		return nil, nil
 	}
