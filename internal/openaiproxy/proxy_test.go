@@ -58,7 +58,7 @@ func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 
 	listProviders := func(context.Context) ([]providers.Provider, error) {
 		listCalls.Add(1)
-		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/api/v1?source=proxy"}}, nil
+		return []providers.Provider{{Name: "provider", State: providers.StateEnabled, BaseURL: upstream.URL + "/api/v1?source=proxy"}}, nil
 	}
 	handler := NewModelsHandler(
 		listProviders,
@@ -177,7 +177,7 @@ func TestProxyRejectsUnqualifiedModel(t *testing.T) {
 
 	listProviders := func(context.Context) ([]providers.Provider, error) {
 		listCalls.Add(1)
-		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
+		return []providers.Provider{{Name: "provider", State: providers.StateEnabled, BaseURL: upstream.URL + "/v1"}}, nil
 	}
 	handler := NewModelsHandler(listProviders, nil, upstream.Client(), discardLogger())
 
@@ -218,8 +218,8 @@ func TestProxyQualifiedModelsDoNotCollideWithNativeModelIDs(t *testing.T) {
 
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
 		return []providers.Provider{
-			{Name: "first", BaseURL: first.URL + "/v1"},
-			{Name: "second", BaseURL: second.URL + "/v1"},
+			{Name: "first", State: providers.StateEnabled, BaseURL: first.URL + "/v1"},
+			{Name: "second", State: providers.StateEnabled, BaseURL: second.URL + "/v1"},
 		}, nil
 	}, nil, first.Client(), discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
@@ -266,7 +266,7 @@ func TestProxyFlushesStreamingResponse(t *testing.T) {
 	defer upstream.Close()
 
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
+		return []providers.Provider{{Name: "provider", State: providers.StateEnabled, BaseURL: upstream.URL + "/v1"}}, nil
 	}, nil, upstream.Client(), discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
@@ -354,7 +354,7 @@ func TestProxyRewritesNonJSONModelRepresentations(t *testing.T) {
 	defer upstream.Close()
 
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/api/v1?source=proxy"}}, nil
+		return []providers.Provider{{Name: "provider", State: providers.StateEnabled, BaseURL: upstream.URL + "/api/v1?source=proxy"}}, nil
 	}, nil, upstream.Client(), discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
@@ -551,7 +551,7 @@ func TestProxyRecoversTruncatedUpstreamStream(t *testing.T) {
 		}, nil
 	})
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{{Name: "provider", BaseURL: "http://provider.test/v1"}}, nil
+		return []providers.Provider{{Name: "provider", State: providers.StateEnabled, BaseURL: "http://provider.test/v1"}}, nil
 	}, nil, &http.Client{Transport: transport}, discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
@@ -645,7 +645,7 @@ func TestProxyInjectsProviderAPIKeyAndStripsResponseAuthorization(t *testing.T) 
 	var lookups []string
 	handler := NewModelsHandler(
 		func(context.Context) ([]providers.Provider, error) {
-			return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
+			return []providers.Provider{{Name: "provider", State: providers.StateEnabled, BaseURL: upstream.URL + "/v1"}}, nil
 		},
 		func(name string) (string, error) {
 			lookups = append(lookups, name)
@@ -698,7 +698,7 @@ func TestProxyRejectsRequestWhenAPIKeyCannotBeRead(t *testing.T) {
 	var fail atomic.Bool
 	handler := NewModelsHandler(
 		func(context.Context) ([]providers.Provider, error) {
-			return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
+			return []providers.Provider{{Name: "provider", State: providers.StateEnabled, BaseURL: upstream.URL + "/v1"}}, nil
 		},
 		func(string) (string, error) {
 			if fail.Load() {

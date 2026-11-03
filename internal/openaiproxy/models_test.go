@@ -87,7 +87,7 @@ func TestModelsHandlerRetrievesModelFromSnapshot(t *testing.T) {
 	defer upstream.Close()
 
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
+		return []providers.Provider{{Name: "provider", State: providers.StateEnabled, BaseURL: upstream.URL + "/v1"}}, nil
 	}, nil, upstream.Client(), discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
@@ -128,8 +128,8 @@ func TestModelsHandlerRejectsUnavailableUnqualifiedAndUnknownModelRetrieval(t *t
 
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
 		return []providers.Provider{
-			{Name: "first", BaseURL: first.URL + "/v1"},
-			{Name: "second", BaseURL: second.URL + "/v1"},
+			{Name: "first", State: providers.StateEnabled, BaseURL: first.URL + "/v1"},
+			{Name: "second", State: providers.StateEnabled, BaseURL: second.URL + "/v1"},
 		}, nil
 	}, nil, first.Client(), discardLogger())
 
@@ -229,7 +229,7 @@ func TestModelsHandlerSkipsProviderWithoutBaseURL(t *testing.T) {
 	listProviders := func(context.Context) ([]providers.Provider, error) {
 		return []providers.Provider{
 			{Name: "catalog-only"},
-			{Name: "healthy", BaseURL: healthy.URL + "/v1"},
+			{Name: "healthy", State: providers.StateEnabled, BaseURL: healthy.URL + "/v1"},
 		}, nil
 	}
 	handler := NewModelsHandler(listProviders, nil, healthy.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -244,8 +244,8 @@ func TestModelsHandlerSkipsProviderWithoutBaseURL(t *testing.T) {
 func TestModelsHandlerRejectsDuplicateProviderNames(t *testing.T) {
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
 		return []providers.Provider{
-			{Name: "duplicate", BaseURL: "http://first.example/v1"},
-			{Name: "duplicate", BaseURL: "http://second.example/v1"},
+			{Name: "duplicate", State: providers.StateEnabled, BaseURL: "http://first.example/v1"},
+			{Name: "duplicate", State: providers.StateEnabled, BaseURL: "http://second.example/v1"},
 		}, nil
 	}, nil, http.DefaultClient, discardLogger())
 
@@ -313,7 +313,7 @@ func TestModelsHandlerPreservesSnapshotWhenRefreshFails(t *testing.T) {
 		if fail.Load() {
 			return nil, errors.New("provider inventory unavailable")
 		}
-		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
+		return []providers.Provider{{Name: "provider", State: providers.StateEnabled, BaseURL: upstream.URL + "/v1"}}, nil
 	}, nil, upstream.Client(), discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)

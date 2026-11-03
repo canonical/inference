@@ -76,10 +76,7 @@ func Discover(
 		if provider.BaseURL == "" {
 			continue
 		}
-		if provider.Backend == providers.BackendSnap && provider.State != providers.StateEnabled {
-			continue
-		}
-		if provider.State == providers.StateDisabled {
+		if provider.State != providers.StateEnabled {
 			continue
 		}
 		if provider.Name == "" {
