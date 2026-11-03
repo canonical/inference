@@ -26,15 +26,23 @@ type addCommand struct {
 func Add(ctx *common.Context) *cobra.Command {
 	cmd := addCommand{ctx: ctx}
 	cobraCmd := &cobra.Command{
-		Use:               "add <provider>\nAvailable providers: openai",
-		Short:             "Add an inference provider",
-		Long:              "Add a third-party inference provider with an API key. Set the OPENAI_API_KEY environment variable or enter it when prompted.",
+		Use:   "add <provider>",
+		Short: "Add an inference provider",
+		Long: `This command adds an external inference provider. 
+
+To set up a local inference backend via an inference snap, use the "install" command instead.
+
+The currently supported external providers are:
+
+  openai   Authenticate and route requests to https://api.openai.com/v1/
+           Pass the API key as OPENAI_API_KEY environment variable or enter it when prompted.
+`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeAddProvider,
 		SilenceUsage:      true,
 		RunE:              cmd.run,
 	}
-	cobraCmd.Flags().StringVar(&cmd.name, "name", "", "provider name")
+	cobraCmd.Flags().StringVar(&cmd.name, "name", "", "provider name (defaults to the provider identifier)")
 	_ = cobraCmd.RegisterFlagCompletionFunc("name", cobra.NoFileCompletions)
 	return cobraCmd
 }
