@@ -111,6 +111,7 @@ func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string
 		return nil, common.FriendlySnapdError(err)
 	}
 
+
 	enabled := make([]providers.Provider, 0, len(list))
 	for _, provider := range list {
 		if provider.State == providers.StateEnabled && provider.BaseURL != "" {
