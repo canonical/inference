@@ -2,6 +2,11 @@ name: PR
 
 on:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
     branches:
       - main
 
@@ -10,6 +15,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  cla-check:
+    runs-on: ubuntu-slim
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Check if CLA signed
+        uses: canonical/has-signed-canonical-cla@v2
+      
   lint:
     runs-on: ubuntu-24.04
 
@@ -41,8 +54,9 @@ jobs:
       - name: Run tests
         run: go test -v ./...
 
-  build:
+  build-publish:
     needs: [ lint, test ]
+    if: github.event.pull_request.draft == false
     strategy:
       fail-fast: false
       matrix:
