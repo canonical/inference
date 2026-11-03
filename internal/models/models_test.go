@@ -34,6 +34,7 @@ func TestDiscoverReportsModelsAndErrorsPerProvider(t *testing.T) {
 		{Name: "openai", Backend: providers.BackendProxy, BaseURL: third.URL + "/v1"},
 		{Name: "unavailable", Backend: providers.BackendSnap},
 		{Name: "disabled", Backend: providers.BackendSnap, State: providers.StateDisabled, BaseURL: second.URL + "/v1"},
+		{Name: "gemma4", Backend: providers.BackendProxy, State: providers.StateDisabled, BaseURL: second.URL + "/v1"},
 	}
 	got, err := Discover(context.Background(), list, first.Client(), nil)
 	if err != nil {

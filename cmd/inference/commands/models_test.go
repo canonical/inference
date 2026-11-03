@@ -223,8 +223,9 @@ func TestModelsDaemonUnreachable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := execute(Models(ctx)); err == nil || !strings.Contains(err.Error(), "requesting models from daemon") {
-		t.Fatalf("unexpected error: %v", err)
+	want := "unable to reach the inference proxy at http://" + address + "/v1. Run \"inference status\" to check the service"
+	if err := execute(Models(ctx)); err == nil || err.Error() != want {
+		t.Fatalf("error = %v, want %q", err, want)
 	}
 }
 

@@ -183,6 +183,43 @@ func TestModelsHandlerSkipsUnavailableProvider(t *testing.T) {
 	}
 }
 
+func TestModelsHandlerSkipsDisabledProxy(t *testing.T) {
+	var disabledRequests atomic.Int32
+	disabled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		disabledRequests.Add(1)
+		_, _ = w.Write([]byte(`{"data":[{"id":"ready"}]}`))
+	}))
+	defer disabled.Close()
+	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"id":"ready"}]}`))
+	}))
+	defer healthy.Close()
+
+	listProviders := func(context.Context) ([]providers.Provider, error) {
+		return []providers.Provider{
+			{Name: "disabled", Backend: providers.BackendProxy, State: providers.StateDisabled, BaseURL: disabled.URL + "/v1"},
+			{Name: "healthy", Backend: providers.BackendProxy, State: providers.StateEnabled, BaseURL: healthy.URL + "/v1"},
+		}, nil
+	}
+	handler := NewModelsHandler(listProviders, nil, healthy.Client(), discardLogger())
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":"healthy/ready"`) || strings.Contains(response.Body.String(), "disabled/") {
+		t.Fatalf("got status %d body %s", response.Code, response.Body.String())
+	}
+
+	response = httptest.NewRecorder()
+	body := strings.NewReader(`{"model":"disabled/ready","messages":[]}`)
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", body))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("got status %d body %s, want 404", response.Code, response.Body.String())
+	}
+	if got := disabledRequests.Load(); got != 0 {
+		t.Fatalf("disabled provider requests = %d, want 0", got)
+	}
+}
+
 func TestModelsHandlerSkipsProviderWithoutBaseURL(t *testing.T) {
 	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"data":[{"id":"ready"}]}`))

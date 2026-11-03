@@ -54,10 +54,22 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	}
 
 	list, err := fetchDaemonModels(cobraCmd.Context(), cmd.HTTPHost, cmd.HTTPPort)
+	if daemonUnreachable(cobraCmd.Context(), err) {
+		return fmt.Errorf("unable to reach the inference proxy at %s. Run \"inference status\" to check the service", proxyOpenAIBaseURL(cmd.HTTPHost, cmd.HTTPPort))
+	}
 	if err != nil {
 		return err
 	}
 	return cmd.printModels(list)
+}
+
+func proxyOpenAIBaseURL(host, port string) string {
+	return "http://" + net.JoinHostPort(host, port) + "/v1"
+}
+
+func daemonUnreachable(ctx context.Context, err error) bool {
+	var dialErr *net.OpError
+	return errors.As(err, &dialErr) && dialErr.Op == "dial" && ctx.Err() == nil
 }
 
 func fetchDaemonModels(ctx context.Context, host, port string) (_ []modelOutput, err error) {

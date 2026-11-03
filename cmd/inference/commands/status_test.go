@@ -366,7 +366,6 @@ func TestStatusReportsDaemonErrors(t *testing.T) {
 		{name: "invalid json", status: http.StatusOK, body: `{`, want: "decoding daemon models"},
 		{name: "missing data", status: http.StatusOK, body: `{}`, want: "missing data array"},
 		{name: "invalid model", status: http.StatusOK, body: `{"data":[{"id":"unqualified","owned_by":"provider"}]}`, want: "invalid model ID"},
-		{name: "unreachable", status: http.StatusOK, body: `{"data":[]}`, want: "requesting models from daemon"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := modelsDaemon(t, test.status, test.body)
@@ -381,19 +380,6 @@ func TestStatusReportsDaemonErrors(t *testing.T) {
 			writeStatusProviders(t, ctx, map[string]config.Provider{
 				"provider": {Enabled: true, Backend: config.BackendProxy, BaseURL: upstream.URL + "/v1"},
 			})
-			if test.name == "unreachable" {
-				listener, err := net.Listen("tcp", "127.0.0.1:0")
-				if err != nil {
-					t.Fatal(err)
-				}
-				ctx.HTTPHost, ctx.HTTPPort, err = net.SplitHostPort(listener.Addr().String())
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := listener.Close(); err != nil {
-					t.Fatal(err)
-				}
-			}
 			ctx.SnapCatalog = &snapcatalog.Reader{}
 			ctx.SnapdClient = statusSnapdClient(t, common.InferenceSnapName, true)
 			var stdout strings.Builder
@@ -409,6 +395,42 @@ func TestStatusReportsDaemonErrors(t *testing.T) {
 				t.Fatalf("upstream requests = %d, want 0", got)
 			}
 		})
+	}
+}
+
+func TestStatusHintsWhenDaemonUnreachable(t *testing.T) {
+	t.Setenv("SNAP_INSTANCE_NAME", "")
+	ctx, stdout, stderr := newTestContext(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx.HTTPHost, ctx.HTTPPort, err = net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	writeStatusProviders(t, ctx, map[string]config.Provider{
+		"provider": {Enabled: true, Backend: config.BackendProxy, BaseURL: "http://127.0.0.1:1/v1"},
+	})
+	ctx.SnapCatalog = &snapcatalog.Reader{}
+	ctx.SnapdClient = statusSnapdClient(t, common.InferenceSnapName, false)
+
+	if err := execute(Status(ctx)); err != nil {
+		t.Fatal(err)
+	}
+	var got statusOutput
+	if err := yaml.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Services[common.InferenceSnapName+"."+common.InferenceService] != "inactive" || got.Health != nil {
+		t.Fatalf("unexpected status: %+v", got)
+	}
+	wantHint := "\nHint: Unable to reach the inference proxy at http://" + net.JoinHostPort(ctx.HTTPHost, ctx.HTTPPort) + "/v1, so provider health is unknown.\n"
+	if stderr.String() != wantHint {
+		t.Fatalf("stderr = %q, want %q", stderr.String(), wantHint)
 	}
 }
 

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"net"
 
 	snapctlenv "github.com/canonical/go-snapctl/env"
 	"github.com/canonical/inference/cmd/inference/common"
@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v4"
 )
+
+var errDaemonUnreachable = errors.New("inference daemon is unreachable")
 
 type statusCommand struct {
 	*common.Context
@@ -53,7 +55,7 @@ func (cmd *statusCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	status, err := cmd.buildStatus(cobraCmd.Context())
+	status, hint, err := cmd.buildStatus(cobraCmd.Context())
 	if err != nil {
 		return err
 	}
@@ -66,11 +68,16 @@ func (cmd *statusCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprint(cmd.Stdout, output)
-	return err
+	if _, err := fmt.Fprint(cmd.Stdout, output); err != nil {
+		return err
+	}
+	if hint != "" {
+		_, _ = fmt.Fprintln(cmd.Stderr, "\nHint: "+hint)
+	}
+	return nil
 }
 
-func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error) {
+func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, string, error) {
 	snapInstanceName := snapctlenv.SnapInstanceName()
 	if snapInstanceName == "" {
 		// Fall back to snap name when not inside a snap
@@ -78,12 +85,15 @@ func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error)
 	}
 	serviceStatus, err := cmd.SnapdClient.ServiceStatus(ctx, snapInstanceName, common.InferenceService)
 	if err != nil {
-		return statusOutput{}, common.FriendlySnapdError(err)
+		return statusOutput{}, "", common.FriendlySnapdError(err)
 	}
 
+	var hint string
 	health, err := cmd.providerHealth(ctx)
-	if err != nil {
-		return statusOutput{}, err
+	if errors.Is(err, errDaemonUnreachable) {
+		hint = fmt.Sprintf("Unable to reach the inference proxy at %s, so provider health is unknown.", cmd.proxyOpenAIBaseURL())
+	} else if err != nil {
+		return statusOutput{}, "", err
 	}
 
 	// TODO look up warnings like GPU not working
@@ -96,7 +106,7 @@ func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error)
 			},
 		},
 		Health: health,
-	}, nil
+	}, hint, nil
 }
 
 func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string, error) {
@@ -111,7 +121,6 @@ func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string
 		return nil, common.FriendlySnapdError(err)
 	}
 
-
 	enabled := make([]providers.Provider, 0, len(list))
 	for _, provider := range list {
 		if provider.State == providers.StateEnabled && provider.BaseURL != "" {
@@ -123,6 +132,9 @@ func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string
 	}
 
 	models, err := fetchDaemonModels(ctx, cmd.HTTPHost, cmd.HTTPPort)
+	if daemonUnreachable(ctx, err) {
+		return nil, errDaemonUnreachable
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +164,7 @@ func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string
 }
 
 func (cmd *statusCommand) proxyOpenAIBaseURL() string {
-	return "http://" + net.JoinHostPort(cmd.HTTPHost, cmd.HTTPPort) + "/v1"
+	return proxyOpenAIBaseURL(cmd.HTTPHost, cmd.HTTPPort)
 }
 
 func (cmd *statusCommand) outputJSON(status statusOutput) (string, error) {

@@ -79,6 +79,9 @@ func Discover(
 		if provider.Backend == providers.BackendSnap && provider.State != providers.StateEnabled {
 			continue
 		}
+		if provider.State == providers.StateDisabled {
+			continue
+		}
 		if provider.Name == "" {
 			return nil, errors.New("provider with an API base URL has an empty name")
 		}
