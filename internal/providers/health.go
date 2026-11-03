@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const healthCheckTimeout = 5 * time.Second
+const healthCheckTimeout = 2 * time.Second
 
 type HealthStatus string
 

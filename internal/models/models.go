@@ -21,7 +21,7 @@ import (
 
 const (
 	maxResponseSize = 4 * 1024 * 1024
-	requestTimeout  = 15 * time.Second
+	requestTimeout  = 3 * time.Second
 )
 
 type Model struct {
