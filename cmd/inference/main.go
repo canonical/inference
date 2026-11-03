@@ -87,6 +87,7 @@ func root(ctx *common.Context) *cobra.Command {
 	cmd.SetOut(ctx.Stdout)
 	cmd.SetErr(ctx.Stderr)
 	cmd.AddCommand(
+		commands.Add(ctx),
 		commands.Find(ctx),
 		commands.Info(ctx),
 		commands.Install(ctx),
