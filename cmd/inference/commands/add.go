@@ -42,7 +42,7 @@ The currently supported external providers are:
 		SilenceUsage:      true,
 		RunE:              cmd.run,
 	}
-	cobraCmd.Flags().StringVar(&cmd.name, "name", "", "provider name (defaults to provider identifier)")
+	cobraCmd.Flags().StringVar(&cmd.name, "name", "", "provider name (defaults to the provider identifier)")
 	_ = cobraCmd.RegisterFlagCompletionFunc("name", cobra.NoFileCompletions)
 	return cobraCmd
 }
