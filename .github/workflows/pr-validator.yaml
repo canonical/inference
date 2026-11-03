@@ -5,7 +5,7 @@
 #
 # The PR title is used as the squash commit message when merging, and used to generate the changelog
 
-name: PR Linter
+name: PR Validator
 
 on:
   pull_request:
@@ -16,8 +16,7 @@ on:
       # - synchronize # if using required Actions
 
 jobs:
-  main:
-    name: Validate PR title
+  semantic-title:
     runs-on: ubuntu-slim
     permissions:
       pull-requests: read

@@ -18,7 +18,7 @@ jobs:
       - name: Check if CLA signed
         uses: canonical/has-signed-canonical-cla@v2
       
-  lint-code:
+  lint:
     runs-on: ubuntu-24.04
 
     steps:
