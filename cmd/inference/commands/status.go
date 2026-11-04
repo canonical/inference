@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"net"
 
 	snapctlenv "github.com/canonical/go-snapctl/env"
 	"github.com/canonical/inference/cmd/inference/common"
@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v4"
 )
+
+var errDaemonUnreachable = errors.New("inference daemon is unreachable")
 
 type statusCommand struct {
 	*common.Context
@@ -54,6 +56,9 @@ func (cmd *statusCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	}
 
 	status, err := cmd.buildStatus(cobraCmd.Context())
+	if errors.Is(err, errDaemonUnreachable) {
+		return proxyUnreachableError(cmd.Context, err)
+	}
 	if err != nil {
 		return err
 	}
@@ -122,6 +127,9 @@ func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string
 	}
 
 	models, err := fetchDaemonModels(ctx, cmd.HTTPHost, cmd.HTTPPort)
+	if daemonUnreachable(ctx, err) {
+		return nil, fmt.Errorf("%w: %w", errDaemonUnreachable, err)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +159,7 @@ func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string
 }
 
 func (cmd *statusCommand) proxyOpenAIBaseURL() string {
-	return "http://" + net.JoinHostPort(cmd.HTTPHost, cmd.HTTPPort) + "/v1"
+	return proxyOpenAIBaseURL(cmd.HTTPHost, cmd.HTTPPort)
 }
 
 func (cmd *statusCommand) outputJSON(status statusOutput) (string, error) {

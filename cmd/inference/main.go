@@ -83,6 +83,7 @@ func root(ctx *common.Context) *cobra.Command {
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 	}
+	cmd.PersistentFlags().BoolVar(&ctx.Verbose, "verbose", false, "enable verbose output")
 	cmd.CompletionOptions.HiddenDefaultCmd = true
 	cmd.SetOut(ctx.Stdout)
 	cmd.SetErr(ctx.Stderr)

@@ -210,7 +210,8 @@ func TestModelsPreservesNativeIDWithSlashes(t *testing.T) {
 }
 
 func TestModelsDaemonUnreachable(t *testing.T) {
-	ctx, _, _ := newTestContext(t)
+	ctx, _, stderr := newTestContext(t)
+	ctx.Verbose = true
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -223,8 +224,12 @@ func TestModelsDaemonUnreachable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := execute(Models(ctx)); err == nil || !strings.Contains(err.Error(), "requesting models from daemon") {
-		t.Fatalf("unexpected error: %v", err)
+	want := "cannot reach the inference proxy at http://" + address + "/v1, make sure the service is running"
+	if err := execute(Models(ctx)); err == nil || err.Error() != want {
+		t.Fatalf("error = %v, want %q", err, want)
+	}
+	if !strings.Contains(stderr.String(), "connection refused") {
+		t.Fatalf("stderr = %q, want underlying dial error", stderr.String())
 	}
 }
 
