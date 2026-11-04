@@ -31,11 +31,13 @@ func TestDiscoverReportsModelsAndErrorsPerProvider(t *testing.T) {
 	list := []providers.Provider{
 		{Name: "gemma4", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: first.URL + "/v1"},
 		{Name: "broken", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: second.URL + "/v1"},
-		{Name: "openai", Backend: providers.BackendProxy, BaseURL: third.URL + "/v1"},
+		{Name: "openai", Backend: providers.BackendProxy, State: providers.StateEnabled, BaseURL: third.URL + "/v1"},
 		{Name: "unavailable", Backend: providers.BackendSnap},
 		{Name: "disabled", Backend: providers.BackendSnap, State: providers.StateDisabled, BaseURL: second.URL + "/v1"},
+		{Name: "gemma4", Backend: providers.BackendProxy, State: providers.StateDisabled, BaseURL: second.URL + "/v1"},
+		{Name: "unknown", Backend: providers.BackendProxy, BaseURL: second.URL + "/v1"},
 	}
-	got, err := Discover(context.Background(), list, first.Client())
+	got, err := Discover(context.Background(), list, first.Client(), nil)
 	if err != nil {
 		t.Fatal("expected no error, got", err)
 	}
@@ -86,7 +88,7 @@ func TestDiscoverReportsModelsAndErrorsPerProvider(t *testing.T) {
 }
 
 func TestListProviderModelsReturnsEmptyWithoutAvailableProviders(t *testing.T) {
-	got, err := Discover(context.Background(), nil, http.DefaultClient)
+	got, err := Discover(context.Background(), nil, http.DefaultClient, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,8 +104,8 @@ func TestDiscoverReturnsProviderErrorForBrokenProvider(t *testing.T) {
 	defer server.Close()
 
 	got, err := Discover(context.Background(), []providers.Provider{
-		{Name: "broken", Backend: providers.BackendProxy, BaseURL: server.URL + "/v1"},
-	}, server.Client())
+		{Name: "broken", Backend: providers.BackendProxy, State: providers.StateEnabled, BaseURL: server.URL + "/v1"},
+	}, server.Client(), nil)
 
 	if err != nil {
 		t.Fatalf("got unexpected error %v", err)
@@ -132,7 +134,7 @@ func TestFetchModelsRejectsMissingData(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := fetchModels(context.Background(), server.Client(), server.URL+"/v1")
+	_, err := fetchModels(context.Background(), server.Client(), server.URL+"/v1", "")
 	if err == nil || !strings.Contains(err.Error(), "missing data array") {
 		t.Fatalf("got error %v, want missing data array", err)
 	}

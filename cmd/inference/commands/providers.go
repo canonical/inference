@@ -52,6 +52,7 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 
 	list, err := providers.ListInstalled(
 		cobraCmd.Context(),
+		cmd.Config,
 		cmd.SnapCatalog,
 		cmd.SnapdClient,
 		cmd.ShareProvidersPath,

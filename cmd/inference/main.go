@@ -8,6 +8,7 @@ import (
 
 	"github.com/canonical/inference/cmd/inference/commands"
 	"github.com/canonical/inference/cmd/inference/common"
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
 	"github.com/spf13/cobra"
@@ -25,6 +26,7 @@ func main() {
 	ctx := &common.Context{
 		Stdout:             os.Stdout,
 		Stderr:             os.Stderr,
+		Config:             config.NewConfigReader(),
 		SnapdClient:        snapd.NewClient(),
 		SnapCatalog:        snapcatalog.NewReader(),
 		ShareProvidersPath: shareProvidersPath(),
@@ -81,10 +83,12 @@ func root(ctx *common.Context) *cobra.Command {
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 	}
+	cmd.PersistentFlags().BoolVar(&ctx.Verbose, "verbose", false, "enable verbose output")
 	cmd.CompletionOptions.HiddenDefaultCmd = true
 	cmd.SetOut(ctx.Stdout)
 	cmd.SetErr(ctx.Stderr)
 	cmd.AddCommand(
+		commands.Add(ctx),
 		commands.Find(ctx),
 		commands.Info(ctx),
 		commands.Install(ctx),

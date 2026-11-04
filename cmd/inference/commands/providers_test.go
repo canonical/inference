@@ -2,22 +2,25 @@ package commands
 
 import (
 	"bytes"
+	"path/filepath"
 	"testing"
 
 	"github.com/canonical/inference/cmd/inference/common"
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/providers"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
 	"github.com/spf13/cobra"
 )
 
-func newTestContext() (*common.Context, *bytes.Buffer, *bytes.Buffer) {
+func newTestContext(t *testing.T) (*common.Context, *bytes.Buffer, *bytes.Buffer) {
 	var stdout, stderr bytes.Buffer
 	return &common.Context{
 		Stdout:   &stdout,
 		Stderr:   &stderr,
 		HTTPHost: "127.0.0.1",
 		HTTPPort: "8400",
+		Config:   &config.ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")},
 	}, &stdout, &stderr
 }
 
@@ -46,7 +49,7 @@ func TestProviders_TableExactOutput(t *testing.T) {
 }
 
 func TestProviders_TableHintWhenAllInstalled(t *testing.T) {
-	ctx, stdout, stderr := newTestContext()
+	ctx, stdout, stderr := newTestContext(t)
 	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[{"snap":"gemma4","model_name":"Gemma 4"}]`)
 	ctx.SnapdClient, _ = snapd.NewFakeServer(t, map[string]string{
 		"gemma4": snapd.SnapStatusActive,
@@ -108,7 +111,7 @@ func TestProviders_JSONEmptyUsesEmptyArray(t *testing.T) {
 }
 
 func TestProviders_InvalidFormatIsRejectedBeforeListing(t *testing.T) {
-	ctx, stdout, _ := newTestContext()
+	ctx, stdout, _ := newTestContext(t)
 
 	err := execute(Providers(ctx), "--format=xml")
 	if err == nil {
@@ -120,7 +123,7 @@ func TestProviders_InvalidFormatIsRejectedBeforeListing(t *testing.T) {
 }
 
 func TestProviders_PositionalArgsAreRejected(t *testing.T) {
-	ctx, stdout, _ := newTestContext()
+	ctx, stdout, _ := newTestContext(t)
 
 	err := execute(Providers(ctx), "unexpected-arg")
 	if err == nil {
@@ -134,7 +137,7 @@ func TestProviders_PositionalArgsAreRejected(t *testing.T) {
 func TestProviders_OnlyInstalledProviders(t *testing.T) {
 	for _, format := range []string{"table", "json"} {
 		t.Run(format, func(t *testing.T) {
-			ctx, stdout, _ := newTestContext()
+			ctx, stdout, _ := newTestContext(t)
 			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[
 				{"snap":"gemma4","model_name":"Gemma 4"},
 				{"snap":"qwen3","model_name":"Qwen 3"},
@@ -163,7 +166,7 @@ func TestProviders_OnlyInstalledProviders(t *testing.T) {
 func TestProviders_NoInstalledProviders(t *testing.T) {
 	for _, format := range []string{"table", "json"} {
 		t.Run(format, func(t *testing.T) {
-			ctx, stdout, stderr := newTestContext()
+			ctx, stdout, stderr := newTestContext(t)
 			ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[{"snap":"gemma4","model_name":"Gemma 4"}]`)
 			ctx.SnapdClient, _ = snapd.NewFakeServer(t, nil)
 

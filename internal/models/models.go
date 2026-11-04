@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/providers"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
@@ -20,7 +21,7 @@ import (
 
 const (
 	maxResponseSize = 4 * 1024 * 1024
-	requestTimeout  = 15 * time.Second
+	requestTimeout  = 3 * time.Second
 )
 
 type Model struct {
@@ -45,12 +46,14 @@ type upstreamModel struct {
 
 func List(
 	ctx context.Context,
+	config *config.ConfigReader,
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
 ) ([]ProviderModels, error) {
 	allProviders, err := providers.ListAll(
 		ctx,
+		config,
 		catalog,
 		snapdClient,
 		shareProvidersPath,
@@ -58,13 +61,14 @@ func List(
 	if err != nil {
 		return nil, err
 	}
-	return Discover(ctx, allProviders, http.DefaultClient)
+	return Discover(ctx, allProviders, http.DefaultClient, config.ProviderAPIKey)
 }
 
 func Discover(
 	ctx context.Context,
 	allProviders []providers.Provider,
 	client *http.Client,
+	apiKeys providers.APIKeyLookup,
 ) ([]ProviderModels, error) {
 	availableProviders := make([]providers.Provider, 0, len(allProviders))
 	providerNames := make(map[string]struct{}, len(allProviders))
@@ -72,7 +76,7 @@ func Discover(
 		if provider.BaseURL == "" {
 			continue
 		}
-		if provider.Backend == providers.BackendSnap && provider.State != providers.StateEnabled {
+		if provider.State != providers.StateEnabled {
 			continue
 		}
 		if provider.Name == "" {
@@ -97,7 +101,7 @@ func Discover(
 	for _, provider := range availableProviders {
 		requests.Go(func() {
 			models := make([]Model, 0)
-			upstreamModels, err := fetchModels(ctx, client, provider.BaseURL)
+			upstreamModels, err := fetchProviderModels(ctx, client, provider, apiKeys)
 			if err == nil {
 				models = normalizeModels(provider, upstreamModels)
 				sort.Slice(models, func(i, j int) bool {
@@ -147,7 +151,20 @@ func normalizeModels(provider providers.Provider, upstreamModels []upstreamModel
 	return output
 }
 
-func fetchModels(ctx context.Context, client *http.Client, baseURL string) ([]upstreamModel, error) {
+func fetchProviderModels(
+	ctx context.Context,
+	client *http.Client,
+	provider providers.Provider,
+	apiKeys providers.APIKeyLookup,
+) ([]upstreamModel, error) {
+	apiKey, err := apiKeys.Get(provider.Name)
+	if err != nil {
+		return nil, err
+	}
+	return fetchModels(ctx, client, provider.BaseURL, apiKey)
+}
+
+func fetchModels(ctx context.Context, client *http.Client, baseURL string, apiKey string) ([]upstreamModel, error) {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
@@ -160,12 +177,14 @@ func fetchModels(ctx context.Context, client *http.Client, baseURL string) ([]up
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	request.Header.Set("Accept", "application/json")
+	providers.AuthorizeRequest(request, apiKey)
 
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("requesting models: %w", redactURLError(err))
 	}
 	defer response.Body.Close()
+	providers.StripCredentials(response)
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return nil, fmt.Errorf("requesting models: upstream returned %s", response.Status)
 	}

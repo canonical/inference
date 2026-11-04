@@ -2,12 +2,16 @@ package commands
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/canonical/inference/cmd/inference/common"
-	"github.com/canonical/inference/internal/models"
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
@@ -49,31 +53,79 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	providerModels, err := models.List(
-		cobraCmd.Context(),
-		cmd.SnapCatalog,
-		cmd.SnapdClient,
-		cmd.ShareProvidersPath,
-	)
-
+	list, err := fetchDaemonModels(cobraCmd.Context(), cmd.HTTPHost, cmd.HTTPPort)
+	if daemonUnreachable(cobraCmd.Context(), err) {
+		return proxyUnreachableError(cmd.Context, err)
+	}
 	if err != nil {
 		return err
 	}
-
-	return cmd.printProviderModels(providerModels)
+	return cmd.printModels(list)
 }
 
-func (cmd *modelsCommand) printProviderModels(providerModels []models.ProviderModels) error {
-	models := make([]models.Model, 0)
-	someProvidersFailed := false
-	for _, pm := range providerModels {
-		if pm.Err == nil {
-			models = append(models, pm.Models...)
-		} else {
-			someProvidersFailed = true
+func proxyOpenAIBaseURL(host, port string) string {
+	return "http://" + net.JoinHostPort(host, port) + "/v1"
+}
+
+func daemonUnreachable(ctx context.Context, err error) bool {
+	var dialErr *net.OpError
+	return errors.As(err, &dialErr) && dialErr.Op == "dial" && ctx.Err() == nil
+}
+
+func proxyUnreachableError(ctx *common.Context, err error) error {
+	if ctx.Verbose {
+		_, _ = fmt.Fprintln(ctx.Stderr, err)
+	}
+	return fmt.Errorf("cannot reach the inference proxy at %s, make sure the service is running", proxyOpenAIBaseURL(ctx.HTTPHost, ctx.HTTPPort))
+}
+
+func fetchDaemonModels(ctx context.Context, host, port string) (_ []modelOutput, err error) {
+	// request models from the daemon
+	endpoint := "http://" + net.JoinHostPort(host, port) + "/v1/models"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating models request: %w", err)
+	}
+	request.Header.Set("Accept", "application/json")
+	client := &http.Client{Timeout: 10 * time.Second}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("requesting models from daemon: %w", err)
+	}
+	defer func() {
+		if closeErr := response.Body.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("closing daemon models response: %w", closeErr))
 		}
+	}()
+
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("requesting models from daemon: returned %s", response.Status)
+	}
+	var result struct {
+		Data []struct {
+			ID      string `json:"id"`
+			OwnedBy string `json:"owned_by"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding daemon models: %w", err)
+	}
+	if result.Data == nil {
+		return nil, fmt.Errorf("decoding daemon models: missing data array")
+	}
+	list := make([]modelOutput, len(result.Data))
+	for i, model := range result.Data {
+		nativeID, ok := strings.CutPrefix(model.ID, model.OwnedBy+"/")
+		if model.OwnedBy == "" || !ok || nativeID == "" {
+			return nil, fmt.Errorf("decoding daemon models: invalid model ID %q for provider %q", model.ID, model.OwnedBy)
+		}
+		list[i] = modelOutput{ID: model.ID, Provider: model.OwnedBy, Model: nativeID}
 	}
 
+	return list, nil
+}
+
+func (cmd *modelsCommand) printModels(models []modelOutput) error {
 	var output string
 	var err error
 
@@ -88,22 +140,12 @@ func (cmd *modelsCommand) printProviderModels(providerModels []models.ProviderMo
 
 	_, err = fmt.Fprint(cmd.Stdout, output)
 
-	if someProvidersFailed {
-		_, _ = fmt.Fprintf(cmd.Stderr, "\nHint: Unable to retrieve models from some providers. Run \"inference status\" for details.\n")
-	}
-
 	return err
 }
 
-func (cmd *modelsCommand) outputJSON(list []models.Model) (string, error) {
+func (cmd *modelsCommand) outputJSON(list []modelOutput) (string, error) {
 	result := modelsOutput{Models: make([]modelOutput, len(list))}
-	for i, model := range list {
-		result.Models[i] = modelOutput{
-			ID:       model.PublicID,
-			Provider: model.ProviderName,
-			Model:    model.NativeID,
-		}
-	}
+	copy(result.Models, list)
 
 	var output bytes.Buffer
 	encoder := json.NewEncoder(&output)
@@ -114,7 +156,7 @@ func (cmd *modelsCommand) outputJSON(list []models.Model) (string, error) {
 	return output.String(), nil
 }
 
-func (cmd *modelsCommand) outputTable(list []models.Model) (string, error) {
+func (cmd *modelsCommand) outputTable(list []modelOutput) (string, error) {
 	var output bytes.Buffer
 	table := tablewriter.NewTable(
 		&output,
@@ -150,13 +192,13 @@ func (cmd *modelsCommand) outputTable(list []models.Model) (string, error) {
 	table.Header([]string{"PROVIDER", "MODEL"})
 	previousProvider := ""
 	for _, model := range list {
-		provider := model.ProviderName
+		provider := model.Provider
 		if provider == previousProvider {
 			provider = ""
 		} else {
 			previousProvider = provider
 		}
-		if err := table.Append([]string{provider, model.NativeID}); err != nil {
+		if err := table.Append([]string{provider, model.Model}); err != nil {
 			return "", err
 		}
 	}
