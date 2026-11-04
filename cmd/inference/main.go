@@ -101,7 +101,7 @@ func root(ctx *common.Context) *cobra.Command {
 		commands.Find(ctx),
 		commands.Info(ctx),
 	)
-	addCommandGroup(cmd, providerGroupID, "Provider Management Commands:",
+	addCommandGroup(cmd, providerGroupID, "Provider Commands:",
 		commands.Providers(ctx),
 		commands.Install(ctx),
 		commands.Remove(ctx),

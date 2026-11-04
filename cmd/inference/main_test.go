@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/canonical/inference/cmd/inference/common"
