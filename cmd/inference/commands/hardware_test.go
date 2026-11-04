@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/lscompute/pkg/machine"
 	"github.com/canonical/lscompute/pkg/machine/cpu"
 	"github.com/canonical/lscompute/pkg/machine/device/apusys"
@@ -330,7 +331,7 @@ func TestApusysDeviceDetailsVerbose_marshaling(t *testing.T) {
 }
 
 func Example_hardwareCommand_printMachineInfo_json() {
-	cmd := hardwareCommand{format: "json", verbose: true}
+	cmd := hardwareCommand{format: "json", Context: &common.Context{Verbose: true}}
 	info, err := hardwareInfoFixture("dummy-machine")
 	if err != nil {
 		panic(err)
@@ -389,7 +390,7 @@ func Example_hardwareCommand_printMachineInfo_json() {
 }
 
 func Example_hardwareCommand_printMachineInfo_plain() {
-	cmd := hardwareCommand{format: "plain", verbose: true}
+	cmd := hardwareCommand{format: "plain", Context: &common.Context{Verbose: true}}
 	info, err := hardwareInfoFixture("dummy-machine")
 	if err != nil {
 		panic(err)
@@ -428,7 +429,7 @@ func Example_hardwareCommand_printMachineInfo_plain() {
 }
 
 func Example_hardwareCommand_printMachineInfo_plainCompact() {
-	cmd := hardwareCommand{format: "plain", verbose: false}
+	cmd := hardwareCommand{format: "plain", Context: &common.Context{}}
 	info, err := hardwareInfoFixture("dummy-machine")
 	if err != nil {
 		panic(err)

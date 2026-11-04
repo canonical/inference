@@ -398,9 +398,9 @@ func TestStatusReportsDaemonErrors(t *testing.T) {
 	}
 }
 
-func TestStatusHintsWhenDaemonUnreachable(t *testing.T) {
+func TestStatusFailsWhenDaemonUnreachable(t *testing.T) {
 	t.Setenv("SNAP_INSTANCE_NAME", "")
-	ctx, stdout, stderr := newTestContext(t)
+	ctx, stdout, _ := newTestContext(t)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -418,19 +418,12 @@ func TestStatusHintsWhenDaemonUnreachable(t *testing.T) {
 	ctx.SnapCatalog = &snapcatalog.Reader{}
 	ctx.SnapdClient = statusSnapdClient(t, common.InferenceSnapName, false)
 
-	if err := execute(Status(ctx)); err != nil {
-		t.Fatal(err)
+	want := "cannot reach the inference proxy at http://" + net.JoinHostPort(ctx.HTTPHost, ctx.HTTPPort) + "/v1, make sure the service is running"
+	if err := execute(Status(ctx)); err == nil || err.Error() != want {
+		t.Fatalf("error = %v, want %q", err, want)
 	}
-	var got statusOutput
-	if err := yaml.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Services[common.InferenceSnapName+"."+common.InferenceService] != "inactive" || got.Health != nil {
-		t.Fatalf("unexpected status: %+v", got)
-	}
-	wantHint := "\nHint: Unable to reach the inference proxy at http://" + net.JoinHostPort(ctx.HTTPHost, ctx.HTTPPort) + "/v1, so provider health is unknown.\n"
-	if stderr.String() != wantHint {
-		t.Fatalf("stderr = %q, want %q", stderr.String(), wantHint)
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
 }
 

@@ -29,8 +29,7 @@ type hardwareCommand struct {
 	*common.Context
 
 	// flags
-	verbose bool
-	format  string
+	format string
 }
 
 type hardwareDetails struct {
@@ -166,12 +165,6 @@ func Hardware(ctx *common.Context) *cobra.Command {
 		"plain",
 		fmt.Sprintf("output format [%s]", strings.Join(supportedFormats, "|")),
 	)
-	cobraCmd.Flags().BoolVar(
-		&cmd.verbose,
-		"verbose",
-		false,
-		"enable verbose output",
-	)
 
 	return cobraCmd
 }
@@ -231,7 +224,7 @@ func (cmd *hardwareCommand) printHardwareInfo(info hardwareDetailsVerbose) error
 	case "json":
 		return cmd.printHardwareInfoJSON(info)
 	case "plain":
-		if !cmd.verbose {
+		if !cmd.Verbose {
 			return cmd.printHardwareInfoPlain(info.compactHardwareDetails())
 		}
 		return cmd.printHardwareInfoPlain(info)
@@ -263,7 +256,7 @@ func (cmd *hardwareCommand) fetchHardwareInfoWithSpinner() (*machine.Machine, er
 	hwInfo, warnings, err := machine.Get(host.Real(), true, false)
 	stopProgress()
 
-	if len(warnings) > 0 && cmd.verbose {
+	if len(warnings) > 0 && cmd.Verbose {
 		for _, warning := range warnings {
 			fmt.Fprintf(os.Stderr, "Warning: %s\n", warning)
 		}

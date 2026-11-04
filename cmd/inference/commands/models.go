@@ -55,7 +55,7 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 
 	list, err := fetchDaemonModels(cobraCmd.Context(), cmd.HTTPHost, cmd.HTTPPort)
 	if daemonUnreachable(cobraCmd.Context(), err) {
-		return fmt.Errorf("unable to reach the inference proxy at %s. Run \"inference status\" to check the service", proxyOpenAIBaseURL(cmd.HTTPHost, cmd.HTTPPort))
+		return proxyUnreachableError(cmd.Context, err)
 	}
 	if err != nil {
 		return err
@@ -70,6 +70,13 @@ func proxyOpenAIBaseURL(host, port string) string {
 func daemonUnreachable(ctx context.Context, err error) bool {
 	var dialErr *net.OpError
 	return errors.As(err, &dialErr) && dialErr.Op == "dial" && ctx.Err() == nil
+}
+
+func proxyUnreachableError(ctx *common.Context, err error) error {
+	if ctx.Verbose {
+		_, _ = fmt.Fprintln(ctx.Stderr, err)
+	}
+	return fmt.Errorf("cannot reach the inference proxy at %s, make sure the service is running", proxyOpenAIBaseURL(ctx.HTTPHost, ctx.HTTPPort))
 }
 
 func fetchDaemonModels(ctx context.Context, host, port string) (_ []modelOutput, err error) {
