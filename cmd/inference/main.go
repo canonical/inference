@@ -84,15 +84,28 @@ func root(ctx *common.Context) *cobra.Command {
 	cmd.CompletionOptions.HiddenDefaultCmd = true
 	cmd.SetOut(ctx.Stdout)
 	cmd.SetErr(ctx.Stderr)
-	cmd.AddCommand(
+	cobra.EnableCommandSorting = false
+	addCommandGroup(cmd, "basic", "Basic Commands:",
+		commands.Status(ctx),
+		commands.Models(ctx),
+	)
+	addCommandGroup(cmd, "provider", "Provider Commands:",
+		commands.Providers(ctx),
 		commands.Find(ctx),
 		commands.Info(ctx),
 		commands.Install(ctx),
-		commands.Providers(ctx),
 		commands.Remove(ctx),
+	)
+	cmd.AddCommand(
 		commands.Hardware(ctx),
-		commands.Models(ctx),
-		commands.Status(ctx),
 	)
 	return cmd
+}
+
+func addCommandGroup(root *cobra.Command, id, title string, cmds ...*cobra.Command) {
+	root.AddGroup(&cobra.Group{ID: id, Title: title})
+	for _, cmd := range cmds {
+		cmd.GroupID = id
+		root.AddCommand(cmd)
+	}
 }
