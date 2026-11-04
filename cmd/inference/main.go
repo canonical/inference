@@ -19,7 +19,15 @@ const (
 	httpPortEnvVar            = "HTTP_PORT"
 	defaultHTTPHost           = "127.0.0.1"
 	defaultHTTPPort           = "8400"
+
+	statusGroupID    = "status"
+	discoveryGroupID = "discovery"
+	providerGroupID  = "provider"
 )
+
+func init() {
+	cobra.EnableCommandSorting = false
+}
 
 func main() {
 	ctx := &common.Context{
@@ -84,20 +92,19 @@ func root(ctx *common.Context) *cobra.Command {
 	cmd.CompletionOptions.HiddenDefaultCmd = true
 	cmd.SetOut(ctx.Stdout)
 	cmd.SetErr(ctx.Stderr)
-	cobra.EnableCommandSorting = false
-	addCommandGroup(cmd, "basic", "Basic Commands:",
+	addCommandGroup(cmd, statusGroupID, "Status Commands:",
 		commands.Status(ctx),
 		commands.Models(ctx),
 	)
-	addCommandGroup(cmd, "provider", "Provider Commands:",
-		commands.Providers(ctx),
+	addCommandGroup(cmd, discoveryGroupID, "Discovery Commands:",
+		commands.Hardware(ctx),
 		commands.Find(ctx),
 		commands.Info(ctx),
+	)
+	addCommandGroup(cmd, providerGroupID, "Provider Management Commands:",
+		commands.Providers(ctx),
 		commands.Install(ctx),
 		commands.Remove(ctx),
-	)
-	cmd.AddCommand(
-		commands.Hardware(ctx),
 	)
 	return cmd
 }

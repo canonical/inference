@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/canonical/inference/cmd/inference/common"
@@ -88,14 +89,14 @@ func TestCommandGroups(t *testing.T) {
 	rootCmd := root(ctx)
 
 	commandGroups := map[string]string{
-		"status":    "basic",
-		"models":    "basic",
-		"providers": "provider",
-		"find":      "provider",
-		"info":      "provider",
-		"install":   "provider",
-		"remove":    "provider",
-		"hardware":  "",
+		"status":    statusGroupID,
+		"models":    statusGroupID,
+		"hardware":  discoveryGroupID,
+		"find":      discoveryGroupID,
+		"info":      discoveryGroupID,
+		"providers": providerGroupID,
+		"install":   providerGroupID,
+		"remove":    providerGroupID,
 	}
 
 	for name, wantGroup := range commandGroups {
@@ -106,6 +107,9 @@ func TestCommandGroups(t *testing.T) {
 			}
 			if cmd.GroupID != wantGroup {
 				t.Errorf("got GroupID %q, want %q", cmd.GroupID, wantGroup)
+			}
+			if !rootCmd.ContainsGroup(wantGroup) {
+				t.Errorf("group %q is not registered", wantGroup)
 			}
 		})
 	}
