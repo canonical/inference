@@ -13,7 +13,7 @@ import (
 	"github.com/canonical/inference/internal/status"
 )
 
-func TestModelsHandlerStatus(t *testing.T) {
+func TestProxyHandlerStatus(t *testing.T) {
 	for _, path := range []string{"/v1", "/v1/"} {
 		t.Run(path, func(t *testing.T) {
 			for _, test := range []struct {
@@ -48,7 +48,7 @@ func TestModelsHandlerStatus(t *testing.T) {
 						}
 						return test.result, nil
 					}
-					handler := NewModelsHandler(HandlerOptions{
+					handler := NewProxyHandler(HandlerOptions{
 						LookupStatus: lookupStatus,
 						Logger:       discardLogger(),
 					})
@@ -75,7 +75,7 @@ func TestModelsHandlerStatus(t *testing.T) {
 	}
 }
 
-func TestModelsHandlerStatusUnavailable(t *testing.T) {
+func TestProxyHandlerStatusUnavailable(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		lookup func(context.Context) (status.Status, error)
@@ -96,7 +96,7 @@ func TestModelsHandlerStatusUnavailable(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var logs bytes.Buffer
 			logger := slog.New(slog.NewTextHandler(&logs, nil))
-			handler := NewModelsHandler(HandlerOptions{
+			handler := NewProxyHandler(HandlerOptions{
 				LookupStatus: test.lookup,
 				Logger:       logger,
 			})
@@ -121,8 +121,8 @@ func TestModelsHandlerStatusUnavailable(t *testing.T) {
 	}
 }
 
-func TestModelsHandlerStatusMethodsAndPaths(t *testing.T) {
-	handler := NewModelsHandler(HandlerOptions{
+func TestProxyHandlerStatusMethodsAndPaths(t *testing.T) {
+	handler := NewProxyHandler(HandlerOptions{
 		LookupStatus: func(context.Context) (status.Status, error) {
 			t.Error("unexpected status lookup")
 			return status.Status{}, errors.New("unexpected status lookup")
