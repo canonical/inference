@@ -5,17 +5,13 @@ import (
 	"strings"
 
 	snapctlenv "github.com/canonical/go-snapctl/env"
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/spf13/cobra"
 )
 
-const (
-	InferenceSnapName = "inference"
-	InferenceService  = "d"
-)
-
 func IsSnap() bool {
-	return snapctlenv.Snap() != "" && snapctlenv.SnapName() == InferenceSnapName
+	return snapctlenv.Snap() != "" && snapctlenv.SnapName() == config.InferenceSnapName
 }
 
 // CompleteSnapNames is used for tab completion. It only returns inference snap names from the catalog.

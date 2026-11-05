@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapcatalog"
 )
 
@@ -16,8 +17,8 @@ func TestIsSnap(t *testing.T) {
 		snapName string
 		want     bool
 	}{
-		{name: "inference snap", snap: "/snap/inference/current", snapName: InferenceSnapName, want: true},
-		{name: "outside snap", snapName: InferenceSnapName},
+		{name: "inference snap", snap: "/snap/inference/current", snapName: config.InferenceSnapName, want: true},
+		{name: "outside snap", snapName: config.InferenceSnapName},
 		{name: "different snap", snap: "/snap/other/current", snapName: "other"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

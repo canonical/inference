@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapd"
 	"github.com/mattn/go-runewidth"
 )
@@ -383,7 +384,7 @@ func TestInferenceSnapInstanceName(t *testing.T) {
 		instanceName string
 		want         string
 	}{
-		{name: "outside snap", want: InferenceSnapName},
+		{name: "outside snap", want: config.InferenceSnapName},
 		{name: "parallel instance", instanceName: "inference_gpu", want: "inference_gpu"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

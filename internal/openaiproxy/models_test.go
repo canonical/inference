@@ -17,6 +17,39 @@ import (
 	"github.com/canonical/inference/internal/providers"
 )
 
+func TestNewModelsHandler(t *testing.T) {
+	client := &http.Client{}
+	logger := discardLogger()
+	for _, test := range []struct {
+		name    string
+		options HandlerOptions
+		client  *http.Client
+		logger  *slog.Logger
+	}{
+		{
+			name:   "defaults",
+			client: http.DefaultClient,
+			logger: slog.Default(),
+		},
+		{
+			name:    "configured",
+			options: HandlerOptions{Client: client, Logger: logger},
+			client:  client,
+			logger:  logger,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handler := NewModelsHandler(test.options)
+			if handler.client != test.client {
+				t.Error("handler did not use the expected HTTP client")
+			}
+			if handler.logger != test.logger {
+				t.Error("handler did not use the expected logger")
+			}
+		})
+	}
+}
+
 func TestModelsHandlerRefreshesAndAggregatesProviders(t *testing.T) {
 	var firstRequests atomic.Int32
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +77,11 @@ func TestModelsHandlerRefreshesAndAggregatesProviders(t *testing.T) {
 	root := t.TempDir()
 	writeProvider(t, root, "z-provider", "zeta", first.URL+"/v1")
 	writeProvider(t, root, "a-provider", "alpha", second.URL+"/v1/")
-	handler := NewModelsHandler(connectedProviderLister(root), first.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: connectedProviderLister(root),
+		Client:        first.Client(),
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 
 	for request := int64(1); request <= 2; request++ {
 		response := httptest.NewRecorder()
@@ -86,9 +123,13 @@ func TestModelsHandlerRetrievesModelFromSnapshot(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
-	}, upstream.Client(), discardLogger())
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: func(context.Context) ([]providers.Provider, error) {
+			return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
+		},
+		Client: upstream.Client(),
+		Logger: discardLogger(),
+	})
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -126,12 +167,16 @@ func TestModelsHandlerRejectsUnavailableUnqualifiedAndUnknownModelRetrieval(t *t
 	second := modelServer(t, "shared")
 	defer second.Close()
 
-	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{
-			{Name: "first", BaseURL: first.URL + "/v1"},
-			{Name: "second", BaseURL: second.URL + "/v1"},
-		}, nil
-	}, first.Client(), discardLogger())
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: func(context.Context) ([]providers.Provider, error) {
+			return []providers.Provider{
+				{Name: "first", BaseURL: first.URL + "/v1"},
+				{Name: "second", BaseURL: second.URL + "/v1"},
+			}, nil
+		},
+		Client: first.Client(),
+		Logger: discardLogger(),
+	})
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models/anything", nil))
@@ -174,7 +219,11 @@ func TestModelsHandlerSkipsUnavailableProvider(t *testing.T) {
 	root := t.TempDir()
 	writeProvider(t, root, "healthy", "healthy", healthy.URL+"/v1")
 	writeProvider(t, root, "broken", "broken", "http://127.0.0.1:1/v1")
-	handler := NewModelsHandler(connectedProviderLister(root), healthy.Client(), discardLogger())
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: connectedProviderLister(root),
+		Client:        healthy.Client(),
+		Logger:        discardLogger(),
+	})
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -195,7 +244,11 @@ func TestModelsHandlerSkipsProviderWithoutBaseURL(t *testing.T) {
 			{Name: "healthy", BaseURL: healthy.URL + "/v1"},
 		}, nil
 	}
-	handler := NewModelsHandler(listProviders, healthy.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: listProviders,
+		Client:        healthy.Client(),
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -205,12 +258,16 @@ func TestModelsHandlerSkipsProviderWithoutBaseURL(t *testing.T) {
 }
 
 func TestModelsHandlerRejectsDuplicateProviderNames(t *testing.T) {
-	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{
-			{Name: "duplicate", BaseURL: "http://first.example/v1"},
-			{Name: "duplicate", BaseURL: "http://second.example/v1"},
-		}, nil
-	}, http.DefaultClient, discardLogger())
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: func(context.Context) ([]providers.Provider, error) {
+			return []providers.Provider{
+				{Name: "duplicate", BaseURL: "http://first.example/v1"},
+				{Name: "duplicate", BaseURL: "http://second.example/v1"},
+			}, nil
+		},
+		Client: http.DefaultClient,
+		Logger: discardLogger(),
+	})
 
 	err := handler.Refresh(context.Background())
 	if err == nil || !strings.Contains(err.Error(), `duplicate provider name "duplicate"`) {
@@ -225,7 +282,11 @@ func TestModelsHandlerRefreshesProviderFiles(t *testing.T) {
 	defer upstream.Close()
 
 	root := t.TempDir()
-	handler := NewModelsHandler(connectedProviderLister(root), upstream.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: connectedProviderLister(root),
+		Client:        upstream.Client(),
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -242,7 +303,11 @@ func TestModelsHandlerRefreshesProviderFiles(t *testing.T) {
 }
 
 func TestModelsHandlerReturnsEmptyListWithoutAvailableProviders(t *testing.T) {
-	handler := NewModelsHandler(connectedProviderLister(t.TempDir()), http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: connectedProviderLister(t.TempDir()),
+		Client:        http.DefaultClient,
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -272,12 +337,16 @@ func TestModelsHandlerPreservesSnapshotWhenRefreshFails(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		if fail.Load() {
-			return nil, errors.New("provider inventory unavailable")
-		}
-		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
-	}, upstream.Client(), discardLogger())
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: func(context.Context) ([]providers.Provider, error) {
+			if fail.Load() {
+				return nil, errors.New("provider inventory unavailable")
+			}
+			return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
+		},
+		Client: upstream.Client(),
+		Logger: discardLogger(),
+	})
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +367,11 @@ func TestModelsHandlerPreservesSnapshotWhenRefreshFails(t *testing.T) {
 }
 
 func TestModelsHandlerRejectsOtherMethodsAndPaths(t *testing.T) {
-	handler := NewModelsHandler(connectedProviderLister(t.TempDir()), http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: connectedProviderLister(t.TempDir()),
+		Client:        http.DefaultClient,
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/models", nil))
@@ -314,7 +387,11 @@ func TestModelsHandlerRejectsOtherMethodsAndPaths(t *testing.T) {
 }
 
 func TestModelsHandlerCORSPreflight(t *testing.T) {
-	handler := NewModelsHandler(connectedProviderLister(t.TempDir()), http.DefaultClient, discardLogger())
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: connectedProviderLister(t.TempDir()),
+		Client:        http.DefaultClient,
+		Logger:        discardLogger(),
+	})
 	request := httptest.NewRequest(http.MethodOptions, "/v1/chat/completions", nil)
 	request.Header.Set("Origin", "https://client.example")
 	request.Header.Set("Access-Control-Request-Method", http.MethodPost)

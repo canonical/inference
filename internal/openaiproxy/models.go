@@ -17,6 +17,7 @@ import (
 
 	"github.com/canonical/inference/internal/models"
 	"github.com/canonical/inference/internal/providers"
+	"github.com/canonical/inference/internal/status"
 )
 
 const (
@@ -26,11 +27,19 @@ const (
 
 type ModelsHandler struct {
 	listProviders func(context.Context) ([]providers.Provider, error)
+	lookupStatus  func(context.Context) (status.Status, error)
 	client        *http.Client
 	logger        *slog.Logger
 	refreshMu     sync.Mutex
 	snapshot      atomic.Pointer[routingSnapshot]
 	requestID     atomic.Uint64
+}
+
+type HandlerOptions struct {
+	ListProviders func(context.Context) ([]providers.Provider, error)
+	LookupStatus  func(context.Context) (status.Status, error)
+	Client        *http.Client
+	Logger        *slog.Logger
 }
 
 type modelsResponse struct {
@@ -63,18 +72,19 @@ type modelRoute struct {
 
 type routingSnapshot []modelRoute
 
-func NewModelsHandler(
-	listProviders func(context.Context) ([]providers.Provider, error),
-	client *http.Client,
-	logger *slog.Logger,
-) *ModelsHandler {
-	if client == nil {
-		client = http.DefaultClient
+func NewModelsHandler(options HandlerOptions) *ModelsHandler {
+	if options.Client == nil {
+		options.Client = http.DefaultClient
 	}
-	if logger == nil {
-		logger = slog.Default()
+	if options.Logger == nil {
+		options.Logger = slog.Default()
 	}
-	return &ModelsHandler{listProviders: listProviders, client: client, logger: logger}
+	return &ModelsHandler{
+		listProviders: options.ListProviders,
+		lookupStatus:  options.LookupStatus,
+		client:        options.Client,
+		logger:        options.Logger,
+	}
 }
 
 func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -101,6 +111,10 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Path == "/" || r.URL.Path == "/v1" || r.URL.Path == "/v1/" {
+		h.serveStatus(responseWriter, r, logger)
+		return
+	}
 	if r.URL.Path == "/v1/models" {
 		h.serveModels(responseWriter, r)
 		return

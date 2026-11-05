@@ -1,8 +1,9 @@
 package commands
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -10,18 +11,14 @@ import (
 	"testing"
 
 	"github.com/canonical/inference/cmd/inference/common"
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
 )
 
 func statusSnapdClient(t *testing.T, snapName string, active bool) *snapd.Client {
 	t.Helper()
-	socket := filepath.Join(t.TempDir(), "snapd.socket")
-	listener, err := net.Listen("unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return statusSnapdServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v2/apps" {
 			t.Errorf("unexpected path %q", r.URL.Path)
 		}
@@ -29,7 +26,17 @@ func statusSnapdClient(t *testing.T, snapName string, active bool) *snapd.Client
 			t.Errorf("unexpected names query %q", got)
 		}
 		fmt.Fprintf(w, `{"type":"sync","status":"OK","result":[{"snap":%q,"name":"d","active":%t}]}`, snapName, active)
-	}))
+	})
+}
+
+func statusSnapdServer(t *testing.T, handler http.HandlerFunc) *snapd.Client {
+	t.Helper()
+	socket := filepath.Join(t.TempDir(), "snapd.socket")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewUnstartedServer(handler)
 	server.Listener.Close()
 	server.Listener = listener
 	server.Start()
@@ -57,7 +64,7 @@ func TestStatusServicesOutput(t *testing.T) {
 			t.Setenv("SNAP", "")
 			t.Setenv("SNAP_INSTANCE_NAME", "")
 			ctx, stdout, stderr := newTestContext()
-			ctx.SnapdClient = statusSnapdClient(t, common.InferenceSnapName, true)
+			ctx.SnapdClient = statusSnapdClient(t, config.InferenceSnapName, true)
 			ctx.SnapCatalog = &snapcatalog.Reader{}
 			if err := execute(Status(ctx), test.args...); err != nil {
 				t.Fatal(err)
@@ -72,30 +79,21 @@ func TestStatusServicesOutput(t *testing.T) {
 	}
 }
 
-func TestStatusUsesSnapInstanceName(t *testing.T) {
-	const instanceName = "inference_gpu"
-	t.Setenv("SNAP", "")
-	t.Setenv("SNAP_INSTANCE_NAME", instanceName)
+func TestStatusLookupError(t *testing.T) {
+	t.Setenv("SNAP_INSTANCE_NAME", "")
 	ctx, stdout, _ := newTestContext()
-	ctx.SnapdClient = statusSnapdClient(t, instanceName, true)
-	ctx.SnapCatalog = &snapcatalog.Reader{}
-
-	if err := execute(Status(ctx)); err != nil {
-		t.Fatal(err)
+	ctx.SnapdClient = statusSnapdServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		if _, err := fmt.Fprint(w, `{"type":"error","status-code":403,"result":{"message":"access denied"}}`); err != nil {
+			t.Errorf("writing error response: %v", err)
+		}
+	})
+	err := execute(Status(ctx))
+	if err == nil || err.Error() != "access denied. Try again using sudo" {
+		t.Fatalf("got error %v, want friendly access denied error", err)
 	}
-	want := "services:\n  inference_gpu.d: active\nproxy:\n  openai:\n    base-url: http://127.0.0.1:8400/v1\n"
-	if stdout.String() != want {
-		t.Fatalf("got:\n%s\nwant:\n%s", stdout.String(), want)
-	}
-}
-
-func TestProxyOpenAIBaseURL(t *testing.T) {
-	got := (&statusCommand{Context: &common.Context{
-		HTTPHost: "::1",
-		HTTPPort: "8401",
-	}}).proxyOpenAIBaseURL()
-	if got != "http://[::1]:8401/v1" {
-		t.Fatalf("got %q, want %q", got, "http://[::1]:8401/v1")
+	if stdout.Len() != 0 {
+		t.Fatalf("unexpected stdout: %q", stdout.String())
 	}
 }
 
@@ -111,11 +109,11 @@ func TestStatusRejectsInvalidFormat(t *testing.T) {
 	}
 }
 
-func TestStatusOutputJSON(t *testing.T) {
+func TestStatusOutput(t *testing.T) {
 	output := statusOutput{
 		Services: map[string]string{"proxy": "active"},
-		Proxy: &statusProxy{
-			OpenAI: statusOpenAIProxy{BaseURL: "http://127.0.0.1:8080/v1"},
+		Proxy: map[string]map[string]string{
+			"openai": {"base-url": "http://127.0.0.1:8080/v1"},
 		},
 		Health: map[string]string{
 			"gemma4":      "ok",
@@ -126,12 +124,51 @@ func TestStatusOutputJSON(t *testing.T) {
 		Warnings: []string{"Unable to communicate with NVIDIA GeForce RTX 4050 GPU."},
 	}
 
-	got, err := json.Marshal(output)
-	if err != nil {
+	cmd := &statusCommand{}
+	for _, test := range []struct {
+		name   string
+		encode func(statusOutput) (string, error)
+		want   string
+	}{
+		{
+			name:   "json",
+			encode: cmd.outputJSON,
+			want:   "{\n  \"services\": {\n    \"proxy\": \"active\"\n  },\n  \"proxy\": {\n    \"openai\": {\n      \"base-url\": \"http://127.0.0.1:8080/v1\"\n    }\n  },\n  \"health\": {\n    \"gemma4\": \"ok\",\n    \"ollama\": \"ok\",\n    \"openai-work\": \"offline\",\n    \"qwen3.6\": \"not responsive\"\n  },\n  \"warnings\": [\n    \"Unable to communicate with NVIDIA GeForce RTX 4050 GPU.\"\n  ]\n}\n",
+		},
+		{
+			name:   "yaml",
+			encode: cmd.outputYAML,
+			want:   "services:\n  proxy: active\nproxy:\n  openai:\n    base-url: http://127.0.0.1:8080/v1\nhealth:\n  gemma4: ok\n  ollama: ok\n  openai-work: offline\n  qwen3.6: not responsive\nwarnings:\n  - Unable to communicate with NVIDIA GeForce RTX 4050 GPU.\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := test.encode(output)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("got:\n%s\nwant:\n%s", got, test.want)
+			}
+		})
+	}
+}
+
+func TestStatusWriteError(t *testing.T) {
+	t.Setenv("SNAP_INSTANCE_NAME", "")
+	ctx, _, _ := newTestContext()
+	ctx.SnapdClient = statusSnapdClient(t, config.InferenceSnapName, true)
+	ctx.SnapCatalog = &snapcatalog.Reader{}
+	reader, writer := io.Pipe()
+	if err := reader.Close(); err != nil {
 		t.Fatal(err)
 	}
-	want := `{"services":{"proxy":"active"},"proxy":{"openai":{"base-url":"http://127.0.0.1:8080/v1"}},"health":{"gemma4":"ok","ollama":"ok","openai-work":"offline","qwen3.6":"not responsive"},"warnings":["Unable to communicate with NVIDIA GeForce RTX 4050 GPU."]}`
-	if string(got) != want {
-		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	defer func() {
+		if err := writer.Close(); err != nil {
+			t.Errorf("closing pipe writer: %v", err)
+		}
+	}()
+	ctx.Stdout = writer
+	if err := execute(Status(ctx)); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("got error %v, want closed pipe error", err)
 	}
 }
