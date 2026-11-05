@@ -34,7 +34,7 @@ func Providers(ctx *common.Context) *cobra.Command {
 	cmd := providersCommand{Context: ctx}
 	cobraCmd := &cobra.Command{
 		Use:               "providers",
-		Short:             "Show list of providers",
+		Short:             "List providers",
 		Long:              "List inference providers and whether they are enabled.",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
