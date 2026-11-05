@@ -82,7 +82,12 @@ func main() {
 			HTTPPort:           strconv.Itoa(options.port),
 		})
 	}
-	handler := openaiproxy.NewModelsHandler(listProviders, newUpstreamClient(), logger, lookupStatus)
+	handler := openaiproxy.NewModelsHandler(openaiproxy.HandlerOptions{
+		ListProviders: listProviders,
+		LookupStatus:  lookupStatus,
+		Client:        newUpstreamClient(),
+		Logger:        logger,
+	})
 	if err := handler.Refresh(ctx); err != nil {
 		logger.Warn("initializing provider models", "error", err)
 	}

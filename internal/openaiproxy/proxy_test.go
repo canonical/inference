@@ -60,12 +60,11 @@ func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 		listCalls.Add(1)
 		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/api/v1?source=proxy"}}, nil
 	}
-	handler := NewModelsHandler(
-		listProviders,
-		upstream.Client(),
-		slog.New(slog.NewTextHandler(&logs, nil)),
-		nil,
-	)
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: listProviders,
+		Client:        upstream.Client(),
+		Logger:        slog.New(slog.NewTextHandler(&logs, nil)),
+	})
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -139,10 +138,14 @@ func TestRedactURLErrorOmitsURLCredentialsAndQuery(t *testing.T) {
 
 func TestProxyDoesNotRefreshWithoutSnapshot(t *testing.T) {
 	var listCalls atomic.Int32
-	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		listCalls.Add(1)
-		return nil, nil
-	}, http.DefaultClient, discardLogger(), nil)
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: func(context.Context) ([]providers.Provider, error) {
+			listCalls.Add(1)
+			return nil, nil
+		},
+		Client: http.DefaultClient,
+		Logger: discardLogger(),
+	})
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(
@@ -179,7 +182,11 @@ func TestProxyRejectsUnqualifiedModel(t *testing.T) {
 		listCalls.Add(1)
 		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
 	}
-	handler := NewModelsHandler(listProviders, upstream.Client(), discardLogger(), nil)
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: listProviders,
+		Client:        upstream.Client(),
+		Logger:        discardLogger(),
+	})
 
 	modelsResponse := httptest.NewRecorder()
 	handler.ServeHTTP(modelsResponse, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -216,12 +223,16 @@ func TestProxyQualifiedModelsDoNotCollideWithNativeModelIDs(t *testing.T) {
 	second := providerServer("second", "first/model")
 	defer second.Close()
 
-	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{
-			{Name: "first", BaseURL: first.URL + "/v1"},
-			{Name: "second", BaseURL: second.URL + "/v1"},
-		}, nil
-	}, first.Client(), discardLogger(), nil)
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: func(context.Context) ([]providers.Provider, error) {
+			return []providers.Provider{
+				{Name: "first", BaseURL: first.URL + "/v1"},
+				{Name: "second", BaseURL: second.URL + "/v1"},
+			}, nil
+		},
+		Client: first.Client(),
+		Logger: discardLogger(),
+	})
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -265,9 +276,13 @@ func TestProxyFlushesStreamingResponse(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
-	}, upstream.Client(), discardLogger(), nil)
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: func(context.Context) ([]providers.Provider, error) {
+			return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
+		},
+		Client: upstream.Client(),
+		Logger: discardLogger(),
+	})
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -353,9 +368,13 @@ func TestProxyRewritesNonJSONModelRepresentations(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/api/v1?source=proxy"}}, nil
-	}, upstream.Client(), discardLogger(), nil)
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: func(context.Context) ([]providers.Provider, error) {
+			return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/api/v1?source=proxy"}}, nil
+		},
+		Client: upstream.Client(),
+		Logger: discardLogger(),
+	})
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -550,9 +569,13 @@ func TestProxyRecoversTruncatedUpstreamStream(t *testing.T) {
 			Request:       request,
 		}, nil
 	})
-	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{{Name: "provider", BaseURL: "http://provider.test/v1"}}, nil
-	}, &http.Client{Transport: transport}, discardLogger(), nil)
+	handler := NewModelsHandler(HandlerOptions{
+		ListProviders: func(context.Context) ([]providers.Provider, error) {
+			return []providers.Provider{{Name: "provider", BaseURL: "http://provider.test/v1"}}, nil
+		},
+		Client: &http.Client{Transport: transport},
+		Logger: discardLogger(),
+	})
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}

@@ -35,6 +35,13 @@ type ModelsHandler struct {
 	requestID     atomic.Uint64
 }
 
+type HandlerOptions struct {
+	ListProviders func(context.Context) ([]providers.Provider, error)
+	LookupStatus  func(context.Context) (status.Status, error)
+	Client        *http.Client
+	Logger        *slog.Logger
+}
+
 type modelsResponse struct {
 	Object string        `json:"object"`
 	Data   []modelOutput `json:"data"`
@@ -65,19 +72,19 @@ type modelRoute struct {
 
 type routingSnapshot []modelRoute
 
-func NewModelsHandler(
-	listProviders func(context.Context) ([]providers.Provider, error),
-	client *http.Client,
-	logger *slog.Logger,
-	lookupStatus func(context.Context) (status.Status, error),
-) *ModelsHandler {
-	if client == nil {
-		client = http.DefaultClient
+func NewModelsHandler(options HandlerOptions) *ModelsHandler {
+	if options.Client == nil {
+		options.Client = http.DefaultClient
 	}
-	if logger == nil {
-		logger = slog.Default()
+	if options.Logger == nil {
+		options.Logger = slog.Default()
 	}
-	return &ModelsHandler{listProviders: listProviders, lookupStatus: lookupStatus, client: client, logger: logger}
+	return &ModelsHandler{
+		listProviders: options.ListProviders,
+		lookupStatus:  options.LookupStatus,
+		client:        options.Client,
+		logger:        options.Logger,
+	}
 }
 
 func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

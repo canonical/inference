@@ -48,7 +48,10 @@ func TestModelsHandlerStatus(t *testing.T) {
 						}
 						return test.result, nil
 					}
-					handler := NewModelsHandler(nil, nil, discardLogger(), lookupStatus)
+					handler := NewModelsHandler(HandlerOptions{
+						LookupStatus: lookupStatus,
+						Logger:       discardLogger(),
+					})
 					response := httptest.NewRecorder()
 					request := httptest.NewRequest(http.MethodGet, path, nil).WithContext(t.Context())
 					handler.ServeHTTP(response, request)
@@ -93,7 +96,10 @@ func TestModelsHandlerStatusUnavailable(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var logs bytes.Buffer
 			logger := slog.New(slog.NewTextHandler(&logs, nil))
-			handler := NewModelsHandler(nil, nil, logger, test.lookup)
+			handler := NewModelsHandler(HandlerOptions{
+				LookupStatus: test.lookup,
+				Logger:       logger,
+			})
 			for _, path := range []string{"/v1", "/v1/"} {
 				response := httptest.NewRecorder()
 				handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
@@ -116,9 +122,12 @@ func TestModelsHandlerStatusUnavailable(t *testing.T) {
 }
 
 func TestModelsHandlerStatusMethodsAndPaths(t *testing.T) {
-	handler := NewModelsHandler(nil, nil, discardLogger(), func(context.Context) (status.Status, error) {
-		t.Error("unexpected status lookup")
-		return status.Status{}, errors.New("unexpected status lookup")
+	handler := NewModelsHandler(HandlerOptions{
+		LookupStatus: func(context.Context) (status.Status, error) {
+			t.Error("unexpected status lookup")
+			return status.Status{}, errors.New("unexpected status lookup")
+		},
+		Logger: discardLogger(),
 	})
 	for _, test := range []struct {
 		method    string
