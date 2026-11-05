@@ -84,7 +84,9 @@ func TestStatusLookupError(t *testing.T) {
 	ctx, stdout, _ := newTestContext()
 	ctx.SnapdClient = statusSnapdServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, `{"type":"error","status-code":403,"result":{"message":"access denied"}}`)
+		if _, err := fmt.Fprint(w, `{"type":"error","status-code":403,"result":{"message":"access denied"}}`); err != nil {
+			t.Errorf("writing error response: %v", err)
+		}
 	})
 	err := execute(Status(ctx))
 	if err == nil || err.Error() != "access denied. Try again using sudo" {
@@ -160,7 +162,11 @@ func TestStatusWriteError(t *testing.T) {
 	if err := reader.Close(); err != nil {
 		t.Fatal(err)
 	}
-	defer writer.Close()
+	defer func() {
+		if err := writer.Close(); err != nil {
+			t.Errorf("closing pipe writer: %v", err)
+		}
+	}()
 	ctx.Stdout = writer
 	if err := execute(Status(ctx)); !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatalf("got error %v, want closed pipe error", err)

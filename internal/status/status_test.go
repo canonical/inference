@@ -30,20 +30,26 @@ func testOptions(t *testing.T, snapName string, active bool) Options {
 			if got := r.URL.Query().Get("names"); got != snapName+".d" {
 				t.Errorf("got service %q, want %q", got, snapName+".d")
 			}
-			fmt.Fprintf(w, `{"type":"sync","result":[{"snap":%q,"name":"d","active":%t}]}`, snapName, active)
+			if _, err := fmt.Fprintf(w, `{"type":"sync","result":[{"snap":%q,"name":"d","active":%t}]}`, snapName, active); err != nil {
+				t.Errorf("writing apps response: %v", err)
+			}
 		case strings.HasPrefix(r.URL.Path, "/v2/snaps/"):
 			name := strings.TrimPrefix(r.URL.Path, "/v2/snaps/")
 			state := snapd.SnapStatusActive
 			if name == "disabled" {
 				state = snapd.SnapStatusInstalled
 			}
-			fmt.Fprintf(w, `{"type":"sync","result":{"name":%q,"status":%q}}`, name, state)
+			if _, err := fmt.Fprintf(w, `{"type":"sync","result":{"name":%q,"status":%q}}`, name, state); err != nil {
+				t.Errorf("writing snap response: %v", err)
+			}
 		default:
 			t.Errorf("unexpected path %q", r.URL.Path)
 			http.NotFound(w, r)
 		}
 	}))
-	server.Listener.Close()
+	if err := server.Listener.Close(); err != nil {
+		t.Fatal(err)
+	}
 	server.Listener = listener
 	server.Start()
 	t.Cleanup(server.Close)
@@ -101,7 +107,9 @@ func TestLookupProviderHealth(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/healthy/v1/models":
-			fmt.Fprint(w, `{"data":[{"id":"model"}]}`)
+			if _, err := fmt.Fprint(w, `{"data":[{"id":"model"}]}`); err != nil {
+				t.Errorf("writing models response: %v", err)
+			}
 		case "/unhealthy/v1/models":
 			w.WriteHeader(http.StatusServiceUnavailable)
 		default:
