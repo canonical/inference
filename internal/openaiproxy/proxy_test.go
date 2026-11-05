@@ -75,6 +75,7 @@ func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 	)
 	request.Header.Set("Authorization", "Bearer secret")
 	request.Header.Set("X-Forwarded-For", "spoofed")
+	request.Header.Set("Origin", "http://localhost:3000")
 	clientAuthorization := request.Header.Get("Authorization")
 	response := httptest.NewRecorder()
 
@@ -83,7 +84,7 @@ func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 	if response.Code != http.StatusAccepted || response.Header().Get("X-Upstream") != "reached" {
 		t.Fatalf("got status %d headers %v body %s", response.Code, response.Header(), response.Body.String())
 	}
-	assertPermissiveCORS(t, response.Header())
+	assertLoopbackCORS(t, response.Header(), "http://localhost:3000")
 	if gotMethod != http.MethodPost || gotPath != "/api/v1/chat/completions" {
 		t.Errorf("upstream got %s %s", gotMethod, gotPath)
 	}
@@ -415,11 +416,13 @@ func TestProxyRewritesNonJSONModelRepresentations(t *testing.T) {
 		)
 		request.Header.Set("Connection", "keep-alive, Upgrade")
 		request.Header.Set("Upgrade", "websocket")
+		request.Header.Set("Origin", "http://[::1]:3000")
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		if response.Code != http.StatusOK {
 			t.Fatalf("status = %d body %s", response.Code, response.Body.String())
 		}
+		assertLoopbackCORS(t, response.Header(), "http://[::1]:3000")
 		got := <-requests
 		if got.model != "native-model" ||
 			got.path != "/api/v1/realtime/session" ||
@@ -436,7 +439,7 @@ func TestProxyRewritesNonJSONModelRepresentations(t *testing.T) {
 			"/v1/realtime?model=provider%2Fnative-model",
 			nil,
 		)
-		request.Header.Set("Origin", "https://client.example")
+		request.Header.Set("Origin", "https://localhost:3000")
 		request.Header.Set("Access-Control-Request-Method", http.MethodGet)
 		request.Header.Set("Connection", "Upgrade")
 		request.Header.Set("Upgrade", "websocket")
