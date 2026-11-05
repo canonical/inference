@@ -88,14 +88,14 @@ func TestCommandGroups(t *testing.T) {
 	rootCmd := root(ctx)
 
 	commandGroups := map[string]string{
-		"status":    statusGroupID,
-		"models":    statusGroupID,
-		"hardware":  discoveryGroupID,
-		"find":      discoveryGroupID,
-		"info":      discoveryGroupID,
-		"providers": providerGroupID,
-		"install":   providerGroupID,
-		"remove":    providerGroupID,
+		"status":    basicsGroupID,
+		"models":    basicsGroupID,
+		"hardware":  basicsGroupID,
+		"find":      providersGroupID,
+		"providers": providersGroupID,
+		"info":      providersGroupID,
+		"install":   providersGroupID,
+		"remove":    providersGroupID,
 	}
 
 	for name, wantGroup := range commandGroups {

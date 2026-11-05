@@ -20,9 +20,8 @@ const (
 	defaultHTTPHost           = "127.0.0.1"
 	defaultHTTPPort           = "8400"
 
-	statusGroupID    = "status"
-	discoveryGroupID = "discovery"
-	providerGroupID  = "provider"
+	basicsGroupID    = "basics"
+	providersGroupID = "providers"
 )
 
 func init() {
@@ -92,17 +91,15 @@ func root(ctx *common.Context) *cobra.Command {
 	cmd.CompletionOptions.HiddenDefaultCmd = true
 	cmd.SetOut(ctx.Stdout)
 	cmd.SetErr(ctx.Stderr)
-	addCommandGroup(cmd, statusGroupID, "Status Commands:",
+	addCommandGroup(cmd, basicsGroupID, "Basics:",
 		commands.Status(ctx),
 		commands.Models(ctx),
-	)
-	addCommandGroup(cmd, discoveryGroupID, "Discovery Commands:",
 		commands.Hardware(ctx),
-		commands.Find(ctx),
-		commands.Info(ctx),
 	)
-	addCommandGroup(cmd, providerGroupID, "Provider Commands:",
+	addCommandGroup(cmd, providersGroupID, "Inference Providers:",
+		commands.Find(ctx),
 		commands.Providers(ctx),
+		commands.Info(ctx),
 		commands.Install(ctx),
 		commands.Remove(ctx),
 	)
