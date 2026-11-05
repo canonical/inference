@@ -19,6 +19,98 @@ import (
 	"github.com/canonical/inference/internal/providers"
 )
 
+func TestNewProxyHandler(t *testing.T) {
+	client := &http.Client{}
+	logger := discardLogger()
+	for _, test := range []struct {
+		name    string
+		options HandlerOptions
+		client  *http.Client
+		logger  *slog.Logger
+	}{
+		{
+			name:   "defaults",
+			client: http.DefaultClient,
+			logger: slog.Default(),
+		},
+		{
+			name:    "configured",
+			options: HandlerOptions{Client: client, Logger: logger},
+			client:  client,
+			logger:  logger,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handler := NewProxyHandler(test.options)
+			if handler.client != test.client {
+				t.Error("handler did not use the expected HTTP client")
+			}
+			if handler.logger != test.logger {
+				t.Error("handler did not use the expected logger")
+			}
+		})
+	}
+}
+
+func TestProxyHandlerRejectsOtherMethodsAndPaths(t *testing.T) {
+	handler := NewProxyHandler(HandlerOptions{
+		ListProviders: connectedProviderLister(t.TempDir()),
+		Client:        http.DefaultClient,
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/models", nil))
+	if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodGet {
+		t.Fatalf("POST returned status %d and Allow %q", response.Code, response.Header().Get("Allow"))
+	}
+
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("unknown path returned status %d", response.Code)
+	}
+}
+
+func TestProxyHandlerCORSPreflight(t *testing.T) {
+	handler := NewProxyHandler(HandlerOptions{
+		ListProviders: connectedProviderLister(t.TempDir()),
+		Client:        http.DefaultClient,
+		Logger:        discardLogger(),
+	})
+	request := httptest.NewRequest(http.MethodOptions, "/v1/chat/completions", nil)
+	request.Header.Set("Origin", "https://client.example")
+	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	request.Header.Set("Access-Control-Request-Headers", "Authorization, Content-Type")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("preflight returned status %d body %s", response.Code, response.Body.String())
+	}
+	assertPermissiveCORS(t, response.Header())
+}
+
+func assertPermissiveCORS(t *testing.T, header http.Header) {
+	t.Helper()
+	for _, name := range []string{
+		"Access-Control-Allow-Origin",
+		"Access-Control-Allow-Methods",
+		"Access-Control-Expose-Headers",
+	} {
+		if got := header.Values(name); len(got) != 1 || got[0] != "*" {
+			t.Errorf("%s = %q, want one * value", name, got)
+		}
+	}
+	if got := header.Values("Access-Control-Allow-Headers"); len(got) != 1 || got[0] != "*, Authorization" {
+		t.Errorf("Access-Control-Allow-Headers = %q, want one \"*, Authorization\" value", got)
+	}
+	if got := header.Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Errorf("Access-Control-Allow-Credentials = %q, want empty", got)
+	}
+}
+
 func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 	var listCalls atomic.Int32
 	var gotMethod, gotPath, gotQuery, gotModel, gotAuthorization, gotForwardedFor string
@@ -60,12 +152,12 @@ func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 		listCalls.Add(1)
 		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/api/v1?source=proxy"}}, nil
 	}
-	handler := NewModelsHandler(HandlerOptions{
+	handler := NewProxyHandler(HandlerOptions{
 		ListProviders: listProviders,
 		Client:        upstream.Client(),
 		Logger:        slog.New(slog.NewTextHandler(&logs, nil)),
 	})
-	if err := handler.Refresh(context.Background()); err != nil {
+	if err := handler.RefreshRouting(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(
@@ -138,7 +230,7 @@ func TestRedactURLErrorOmitsURLCredentialsAndQuery(t *testing.T) {
 
 func TestProxyDoesNotRefreshWithoutSnapshot(t *testing.T) {
 	var listCalls atomic.Int32
-	handler := NewModelsHandler(HandlerOptions{
+	handler := NewProxyHandler(HandlerOptions{
 		ListProviders: func(context.Context) ([]providers.Provider, error) {
 			listCalls.Add(1)
 			return nil, nil
@@ -182,7 +274,7 @@ func TestProxyRejectsUnqualifiedModel(t *testing.T) {
 		listCalls.Add(1)
 		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
 	}
-	handler := NewModelsHandler(HandlerOptions{
+	handler := NewProxyHandler(HandlerOptions{
 		ListProviders: listProviders,
 		Client:        upstream.Client(),
 		Logger:        discardLogger(),
@@ -223,7 +315,7 @@ func TestProxyQualifiedModelsDoNotCollideWithNativeModelIDs(t *testing.T) {
 	second := providerServer("second", "first/model")
 	defer second.Close()
 
-	handler := NewModelsHandler(HandlerOptions{
+	handler := NewProxyHandler(HandlerOptions{
 		ListProviders: func(context.Context) ([]providers.Provider, error) {
 			return []providers.Provider{
 				{Name: "first", BaseURL: first.URL + "/v1"},
@@ -233,7 +325,7 @@ func TestProxyQualifiedModelsDoNotCollideWithNativeModelIDs(t *testing.T) {
 		Client: first.Client(),
 		Logger: discardLogger(),
 	})
-	if err := handler.Refresh(context.Background()); err != nil {
+	if err := handler.RefreshRouting(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -276,14 +368,14 @@ func TestProxyFlushesStreamingResponse(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler := NewModelsHandler(HandlerOptions{
+	handler := NewProxyHandler(HandlerOptions{
 		ListProviders: func(context.Context) ([]providers.Provider, error) {
 			return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
 		},
 		Client: upstream.Client(),
 		Logger: discardLogger(),
 	})
-	if err := handler.Refresh(context.Background()); err != nil {
+	if err := handler.RefreshRouting(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	proxyServer := httptest.NewServer(handler)
@@ -368,14 +460,14 @@ func TestProxyRewritesNonJSONModelRepresentations(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler := NewModelsHandler(HandlerOptions{
+	handler := NewProxyHandler(HandlerOptions{
 		ListProviders: func(context.Context) ([]providers.Provider, error) {
 			return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/api/v1?source=proxy"}}, nil
 		},
 		Client: upstream.Client(),
 		Logger: discardLogger(),
 	})
-	if err := handler.Refresh(context.Background()); err != nil {
+	if err := handler.RefreshRouting(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -569,14 +661,14 @@ func TestProxyRecoversTruncatedUpstreamStream(t *testing.T) {
 			Request:       request,
 		}, nil
 	})
-	handler := NewModelsHandler(HandlerOptions{
+	handler := NewProxyHandler(HandlerOptions{
 		ListProviders: func(context.Context) ([]providers.Provider, error) {
 			return []providers.Provider{{Name: "provider", BaseURL: "http://provider.test/v1"}}, nil
 		},
 		Client: &http.Client{Transport: transport},
 		Logger: discardLogger(),
 	})
-	if err := handler.Refresh(context.Background()); err != nil {
+	if err := handler.RefreshRouting(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(handler)

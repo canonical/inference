@@ -13,7 +13,7 @@ type statusResponse struct {
 	Warnings []string                     `json:"warnings,omitempty"`
 }
 
-func (h *ModelsHandler) serveStatus(w http.ResponseWriter, r *http.Request, logger *slog.Logger) {
+func (h *ProxyHandler) serveStatus(w http.ResponseWriter, r *http.Request, logger *slog.Logger) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeError(w, http.StatusMethodNotAllowed, "Only GET is supported for "+r.URL.Path+".", "invalid_request_error")
