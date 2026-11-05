@@ -96,7 +96,7 @@ func root(ctx *common.Context) *cobra.Command {
 		commands.Models(ctx),
 		commands.Hardware(ctx),
 	)
-	addCommandGroup(cmd, providersGroupID, "Inference Providers:",
+	addCommandGroup(cmd, providersGroupID, "Provider Management:",
 		commands.Find(ctx),
 		commands.Providers(ctx),
 		commands.Info(ctx),
