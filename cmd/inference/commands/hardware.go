@@ -151,7 +151,7 @@ func Hardware(ctx *common.Context) *cobra.Command {
 
 	cobraCmd := &cobra.Command{
 		Use:               "hardware",
-		Short:             "Print information about the host hardware",
+		Short:             "Show compute hardware and resources",
 		Long:              "Print information about the host hardware, including hardware and compute resources",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
