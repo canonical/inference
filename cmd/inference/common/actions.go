@@ -8,6 +8,7 @@ import (
 	"time"
 
 	snapctlenv "github.com/canonical/go-snapctl/env"
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapd"
 )
 
@@ -114,7 +115,7 @@ func runConnect(ctx context.Context, client *snapd.Client, snapName string, w io
 func inferenceSnapInstanceName() string {
 	name := snapctlenv.SnapInstanceName()
 	if name == "" {
-		return InferenceSnapName
+		return config.InferenceSnapName
 	}
 	return name
 }
