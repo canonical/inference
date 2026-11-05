@@ -26,12 +26,17 @@ const (
 )
 
 type ModelsHandler struct {
-	models     models.Service
-	client     *http.Client
-	baseLogger *slog.Logger
-	refreshMu  sync.Mutex
-	snapshot   atomic.Pointer[routingSnapshot]
-	requestID  atomic.Uint64
+	allowAllOrigins bool
+	models          models.Service
+	client          *http.Client
+	baseLogger      *slog.Logger
+	refreshMu       sync.Mutex
+	snapshot        atomic.Pointer[routingSnapshot]
+	requestID       atomic.Uint64
+}
+
+type HandlerOptions struct {
+	AllowAllOrigins bool
 }
 
 type modelsResponse struct {
@@ -72,6 +77,7 @@ func NewModelsHandler(
 	providerService providers.Service,
 	client *http.Client,
 	baseLogger *slog.Logger,
+	options HandlerOptions,
 ) *ModelsHandler {
 	if client == nil {
 		client = http.DefaultClient
@@ -80,9 +86,10 @@ func NewModelsHandler(
 		baseLogger = slog.Default()
 	}
 	return &ModelsHandler{
-		models:     models.NewService(providerService, client),
-		client:     client,
-		baseLogger: baseLogger,
+		models:          models.NewService(providerService, client),
+		client:          client,
+		baseLogger:      baseLogger,
+		allowAllOrigins: options.AllowAllOrigins,
 	}
 }
 
@@ -104,7 +111,7 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 	}()
 
-	if handleCORS(responseWriter, r, logger) {
+	if h.handleCORS(responseWriter, r, requestLogger) {
 		return
 	}
 
@@ -369,7 +376,7 @@ func (h *ModelsHandler) proxy(
 	proxy.ServeHTTP(w, r)
 }
 
-func handleCORS(w http.ResponseWriter, r *http.Request, logger *slog.Logger) bool {
+func (h *ModelsHandler) handleCORS(w http.ResponseWriter, r *http.Request, logger *slog.Logger) bool {
 	removeCORSHeaders(w.Header())
 	// Prevent caches from reusing responses across different origins.
 	w.Header().Add("Vary", "Origin")
@@ -384,7 +391,10 @@ func handleCORS(w http.ResponseWriter, r *http.Request, logger *slog.Logger) boo
 		writeError(w, http.StatusForbidden, "Multiple request origins are not allowed.", "invalid_request_error")
 		return true
 	}
-	if !isLoopbackOrigin(origins[0]) {
+	allowedOrigin := origins[0]
+	if h.allowAllOrigins {
+		allowedOrigin = "*"
+	} else if !isLoopbackOrigin(allowedOrigin) {
 		logger.Warn("rejecting request", "reason", "origin is not an HTTP/HTTPS loopback origin")
 		writeError(w, http.StatusForbidden, "The request origin must be an HTTP/HTTPS loopback origin.", "invalid_request_error")
 		return true
@@ -396,11 +406,11 @@ func handleCORS(w http.ResponseWriter, r *http.Request, logger *slog.Logger) boo
 			writeError(w, http.StatusForbidden, "The requested CORS method or headers are not allowed.", "invalid_request_error")
 			return true
 		}
-		setCORSHeaders(w.Header(), origins[0])
+		setCORSHeaders(w.Header(), allowedOrigin)
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
-	setCORSHeaders(w.Header(), origins[0])
+	setCORSHeaders(w.Header(), allowedOrigin)
 	return false
 }
 

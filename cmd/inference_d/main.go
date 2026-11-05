@@ -28,6 +28,7 @@ const (
 	httpPortEnvVar            = "HTTP_PORT"
 	logLevelEnvVar            = "LOG_LEVEL"
 	enableTimestampsEnvVar    = "LOG_TIMESTAMPS"
+	httpCORSAllowAllEnvVar    = "HTTP_CORS_ALLOW_ALL"
 	defaultHost               = "127.0.0.1"
 	defaultPort               = 8400
 	catalogRefreshInterval    = 12 * time.Hour
@@ -69,7 +70,12 @@ func main() {
 	snapdClient := snapd.NewClient()
 	providerService := providers.NewService(catalog, snapdClient, providerRoot)
 
-	handler := openaiproxy.NewModelsHandler(providerService, newUpstreamClient(), logger)
+	if options.corsAllowAll {
+		logger.Warn("allowing all request origins", "environment", httpCORSAllowAllEnvVar)
+	}
+	handler := openaiproxy.NewModelsHandler(providerService, newUpstreamClient(), logger, openaiproxy.HandlerOptions{
+		AllowAllOrigins: options.corsAllowAll,
+	})
 	if err := handler.Refresh(ctx); err != nil {
 		logger.Warn("initializing provider models", "error", err)
 	}
@@ -235,6 +241,7 @@ type serverOptions struct {
 	port          int
 	logLevel      slog.Level
 	logTimestamps bool
+	corsAllowAll  bool
 }
 
 func serverOptionsFromEnvironment() (serverOptions, error) {
@@ -262,11 +269,21 @@ func serverOptionsFromEnvironment() (serverOptions, error) {
 
 	timestamps := os.Getenv(enableTimestampsEnvVar) == "true"
 
+	var corsAllowAll bool
+	switch os.Getenv(httpCORSAllowAllEnvVar) {
+	case "", "false":
+	case "true":
+		corsAllowAll = true
+	default:
+		return serverOptions{}, fmt.Errorf("%s must be true or false", httpCORSAllowAllEnvVar)
+	}
+
 	return serverOptions{
 		host:          host,
 		port:          port,
 		logLevel:      level,
 		logTimestamps: timestamps,
+		corsAllowAll:  corsAllowAll,
 	}, nil
 }
 

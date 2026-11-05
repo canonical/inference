@@ -21,4 +21,13 @@ if [ "$port" -gt 65535 ]; then
     exit 1
 fi
 
+cors_allow_all="$(snapctl get http.cors-allow-all)"
+case "$cors_allow_all" in
+    ''|true|false) ;;
+    *)
+        echo "http.cors-allow-all must be true or false" >&2
+        exit 1
+        ;;
+esac
+
 snapctl restart "$SNAP_INSTANCE_NAME"

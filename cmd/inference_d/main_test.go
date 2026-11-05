@@ -80,6 +80,7 @@ func TestServerOptionsFromEnvironment(t *testing.T) {
 		enableTimestamps string
 		want             serverOptions
 		wantErr          bool
+		corsAllowAll     string
 	}{
 		{
 			name: "defaults",
@@ -118,6 +119,12 @@ func TestServerOptionsFromEnvironment(t *testing.T) {
 			enableTimestamps: "false",
 			want:             serverOptions{host: defaultHost, port: defaultPort, logLevel: slog.LevelInfo, logTimestamps: false},
 		},
+		{name: "CORS disabled", corsAllowAll: "false", want: serverOptions{host: defaultHost, port: defaultPort}},
+		{name: "CORS enabled with default port", corsAllowAll: "true", want: serverOptions{host: defaultHost, port: defaultPort, corsAllowAll: true}},
+		{name: "CORS enabled with configured port", port: "9000", corsAllowAll: "true", want: serverOptions{host: defaultHost, port: 9000, corsAllowAll: true}},
+		{name: "invalid CORS option", corsAllowAll: "invalid", wantErr: true},
+		{name: "numeric CORS option", corsAllowAll: "1", wantErr: true},
+		{name: "uppercase CORS option", corsAllowAll: "TRUE", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -125,6 +132,7 @@ func TestServerOptionsFromEnvironment(t *testing.T) {
 			t.Setenv(httpPortEnvVar, tt.port)
 			t.Setenv(logLevelEnvVar, tt.logLevel)
 			t.Setenv(enableTimestampsEnvVar, tt.enableTimestamps)
+			t.Setenv(httpCORSAllowAllEnvVar, tt.corsAllowAll)
 			got, err := serverOptionsFromEnvironment()
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("serverOptionsFromEnvironment() error = %v, wantErr %v", err, tt.wantErr)
