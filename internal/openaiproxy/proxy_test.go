@@ -63,8 +63,8 @@ func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 	handler := NewModelsHandler(
 		listProviders,
 		upstream.Client(),
-		slog.New(slog.NewTextHandler(&logs, nil)),
-	)
+		slog.New(slog.NewTextHandler(&logs, nil)), HandlerOptions{})
+
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 	if response.Code != http.StatusAccepted || response.Header().Get("X-Upstream") != "reached" {
 		t.Fatalf("got status %d headers %v body %s", response.Code, response.Header(), response.Body.String())
 	}
-	assertLoopbackCORS(t, response.Header(), "http://localhost:3000")
+	assertCORS(t, response.Header(), "http://localhost:3000")
 	if gotMethod != http.MethodPost || gotPath != "/api/v1/chat/completions" {
 		t.Errorf("upstream got %s %s", gotMethod, gotPath)
 	}
@@ -142,7 +142,7 @@ func TestProxyDoesNotRefreshWithoutSnapshot(t *testing.T) {
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
 		listCalls.Add(1)
 		return nil, nil
-	}, http.DefaultClient, discardLogger())
+	}, http.DefaultClient, discardLogger(), HandlerOptions{})
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(
@@ -179,7 +179,7 @@ func TestProxyRejectsUnqualifiedModel(t *testing.T) {
 		listCalls.Add(1)
 		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
 	}
-	handler := NewModelsHandler(listProviders, upstream.Client(), discardLogger())
+	handler := NewModelsHandler(listProviders, upstream.Client(), discardLogger(), HandlerOptions{})
 
 	modelsResponse := httptest.NewRecorder()
 	handler.ServeHTTP(modelsResponse, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -221,7 +221,8 @@ func TestProxyQualifiedModelsDoNotCollideWithNativeModelIDs(t *testing.T) {
 			{Name: "first", BaseURL: first.URL + "/v1"},
 			{Name: "second", BaseURL: second.URL + "/v1"},
 		}, nil
-	}, first.Client(), discardLogger())
+	}, first.Client(), discardLogger(), HandlerOptions{})
+
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -250,52 +251,109 @@ func TestProxyQualifiedModelsDoNotCollideWithNativeModelIDs(t *testing.T) {
 }
 
 func TestProxyFlushesStreamingResponse(t *testing.T) {
-	release := make(chan struct{})
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/models" {
-			_, _ = w.Write([]byte(`{"data":[{"id":"streamer"}]}`))
-			return
-		}
-		w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-		flusher := w.(http.Flusher)
-		_, _ = io.WriteString(w, "data: first\n\n")
-		flusher.Flush()
-		<-release
-		_, _ = io.WriteString(w, "data: second\n\n")
-	}))
-	defer upstream.Close()
+	for _, test := range []struct {
+		name        string
+		origin      string
+		allowOrigin string
+		options     HandlerOptions
+	}{
+		{name: "default", origin: "http://localhost:3000", allowOrigin: "http://localhost:3000"},
+		{name: "allow all", origin: "https://client.example", allowOrigin: "*", options: HandlerOptions{AllowAllOrigins: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			release := make(chan struct{})
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/models" {
+					_, _ = w.Write([]byte(`{"data":[{"id":"streamer"}]}`))
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+				w.Header().Set("Access-Control-Allow-Origin", "https://provider.example")
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				flusher := w.(http.Flusher)
+				_, _ = io.WriteString(w, "data: first\n\n")
+				flusher.Flush()
+				<-release
+				_, _ = io.WriteString(w, "data: second\n\n")
+			}))
+			defer upstream.Close()
 
+			handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
+				return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
+			}, upstream.Client(), discardLogger(), test.options)
+
+			if err := handler.Refresh(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			proxyServer := httptest.NewServer(handler)
+			defer proxyServer.Close()
+			defer func() {
+				select {
+				case <-release:
+				default:
+					close(release)
+				}
+			}()
+
+			request, err := http.NewRequest(
+				http.MethodPost,
+				proxyServer.URL+"/v1/chat/completions",
+				strings.NewReader(`{"model":"provider/streamer","stream":true}`),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Origin", test.origin)
+			response, err := proxyServer.Client().Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			assertCORS(t, response.Header, test.allowOrigin)
+			if got := response.Header.Get("X-Accel-Buffering"); got != "no" {
+				t.Fatalf("X-Accel-Buffering = %q, want no", got)
+			}
+			reader := bufio.NewReader(response.Body)
+			line, err := reader.ReadString('\n')
+			if err != nil || line != "data: first\n" {
+				t.Fatalf("first streamed line = %q, %v", line, err)
+			}
+			close(release)
+			remaining, err := io.ReadAll(reader)
+			if err != nil || !strings.Contains(string(remaining), "data: second") {
+				t.Fatalf("remaining stream = %q, %v", remaining, err)
+			}
+		})
+	}
+}
+
+func TestProxyAllowAllOriginsOnUpstreamError(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path != "/v1/models" {
+			return nil, errors.New("connection refused")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"native-model"}]}`)),
+			Request:    request,
+		}, nil
+	})}
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
-	}, upstream.Client(), discardLogger())
+		return []providers.Provider{{Name: "provider", BaseURL: "http://provider.test/v1"}}, nil
+	}, client, discardLogger(), HandlerOptions{AllowAllOrigins: true})
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	proxyServer := httptest.NewServer(handler)
-	defer proxyServer.Close()
-
-	response, err := proxyServer.Client().Post(
-		proxyServer.URL+"/v1/chat/completions",
-		"application/json",
-		strings.NewReader(`{"model":"provider/streamer","stream":true}`),
-	)
-	if err != nil {
-		t.Fatal(err)
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"provider/native-model"}`))
+	request.Header.Set("Origin", "https://client.example")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502: %s", response.Code, response.Body.String())
 	}
-	defer response.Body.Close()
-	if got := response.Header.Get("X-Accel-Buffering"); got != "no" {
-		t.Fatalf("X-Accel-Buffering = %q, want no", got)
-	}
-	reader := bufio.NewReader(response.Body)
-	line, err := reader.ReadString('\n')
-	if err != nil || line != "data: first\n" {
-		t.Fatalf("first streamed line = %q, %v", line, err)
-	}
-	close(release)
-	remaining, err := io.ReadAll(reader)
-	if err != nil || !strings.Contains(string(remaining), "data: second") {
-		t.Fatalf("remaining stream = %q, %v", remaining, err)
-	}
+	assertCORS(t, response.Header(), "*")
 }
 
 func TestProxyRewritesNonJSONModelRepresentations(t *testing.T) {
@@ -355,7 +413,8 @@ func TestProxyRewritesNonJSONModelRepresentations(t *testing.T) {
 
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
 		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/api/v1?source=proxy"}}, nil
-	}, upstream.Client(), discardLogger())
+	}, upstream.Client(), discardLogger(), HandlerOptions{})
+
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +481,7 @@ func TestProxyRewritesNonJSONModelRepresentations(t *testing.T) {
 		if response.Code != http.StatusOK {
 			t.Fatalf("status = %d body %s", response.Code, response.Body.String())
 		}
-		assertLoopbackCORS(t, response.Header(), "http://[::1]:3000")
+		assertCORS(t, response.Header(), "http://[::1]:3000")
 		got := <-requests
 		if got.model != "native-model" ||
 			got.path != "/api/v1/realtime/session" ||
@@ -554,7 +613,8 @@ func TestProxyRecoversTruncatedUpstreamStream(t *testing.T) {
 	})
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
 		return []providers.Provider{{Name: "provider", BaseURL: "http://provider.test/v1"}}, nil
-	}, &http.Client{Transport: transport}, discardLogger())
+	}, &http.Client{Transport: transport}, discardLogger(), HandlerOptions{})
+
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}

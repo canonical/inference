@@ -103,6 +103,25 @@ health:
   smollm2: ok
 ```
 
+### Configure browser access
+
+By default, only web UIs running on localhost, which are considered trusted, can
+use the proxy from a browser. Allowing any website to use it is a security risk:
+if the proxy has credentials configured for upstream inference providers, a
+malicious website could make requests that consume your tokens and incur charges.
+
+To allow any website to use the inference server:
+
+```console
+sudo snap set inference http.cors-allow-all=true
+```
+
+To disable this setting and restore the default:
+
+```console
+sudo snap set inference http.cors-allow-all=false
+```
+
 ## Local development
 
 Download the snap catalog and point the CLI at it with `INFERENCE_SNAPS_CATALOG`:
