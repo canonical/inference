@@ -19,6 +19,7 @@ import (
 	"github.com/canonical/inference/internal/providers"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/status"
 )
 
 const (
@@ -68,7 +69,20 @@ func main() {
 		return providers.ListAll(ctx, catalog, snapdClient, providerRoot)
 	}
 
-	handler := openaiproxy.NewModelsHandler(listProviders, newUpstreamClient(), logger)
+	statusHost := options.host
+	if statusHost == "0.0.0.0" {
+		statusHost = defaultHost
+	}
+	lookupStatus := func(ctx context.Context) (status.Status, error) {
+		return status.Lookup(ctx, status.Options{
+			SnapCatalog:        catalog,
+			SnapdClient:        snapdClient,
+			ShareProvidersPath: providerRoot,
+			HTTPHost:           statusHost,
+			HTTPPort:           strconv.Itoa(options.port),
+		})
+	}
+	handler := openaiproxy.NewModelsHandler(listProviders, newUpstreamClient(), logger, lookupStatus)
 	if err := handler.Refresh(ctx); err != nil {
 		logger.Warn("initializing provider models", "error", err)
 	}

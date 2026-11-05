@@ -17,6 +17,7 @@ import (
 
 	"github.com/canonical/inference/internal/models"
 	"github.com/canonical/inference/internal/providers"
+	"github.com/canonical/inference/internal/status"
 )
 
 const (
@@ -26,6 +27,7 @@ const (
 
 type ModelsHandler struct {
 	listProviders func(context.Context) ([]providers.Provider, error)
+	lookupStatus  func(context.Context) (status.Status, error)
 	client        *http.Client
 	logger        *slog.Logger
 	refreshMu     sync.Mutex
@@ -67,6 +69,7 @@ func NewModelsHandler(
 	listProviders func(context.Context) ([]providers.Provider, error),
 	client *http.Client,
 	logger *slog.Logger,
+	lookupStatus func(context.Context) (status.Status, error),
 ) *ModelsHandler {
 	if client == nil {
 		client = http.DefaultClient
@@ -74,7 +77,7 @@ func NewModelsHandler(
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &ModelsHandler{listProviders: listProviders, client: client, logger: logger}
+	return &ModelsHandler{listProviders: listProviders, lookupStatus: lookupStatus, client: client, logger: logger}
 }
 
 func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -101,6 +104,10 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Path == "/" || r.URL.Path == "/v1" || r.URL.Path == "/v1/" {
+		h.serveStatus(responseWriter, r, logger)
+		return
+	}
 	if r.URL.Path == "/v1/models" {
 		h.serveModels(responseWriter, r)
 		return
