@@ -82,6 +82,38 @@ func TestRootIncludesCommands(t *testing.T) {
 	}
 }
 
+func TestCommandGroups(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	ctx := &common.Context{Stdout: &stdout, Stderr: &stderr}
+	rootCmd := root(ctx)
+
+	commandGroups := map[string]string{
+		"status":    basicsGroupID,
+		"models":    basicsGroupID,
+		"hardware":  basicsGroupID,
+		"find":      providersGroupID,
+		"providers": providersGroupID,
+		"info":      providersGroupID,
+		"install":   providersGroupID,
+		"remove":    providersGroupID,
+	}
+
+	for name, wantGroup := range commandGroups {
+		t.Run(name, func(t *testing.T) {
+			cmd, _, err := rootCmd.Find([]string{name})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cmd.GroupID != wantGroup {
+				t.Errorf("got GroupID %q, want %q", cmd.GroupID, wantGroup)
+			}
+			if !rootCmd.ContainsGroup(wantGroup) {
+				t.Errorf("group %q is not registered", wantGroup)
+			}
+		})
+	}
+}
+
 func TestRootIncludesModelsCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	ctx := &common.Context{Stdout: &stdout, Stderr: &stderr}

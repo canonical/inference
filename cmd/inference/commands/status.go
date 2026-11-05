@@ -38,7 +38,7 @@ func Status(ctx *common.Context) *cobra.Command {
 	cmd := statusCommand{Context: ctx}
 	cobraCmd := &cobra.Command{
 		Use:               "status",
-		Short:             "Show inference status",
+		Short:             "Show status of services and system",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,

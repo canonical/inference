@@ -34,7 +34,7 @@ func Models(ctx *common.Context) *cobra.Command {
 	cmd := modelsCommand{Context: ctx}
 	cobraCmd := &cobra.Command{
 		Use:               "models",
-		Short:             "List available models",
+		Short:             "List models",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
