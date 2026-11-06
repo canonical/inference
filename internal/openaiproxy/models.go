@@ -38,6 +38,10 @@ type modelsResponse struct {
 	Data   []modelOutput `json:"data"`
 }
 
+type defaultResponse struct {
+	DocumentationURL string `json:"documentation-url"`
+}
+
 type modelOutput struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
@@ -101,6 +105,15 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Path == "/" || r.URL.Path == "/v1" || r.URL.Path == "/v1/" {
+		responseWriter.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(responseWriter).Encode(defaultResponse{
+			DocumentationURL: "https://github.com/canonical/inference",
+		}); err != nil {
+			logger.Error("writing default response", "error", err)
+		}
+		return
+	}
 	if r.URL.Path == "/v1/models" {
 		h.serveModels(responseWriter, r)
 		return
