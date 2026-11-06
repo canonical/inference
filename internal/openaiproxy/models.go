@@ -110,7 +110,7 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewEncoder(responseWriter).Encode(defaultResponse{
 			DocumentationURL: "https://github.com/canonical/inference",
 		}); err != nil {
-			logger.Error("writing documentation response", "error", err)
+			logger.Error("writing default response", "error", err)
 		}
 		return
 	}
