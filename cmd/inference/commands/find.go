@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -18,11 +19,21 @@ import (
 
 type findCommand struct {
 	*common.Context
+	format string
+}
+
+type findResultOutput struct {
+	Name         string   `json:"name"`
+	Capabilities []string `json:"capabilities"`
+}
+
+type findOutput struct {
+	Results []findResultOutput `json:"results"`
 }
 
 func Find(ctx *common.Context) *cobra.Command {
 	cmd := findCommand{Context: ctx}
-	return &cobra.Command{
+	cobraCmd := &cobra.Command{
 		Use:               "find [query]...",
 		Aliases:           []string{"catalog"},
 		Short:             "Search for inference snaps",
@@ -32,9 +43,14 @@ func Find(ctx *common.Context) *cobra.Command {
 		SilenceUsage:      true,
 		RunE:              cmd.run,
 	}
+	cobraCmd.Flags().StringVar(&cmd.format, "format", "table", "output format [table|json]")
+	return cobraCmd
 }
 
 func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
+	if cmd.format != "table" && cmd.format != "json" {
+		return fmt.Errorf("unknown format %q", cmd.format)
+	}
 	query := strings.TrimSpace(strings.Join(args, " "))
 	entries, err := cmd.SnapCatalog.Read()
 	if err != nil {
@@ -60,17 +76,64 @@ func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
 		}
 	}
 	if len(results) == 0 {
+		if cmd.format == "json" {
+			output, err := cmd.outputJSON(newFindResults(nil))
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprint(cmd.Stdout, output)
+			return err
+		}
 		_, err := fmt.Fprintf(cmd.Stderr, "No inference snaps matched the query %q\n", query)
 		return err
 	}
-	output, err := cmd.outputTable(results)
+
+	findResults := newFindResults(results)
+	var output string
+	if cmd.format == "json" {
+		output, err = cmd.outputJSON(findResults)
+	} else {
+		output, err = cmd.outputTable(findResults)
+	}
 	if err != nil {
 		return err
 	}
 	_, _ = fmt.Fprint(cmd.Stdout, output)
-	_, _ = fmt.Fprintln(cmd.Stderr, "\nHint: Run \"inference info <name>\" for details.")
+	if cmd.format != "json" {
+		_, _ = fmt.Fprintln(cmd.Stderr, "\nHint: Run \"inference info <name>\" for details.")
+	}
 
 	return nil
+}
+
+func newFindResults(entries []snapcatalog.Entry) []findResultOutput {
+	results := make([]findResultOutput, 0, len(entries))
+	for _, entry := range entries {
+		var capabilities []string
+		for _, model := range entry.Models {
+			for _, capability := range model.Capabilities {
+				if capability != "" && !slices.Contains(capabilities, capability) {
+					capabilities = append(capabilities, capability)
+				}
+			}
+		}
+		slices.Sort(capabilities)
+		results = append(results, findResultOutput{
+			Name:         entry.SnapName,
+			Capabilities: capabilities,
+		})
+	}
+	return results
+}
+
+func (cmd *findCommand) outputJSON(results []findResultOutput) (string, error) {
+	var output bytes.Buffer
+	encoder := json.NewEncoder(&output)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(findOutput{Results: results}); err != nil {
+		return "", err
+	}
+	return output.String(), nil
 }
 
 func rankFindResults(results []snapd.FindResult, query string) {
@@ -102,28 +165,19 @@ func findMatchCounts(result snapd.FindResult, words []string) [4]int {
 	return counts
 }
 
-func (cmd *findCommand) outputTable(entries []snapcatalog.Entry) (string, error) {
+func (cmd *findCommand) outputTable(results []findResultOutput) (string, error) {
 	headers := []string{"NAME", "CAPABILITIES"}
 	nameMaxLen := len(headers[0])
 	capabilitiesMaxLen := len(headers[1])
-	rows := make([][]string, 0, len(entries))
-	for _, entry := range entries {
-		var capabilities []string
-		for _, model := range entry.Models {
-			for _, capability := range model.Capabilities {
-				if capability != "" && !slices.Contains(capabilities, capability) {
-					capabilities = append(capabilities, capability)
-				}
-			}
-		}
-		slices.Sort(capabilities)
-		capabilityText := strings.Join(capabilities, ", ")
+	rows := make([][]string, 0, len(results))
+	for _, result := range results {
+		capabilityText := strings.Join(result.Capabilities, ", ")
 		if capabilityText == "" {
 			capabilityText = "-"
 		}
-		nameMaxLen = max(nameMaxLen, len(entry.SnapName))
+		nameMaxLen = max(nameMaxLen, len(result.Name))
 		capabilitiesMaxLen = max(capabilitiesMaxLen, len(capabilityText))
-		rows = append(rows, []string{entry.SnapName, capabilityText})
+		rows = append(rows, []string{result.Name, capabilityText})
 	}
 	tableMaxWidth := 80
 	capabilitiesMinWidth := len(headers[1]) + 1
