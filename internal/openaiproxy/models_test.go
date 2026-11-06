@@ -34,7 +34,7 @@ func TestModelsHandlerServesDefaultResponse(t *testing.T) {
 			if got := response.Header().Get("Content-Type"); got != "application/json" {
 				t.Errorf("got Content-Type %q, want application/json", got)
 			}
-			if got, want := response.Body.String(), "{\"documentation_url\":\"https://github.com/canonical/inference\"}\n"; got != want {
+			if got, want := response.Body.String(), "{\"documentation-url\":\"https://github.com/canonical/inference\"}\n"; got != want {
 				t.Errorf("got body %q, want %q", got, want)
 			}
 		})

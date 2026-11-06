@@ -39,7 +39,7 @@ type modelsResponse struct {
 }
 
 type defaultResponse struct {
-	DocumentationURL string `json:"documentation_url"`
+	DocumentationURL string `json:"documentation-url"`
 }
 
 type modelOutput struct {
