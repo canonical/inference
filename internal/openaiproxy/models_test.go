@@ -17,9 +17,9 @@ import (
 	"github.com/canonical/inference/internal/providers"
 )
 
-func TestModelsHandlerServesDocumentation(t *testing.T) {
+func TestModelsHandlerServesDefaultResponse(t *testing.T) {
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		t.Fatal("documentation request should not list providers")
+		t.Fatal("default response request should not list providers")
 		return nil, nil
 	}, nil, discardLogger())
 
