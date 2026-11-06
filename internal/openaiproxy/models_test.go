@@ -17,6 +17,30 @@ import (
 	"github.com/canonical/inference/internal/providers"
 )
 
+func TestModelsHandlerServesDocumentation(t *testing.T) {
+	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
+		t.Fatal("documentation request should not list providers")
+		return nil, nil
+	}, nil, discardLogger())
+
+	for _, path := range []string{"/", "/v1", "/v1/"} {
+		t.Run(path, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("got status %d, want 200: %s", response.Code, response.Body.String())
+			}
+			if got := response.Header().Get("Content-Type"); got != "application/json" {
+				t.Errorf("got Content-Type %q, want application/json", got)
+			}
+			if got, want := response.Body.String(), "{\"documentation_url\":\"https://github.com/canonical/inference\"}\n"; got != want {
+				t.Errorf("got body %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestModelsHandlerRefreshesAndAggregatesProviders(t *testing.T) {
 	var firstRequests atomic.Int32
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
