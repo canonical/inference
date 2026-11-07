@@ -25,6 +25,7 @@ const (
 	sharedProvidersPathEnvVar = "SHARED_PROVIDERS_PATH"
 	httpHostEnvVar            = "HTTP_HOST"
 	httpPortEnvVar            = "HTTP_PORT"
+	httpCORSAllowAllEnvVar    = "HTTP_CORS_ALLOW_ALL"
 	defaultHost               = "127.0.0.1"
 	defaultPort               = 8400
 	catalogRefreshInterval    = 12 * time.Hour
@@ -68,7 +69,12 @@ func main() {
 		return providers.ListAll(ctx, catalog, snapdClient, providerRoot)
 	}
 
-	handler := openaiproxy.NewModelsHandler(listProviders, newUpstreamClient(), logger)
+	if options.corsAllowAll {
+		logger.Warn("allowing all request origins", "environment", httpCORSAllowAllEnvVar)
+	}
+	handler := openaiproxy.NewModelsHandler(listProviders, newUpstreamClient(), logger, openaiproxy.HandlerOptions{
+		AllowAllOrigins: options.corsAllowAll,
+	})
 	if err := handler.Refresh(ctx); err != nil {
 		logger.Warn("initializing provider models", "error", err)
 	}
@@ -230,8 +236,9 @@ func (h *hijackedConnections) close() {
 }
 
 type serverOptions struct {
-	host string
-	port int
+	host         string
+	port         int
+	corsAllowAll bool
 }
 
 func serverOptionsFromEnvironment() (serverOptions, error) {
@@ -240,15 +247,22 @@ func serverOptionsFromEnvironment() (serverOptions, error) {
 		host = defaultHost
 	}
 
-	portValue := os.Getenv(httpPortEnvVar)
-	if portValue == "" {
-		return serverOptions{host: host, port: defaultPort}, nil
+	options := serverOptions{host: host, port: defaultPort}
+	if portValue := os.Getenv(httpPortEnvVar); portValue != "" {
+		port, err := strconv.Atoi(portValue)
+		if err != nil {
+			return serverOptions{}, fmt.Errorf("%s must be an integer: %w", httpPortEnvVar, err)
+		}
+		options.port = port
 	}
-	port, err := strconv.Atoi(portValue)
-	if err != nil {
-		return serverOptions{}, fmt.Errorf("%s must be an integer: %w", httpPortEnvVar, err)
+	switch os.Getenv(httpCORSAllowAllEnvVar) {
+	case "", "false":
+	case "true":
+		options.corsAllowAll = true
+	default:
+		return serverOptions{}, fmt.Errorf("%s must be true or false", httpCORSAllowAllEnvVar)
 	}
-	return serverOptions{host: host, port: port}, nil
+	return options, nil
 }
 
 func listenAddress(host string, port int) (string, error) {

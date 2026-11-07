@@ -8,4 +8,8 @@ if [ -z "$(snapctl get http.host)" ]; then
     snapctl set http.host="127.0.0.1"
 fi
 
+if [ -z "$(snapctl get http.cors-allow-all)" ]; then
+    snapctl set http.cors-allow-all="false"
+fi
+
 cp "$SNAP/onboarded-snaps.json" "$SNAP_COMMON/onboarded-snaps.json"

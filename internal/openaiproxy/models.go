@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"net/http/httputil"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -25,12 +26,17 @@ const (
 )
 
 type ModelsHandler struct {
-	listProviders func(context.Context) ([]providers.Provider, error)
-	client        *http.Client
-	logger        *slog.Logger
-	refreshMu     sync.Mutex
-	snapshot      atomic.Pointer[routingSnapshot]
-	requestID     atomic.Uint64
+	allowAllOrigins bool
+	listProviders   func(context.Context) ([]providers.Provider, error)
+	client          *http.Client
+	logger          *slog.Logger
+	refreshMu       sync.Mutex
+	snapshot        atomic.Pointer[routingSnapshot]
+	requestID       atomic.Uint64
+}
+
+type HandlerOptions struct {
+	AllowAllOrigins bool
 }
 
 type modelsResponse struct {
@@ -71,6 +77,7 @@ func NewModelsHandler(
 	listProviders func(context.Context) ([]providers.Provider, error),
 	client *http.Client,
 	logger *slog.Logger,
+	options HandlerOptions,
 ) *ModelsHandler {
 	if client == nil {
 		client = http.DefaultClient
@@ -78,7 +85,12 @@ func NewModelsHandler(
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &ModelsHandler{listProviders: listProviders, client: client, logger: logger}
+	return &ModelsHandler{
+		listProviders:   listProviders,
+		client:          client,
+		logger:          logger,
+		allowAllOrigins: options.AllowAllOrigins,
+	}
 }
 
 func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +102,6 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"path", r.URL.Path,
 	)
 	responseWriter := &loggingResponseWriter{ResponseWriter: w}
-	setCORSHeaders(responseWriter.Header())
 	defer func() {
 		logger.Info(
 			"handled HTTP request",
@@ -100,8 +111,7 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 	}()
 
-	if isCORSPreflight(r) {
-		responseWriter.WriteHeader(http.StatusNoContent)
+	if h.handleCORS(responseWriter, r, logger) {
 		return
 	}
 
@@ -353,6 +363,44 @@ func (h *ModelsHandler) proxy(
 	proxy.ServeHTTP(w, r)
 }
 
+func (h *ModelsHandler) handleCORS(w http.ResponseWriter, r *http.Request, logger *slog.Logger) bool {
+	removeCORSHeaders(w.Header())
+	// Prevent caches from reusing responses across different origins.
+	w.Header().Add("Vary", "Origin")
+
+	origins := r.Header.Values("Origin")
+	// Allow direct requests from non-browser clients such as curl.
+	if len(origins) == 0 {
+		return false
+	}
+	if len(origins) > 1 {
+		logger.Warn("rejecting request", "reason", "multiple origins are not allowed")
+		writeError(w, http.StatusForbidden, "Multiple request origins are not allowed.", "invalid_request_error")
+		return true
+	}
+	allowedOrigin := origins[0]
+	if h.allowAllOrigins {
+		allowedOrigin = "*"
+	} else if !isLoopbackOrigin(allowedOrigin) {
+		logger.Warn("rejecting request", "reason", "origin is not an HTTP/HTTPS loopback origin")
+		writeError(w, http.StatusForbidden, "The request origin must be an HTTP/HTTPS loopback origin.", "invalid_request_error")
+		return true
+	}
+
+	if isCORSPreflight(r) {
+		if !isAllowedCORSPreflight(r) {
+			logger.Warn("rejecting request", "reason", "preflight method or headers are not allowed")
+			writeError(w, http.StatusForbidden, "The requested CORS method or headers are not allowed.", "invalid_request_error")
+			return true
+		}
+		setCORSHeaders(w.Header(), allowedOrigin)
+		w.WriteHeader(http.StatusNoContent)
+		return true
+	}
+	setCORSHeaders(w.Header(), allowedOrigin)
+	return false
+}
+
 func isCORSPreflight(r *http.Request) bool {
 	return r.Method == http.MethodOptions &&
 		r.Header.Get("Origin") != "" &&
@@ -360,12 +408,48 @@ func isCORSPreflight(r *http.Request) bool {
 		!isWebSocketUpgrade(r)
 }
 
-func setCORSHeaders(header http.Header) {
+func isLoopbackOrigin(origin string) bool {
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	// WebSocket origins use the page's scheme, not ws or wss.
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
+	host := parsed.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	address, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	return address.IsLoopback()
+}
+
+func isAllowedCORSPreflight(r *http.Request) bool {
+	methods := r.Header.Values("Access-Control-Request-Method")
+	if len(methods) != 1 || (methods[0] != http.MethodGet && methods[0] != http.MethodPost) {
+		return false
+	}
+	for _, value := range r.Header.Values("Access-Control-Request-Headers") {
+		for _, name := range strings.Split(value, ",") {
+			switch strings.ToLower(strings.TrimSpace(name)) {
+			case "authorization", "content-type":
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func setCORSHeaders(header http.Header, origin string) {
 	removeCORSHeaders(header)
-	header.Set("Access-Control-Allow-Origin", "*")
-	header.Set("Access-Control-Allow-Methods", "*")
-	header.Set("Access-Control-Allow-Headers", "*, Authorization")
-	header.Set("Access-Control-Expose-Headers", "*")
+	header.Set("Access-Control-Allow-Origin", origin)
+	header.Set("Access-Control-Allow-Methods", "GET, POST")
+	header.Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 }
 
 func removeCORSHeaders(header http.Header) {
