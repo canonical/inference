@@ -45,7 +45,7 @@ clef-flash  clef-flash-9b
 gemma4      gemma4-e4b
 ```
 
-Integrate with your agents:
+Integrate your agents:
 ```console
 $ curl -X POST http://localhost:8400/v1/chat/completions -H "Content-Type: application/json" -d '{
     "model": "gemma4/gemma4-e4b",
