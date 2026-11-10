@@ -3,7 +3,7 @@
 # Inference Manager
 [![inference](https://snapcraft.io/inference/badge.svg)](https://snapcraft.io/inference)
 
-Discover, install and connect to inference models on Ubuntu — from one place.
+Discover, install and connect to inference models on Ubuntu, all from one place.
 
 Inference Manager brings provider management and model access together.
 Use the command line to manage [inference snaps](https://documentation.ubuntu.com/inference-snaps), and connect your applications to a single endpoint that routes requests to the providers running on your machine.
@@ -31,7 +31,7 @@ gemma4             text, thinking, tools, vision
 nemotron-3-5-bolt  text, thinking, tools, vision
 ```
 
-Add a local provider:
+Install a provider:
 ```console
 $ inference install gemma4
 Installed gemma4
@@ -45,7 +45,7 @@ clef-flash  clef-flash-9b
 gemma4      gemma4-e4b
 ```
 
-Integrate your agents:
+Point your agents at the unified proxy endpoint:
 ```console
 $ curl -X POST http://localhost:8400/v1/chat/completions -H "Content-Type: application/json" -d '{
     "model": "gemma4/gemma4-e4b",
@@ -60,7 +60,7 @@ $ curl -X POST http://localhost:8400/v1/chat/completions -H "Content-Type: appli
   }'
 ```
 
-The inference is optimized for the hardware:
+See available optimizations:
 ```console
 $ inference info gemma4
 gemma4 [snap] - enabled ✓
