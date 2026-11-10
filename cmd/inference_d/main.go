@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -48,7 +49,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger := slog.New(newLogHandler(options.logLevel, options.logTimestamps))
+	logger := slog.New(newLogHandler(os.Stderr, options.logLevel, options.logTimestamps))
 
 	address, err := listenAddress(options.host, options.port)
 	if err != nil {
@@ -291,7 +292,7 @@ func shareProvidersPath() string {
 	return ""
 }
 
-func newLogHandler(level slog.Level, enableTimestamps bool) slog.Handler {
+func newLogHandler(w io.Writer, level slog.Level, enableTimestamps bool) slog.Handler {
 	opts := &slog.HandlerOptions{Level: level}
 
 	if !enableTimestamps {
@@ -303,5 +304,5 @@ func newLogHandler(level slog.Level, enableTimestamps bool) slog.Handler {
 		}
 	}
 
-	return slog.NewTextHandler(os.Stderr, opts)
+	return slog.NewTextHandler(w, opts)
 }

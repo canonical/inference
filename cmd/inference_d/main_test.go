@@ -303,16 +303,7 @@ func TestHijackedConnectionsCloseDuringShutdown(t *testing.T) {
 
 func TestNewLogHandlerWithoutTimestamps(t *testing.T) {
 	var buf bytes.Buffer
-	handler := newLogHandler(slog.LevelInfo, false)
-	// Recreate handler to write to buf
-	opts := &slog.HandlerOptions{Level: slog.LevelInfo}
-	opts.ReplaceAttr = func(groups []string, a slog.Attr) slog.Attr {
-		if a.Key == slog.TimeKey {
-			return slog.Attr{}
-		}
-		return a
-	}
-	handler = slog.NewTextHandler(&buf, opts)
+	handler := newLogHandler(&buf, slog.LevelInfo, false)
 	logger := slog.New(handler)
 
 	logger.Info("test message", "key", "value")
@@ -331,7 +322,7 @@ func TestNewLogHandlerWithoutTimestamps(t *testing.T) {
 
 func TestNewLogHandlerWithTimestamps(t *testing.T) {
 	var buf bytes.Buffer
-	handler := slog.NewTextHandler(&buf, nil)
+	handler := newLogHandler(&buf, slog.LevelInfo, true)
 	logger := slog.New(handler)
 
 	logger.Info("test message", "key", "value")
@@ -384,14 +375,7 @@ func TestNewLogHandlerRespectLogLevel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			opts := &slog.HandlerOptions{Level: tt.level}
-			opts.ReplaceAttr = func(groups []string, a slog.Attr) slog.Attr {
-				if a.Key == slog.TimeKey {
-					return slog.Attr{}
-				}
-				return a
-			}
-			handler := slog.NewTextHandler(&buf, opts)
+			handler := newLogHandler(&buf, tt.level, false)
 			logger := slog.New(handler)
 
 			tt.logFunc(logger)
