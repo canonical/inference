@@ -1,107 +1,81 @@
+![Inference Manager Banner](./snap/gui/inference-manager-banner.png)
+
 # Inference Manager
+[![inference](https://snapcraft.io/inference/badge.svg)](https://snapcraft.io/inference)
 
-Inference Manager provides a management interface for local inference on Ubuntu.
-The `inference` command-line interface (CLI) allows users to interact with and manage local inference models and providers.
+Discover, install and connect to inference models on Ubuntu — from one place.
 
-A background service runs a proxy that provides a central entry point for local inference, such as listing available models and routing inference requests.
-The inference proxy uses `http://localhost:8400/v1` as its entry point by default.
+Inference Manager brings provider management and model access together.
+Use the command line to manage [inference snaps](https://documentation.ubuntu.com/inference-snaps), and connect your applications to a single endpoint that routes requests to the providers running on your machine.
 
-## Usage
+Inference Manager allows you to:
+* Discover available inference providers and inspect their models and engines.
+* Install and remove inference snaps from the command line.
+* List models available through the inference proxy.
+* Check service status and provider health.
+* Send inference requests through a single local endpoint.
+
+## Get started
 
 Install Inference Manager:
 ```console
 sudo snap install inference
 ```
 
-### Manage providers
-
-To list providers, run:
-```
-$ inference providers
-PROVIDER  BACKEND  ENABLED
-gemma4    snap     yes
-qwen3     snap     yes
-smollm2   snap     yes
-
-Hint: Run "inference find" to discover other inference snaps.
-```
-
-To show a provider's state and available engines and models, run:
+Find local providers:
 ```console
-$ inference info qwen3-5
-qwen3-5 [snap] - not installed ✗
-
-ENGINE               qwen3.5-0.8b  qwen3.5-2b  qwen3.5-4b  qwen3.5-9b  qwen3.5-35b-a3b
-cpu                  ✓             ✓           ✓           ✓           ✓
-nvidia-gpu           ✓             ✓           ✓           ✓           ✓
-nvidia-jetson-orin   ✓             ✓           ✓           ✓
-```
-Use `--format=json` for machine-readable output.
-
-It is possible to search for a specific provider by using the `inference find` command.
-For example:
-
-```
-$ inference find Gemma
-NAME               OPTIMIZATIONS                   CAPABILITIES                 
-gemma3             amd-gpu, cpu, intel-cpu, int…   text, vision                 
-gemma4             amd-gpu, cpu, intel-cpu, int…   text, thinking, tools, vision
-nemotron-3-5-bolt  cpu, nvidia-gpu                 text, thinking, tools, vision
-
+$ inference find gemma
+NAME               CAPABILITIES                 
+gemma3             text, vision                 
+gemma4             text, thinking, tools, vision
+nemotron-3-5-bolt  text, thinking, tools, vision
 ```
 
-Use `inference install` to install a provider, `inference remove` to remove a provider.
-At the moment, the commands only allow management of [inference snaps](https://github.com/canonical/inference-snaps).
-Support for other provider backends, including remote providers, is planned for future releases.
-
-Additional commands, including `inference enable` and `inference disable`, are under development. These commands will allow users to manage the state of installed providers.
-
-### List models
-
-To list available models, run:
+Add a local provider:
+```console
+$ inference install gemma4
 ```
+
+List models:
+```console
 $ inference models
-PROVIDER  MODEL
-gemma4    gemma4-e2b
-smollm2   smollm2-135m
+PROVIDER    MODEL     
+clef-flash  clef-flash-9b
+gemma4      gemma4-e4b
 ```
 
-This is the list of models available for inference, through the inference proxy:
-```
-$ curl --silent http://localhost:8400/v1/models | jq
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "gemma4/gemma4-e2b",
-      "object": "model",
-      "created": 1789989775,
-      "owned_by": "gemma4"
-    },
-    {
-      "id": "smollm2/smollm2-135m",
-      "object": "model",
-      "created": 1789989775,
-      "owned_by": "smollm2"
-    }
-  ]
-}
+Integrate with your agents:
+```console
+$ curl -X POST http://localhost:8400/v1/chat/completions -H "Content-Type: application/json" -d '{
+    "model": "gemma4/gemma4-e4b",
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is the capital of France?"
+      }
+    ],
+    "temperature": 0.7,
+    "max_tokens": 100
+  }'
 ```
 
-### Show status
+The inference is optimized for the hardware:
+```console
+$ inference info gemma4
+gemma4 [snap] - enabled ✓
 
-To check the status of the Inference Manager, run:
+API: http://127.0.0.1:8400/v1 (proxy)
+     └── http://localhost:8336/v1 (upstream)
+
+ENGINE         gemma4-e2b  gemma4-e4b  gemma4-12b  gemma4-26b-a4b 
+amd-gpu        ✓           ✓           ✓           ✓              
+cpu            ✓           ✓           ✓           ✓              
+intel-cpu                  ✓                                      
+intel-gpu                  ✓                                      
+intel-onemkl   ✓           ✓           ✓           ✓              
+nvidia-gpu     ✓           ✓           ✓           ✓          
 ```
-$ inference status
-services:
-  inference.d: active
-proxy:
-  openai:
-    base-url: http://localhost:8400/v1
-health:
-  gemma4: ok
-  smollm2: ok
-```
+
 
 ## Local development
 
