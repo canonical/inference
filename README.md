@@ -58,6 +58,7 @@ $ curl -X POST http://localhost:8400/v1/chat/completions -H "Content-Type: appli
     "temperature": 0.7,
     "max_tokens": 100
   }'
+{"choices":[{"finish_reason":"stop","index":0,"message":{"role":"assistant","content":"The capital of France is **Paris**."}}],...}
 ```
 
 See available optimizations:
@@ -80,36 +81,33 @@ nvidia-gpu     ✓           ✓           ✓           ✓
 
 ## Local development
 
-Download the snap catalog and point the CLI at it with `INFERENCE_SNAPS_CATALOG`:
-
-```console
-curl -LO https://canonical.github.io/inference-snaps-admin/onboarded-snaps.json
-export INFERENCE_SNAPS_CATALOG="$PWD/onboarded-snaps.json"
-```
-
-Build and run the CLI directly with Go:
-
-```console
-go build ./...
-go run ./cmd/inference providers
-```
-
-Run the test suite:
-
-```console
-go test ./...
-```
-
-To build and install the snap locally:
-
-```console
+Build and install the snap:
+```shell
 snapcraft pack -v
 sudo snap install --dangerous ./inference_*.snap
 ```
 
-The strictly confined snap requires the `network` and `snapd-control` interfaces.
-A local development install may require:
-
-```console
+The snap needs extra access to manage inference snaps.
+Manually connect the `snapd-control` interface:
+```shell
 sudo snap connect inference:snapd-control
+```
+
+### Build and run with Go
+
+Download the snap catalog and point the CLI at it with `INFERENCE_SNAPS_CATALOG`:
+
+```shell
+curl -LO https://canonical.github.io/inference-snaps-admin/onboarded-snaps.json
+export INFERENCE_SNAPS_CATALOG="$PWD/onboarded-snaps.json"
+```
+
+Build and run:
+```shell
+go run ./cmd/inference -h
+```
+
+Run the test suite:
+```shell
+go test ./...
 ```
