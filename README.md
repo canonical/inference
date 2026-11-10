@@ -34,6 +34,7 @@ nemotron-3-5-bolt  text, thinking, tools, vision
 Add a local provider:
 ```console
 $ inference install gemma4
+Installed gemma4 successfully.
 ```
 
 List models:
