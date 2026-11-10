@@ -16,7 +16,7 @@ func handleProxyError(
 	w http.ResponseWriter,
 	r *http.Request,
 	err error,
-	logger *slog.Logger,
+	requestLogger *slog.Logger,
 	providerName string,
 	providerURL string,
 	model string,
@@ -27,7 +27,7 @@ func handleProxyError(
 
 	switch {
 	case errors.Is(cause, http.ErrServerClosed):
-		logger.Info(
+		requestLogger.Info(
 			"cancelling inference request during server shutdown",
 			"provider", providerName,
 			"model", model,
@@ -36,7 +36,7 @@ func handleProxyError(
 			writeError(w, http.StatusServiceUnavailable, "The inference service is shutting down.", "service_unavailable")
 		}
 	case r.Context().Err() != nil:
-		logger.Debug(
+		requestLogger.Debug(
 			"client disconnected from inference request",
 			"provider", providerName,
 			"model", model,
@@ -45,7 +45,7 @@ func handleProxyError(
 			marker.MarkStatus(statusClientClosed)
 		}
 	case errors.Is(err, context.Canceled):
-		logger.Info(
+		requestLogger.Info(
 			"inference request was cancelled",
 			"provider", providerName,
 			"model", model,
@@ -54,7 +54,7 @@ func handleProxyError(
 			writeError(w, http.StatusServiceUnavailable, "The inference request was cancelled.", "service_unavailable")
 		}
 	default:
-		logger.Error(
+		requestLogger.Error(
 			"proxying inference request",
 			"provider", providerName,
 			"provider_url", redactProviderURLForLogging(providerURL),

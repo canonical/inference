@@ -27,7 +27,7 @@ const (
 type ModelsHandler struct {
 	listProviders func(context.Context) ([]providers.Provider, error)
 	client        *http.Client
-	logger        *slog.Logger
+	baseLogger    *slog.Logger
 	refreshMu     sync.Mutex
 	snapshot      atomic.Pointer[routingSnapshot]
 	requestID     atomic.Uint64
@@ -70,21 +70,21 @@ type routingSnapshot []modelRoute
 func NewModelsHandler(
 	listProviders func(context.Context) ([]providers.Provider, error),
 	client *http.Client,
-	logger *slog.Logger,
+	baseLogger *slog.Logger,
 ) *ModelsHandler {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	if logger == nil {
-		logger = slog.Default()
+	if baseLogger == nil {
+		baseLogger = slog.Default()
 	}
-	return &ModelsHandler{listProviders: listProviders, client: client, logger: logger}
+	return &ModelsHandler{listProviders: listProviders, client: client, baseLogger: baseLogger}
 }
 
 func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
 	requestID := h.requestID.Add(1)
-	logger := h.logger.With(
+	requestLogger := h.baseLogger.With(
 		"request_id", requestID,
 		"method", r.Method,
 		"path", r.URL.Path,
@@ -92,7 +92,7 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	responseWriter := &loggingResponseWriter{ResponseWriter: w}
 	setCORSHeaders(responseWriter.Header())
 	defer func() {
-		logger.Info(
+		requestLogger.Debug(
 			"handled HTTP request",
 			"status", responseWriter.statusCode(),
 			"response_bytes", responseWriter.bytesWritten,
@@ -110,16 +110,16 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewEncoder(responseWriter).Encode(defaultResponse{
 			DocumentationURL: "https://github.com/canonical/inference",
 		}); err != nil {
-			logger.Error("writing default response", "error", err)
+			requestLogger.Error("writing default response", "error", err)
 		}
 		return
 	}
 	if r.URL.Path == "/v1/models" {
-		h.serveModels(responseWriter, r)
+		h.serveModels(responseWriter, r, requestLogger)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/v1/models/") {
-		h.serveModel(responseWriter, r, logger)
+		h.serveModel(responseWriter, r, requestLogger)
 		return
 	}
 	if !strings.HasPrefix(r.URL.Path, "/v1/") {
@@ -129,23 +129,23 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	snapshot := h.snapshot.Load()
 	if snapshot == nil {
-		logger.Warn("rejecting inference request", "reason", "provider inventory is unavailable")
+		requestLogger.Warn("rejecting inference request", "reason", "proxy routing table is unavailable")
 		writeError(responseWriter, http.StatusServiceUnavailable, "No inference providers are available.", "service_unavailable")
 		return
 	}
-	h.proxy(responseWriter, r, snapshot, logger)
+	h.proxy(responseWriter, r, snapshot, requestLogger)
 }
 
-func (h *ModelsHandler) serveModels(w http.ResponseWriter, r *http.Request) {
+func (h *ModelsHandler) serveModels(w http.ResponseWriter, r *http.Request, requestLogger *slog.Logger) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeError(w, http.StatusMethodNotAllowed, "Only GET is supported for /v1/models.", "invalid_request_error")
 		return
 	}
 
-	snapshot, err := h.refresh(r.Context())
+	snapshot, err := h.refresh(r.Context(), requestLogger)
 	if err != nil {
-		h.logger.Error("refreshing provider models", "error", err)
+		requestLogger.Error("refreshing provider models", "error", err)
 		writeError(w, http.StatusServiceUnavailable, "No inference providers are available.", "service_unavailable")
 		return
 	}
@@ -156,11 +156,11 @@ func (h *ModelsHandler) serveModels(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(modelsResponse{Object: "list", Data: models}); err != nil {
-		h.logger.Error("writing models response", "error", err)
+		requestLogger.Error("writing models response", "error", err)
 	}
 }
 
-func (h *ModelsHandler) serveModel(w http.ResponseWriter, r *http.Request, logger *slog.Logger) {
+func (h *ModelsHandler) serveModel(w http.ResponseWriter, r *http.Request, requestLogger *slog.Logger) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeError(w, http.StatusMethodNotAllowed, "Only GET is supported for /v1/models/{model}.", "invalid_request_error")
@@ -169,7 +169,7 @@ func (h *ModelsHandler) serveModel(w http.ResponseWriter, r *http.Request, logge
 
 	snapshot := h.snapshot.Load()
 	if snapshot == nil {
-		logger.Warn("rejecting model request", "reason", "provider inventory is unavailable")
+		requestLogger.Warn("rejecting model request", "reason", "proxy routing table is unavailable")
 		writeError(w, http.StatusServiceUnavailable, "No inference providers are available.", "service_unavailable")
 		return
 	}
@@ -177,34 +177,34 @@ func (h *ModelsHandler) serveModel(w http.ResponseWriter, r *http.Request, logge
 	modelID := strings.TrimPrefix(r.URL.Path, "/v1/models/")
 	route, exists := snapshot.route(modelID)
 	if !exists {
-		logger.Warn("rejecting model request", "reason", "model does not exist", "model", modelID)
+		requestLogger.Warn("rejecting model request", "reason", "model does not exist", "model", modelID)
 		writeError(w, http.StatusNotFound, "The requested model does not exist.", "invalid_request_error")
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(route.model); err != nil {
-		logger.Error("writing model response", "model", modelID, "error", err)
+		requestLogger.Error("writing model response", "model", modelID, "error", err)
 	}
 }
 
 func (h *ModelsHandler) Refresh(ctx context.Context) error {
-	_, err := h.refresh(ctx)
+	_, err := h.refresh(ctx, h.baseLogger)
 	return err
 }
 
-func (h *ModelsHandler) refresh(ctx context.Context) (*routingSnapshot, error) {
+func (h *ModelsHandler) refresh(ctx context.Context, logger *slog.Logger) (*routingSnapshot, error) {
 	h.refreshMu.Lock()
 	defer h.refreshMu.Unlock()
 
-	snapshot, err := h.refreshLocked(ctx)
+	snapshot, err := h.refreshLocked(ctx, logger)
 	if err == nil {
 		h.snapshot.Store(snapshot)
 	}
 	return snapshot, err
 }
 
-func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, error) {
+func (h *ModelsHandler) refreshLocked(ctx context.Context, logger *slog.Logger) (*routingSnapshot, error) {
 	started := time.Now()
 	allProviders, err := h.listProviders(ctx)
 	if err != nil {
@@ -216,6 +216,13 @@ func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, er
 	}
 	discoveredModels := make([]models.Model, 0)
 	for _, provider := range providerModels {
+		if provider.Err != nil {
+			logger.Error(
+				"discovering provider models",
+				"provider", provider.ProviderName,
+				"error", redactURLError(provider.Err),
+			)
+		}
 		discoveredModels = append(discoveredModels, provider.Models...)
 	}
 	snapshot := make(routingSnapshot, 0, len(discoveredModels))
@@ -234,7 +241,7 @@ func (h *ModelsHandler) refreshLocked(ctx context.Context) (*routingSnapshot, er
 		}
 		snapshot = append(snapshot, route)
 	}
-	h.logger.Info(
+	logger.Debug(
 		"refreshed provider models",
 		"models", len(snapshot),
 		"duration", time.Since(started),
@@ -255,7 +262,7 @@ func (h *ModelsHandler) proxy(
 	w http.ResponseWriter,
 	r *http.Request,
 	snapshot *routingSnapshot,
-	logger *slog.Logger,
+	requestLogger *slog.Logger,
 ) {
 	modelRequest, requestErr := parseModelRequest(r)
 	if requestErr != nil {
@@ -263,7 +270,7 @@ func (h *ModelsHandler) proxy(
 		if requestErr.err != nil {
 			attributes = append(attributes, "error", requestErr.err)
 		}
-		logger.Warn("rejecting inference request", attributes...)
+		requestLogger.Warn("rejecting inference request", attributes...)
 		writeError(w, requestErr.status, requestErr.message, "invalid_request_error")
 		return
 	}
@@ -271,11 +278,11 @@ func (h *ModelsHandler) proxy(
 
 	route, exists := snapshot.route(requestedModel)
 	if !exists {
-		logger.Warn("rejecting inference request", "reason", "model does not exist", "model", requestedModel)
+		requestLogger.Warn("rejecting inference request", "reason", "model does not exist", "model", requestedModel)
 		writeError(w, http.StatusNotFound, "The requested model does not exist.", "invalid_request_error")
 		return
 	}
-	logger.Info(
+	requestLogger.Debug(
 		"routing inference request",
 		"provider", route.providerName,
 		"model", requestedModel,
@@ -284,13 +291,13 @@ func (h *ModelsHandler) proxy(
 	)
 
 	if err := modelRequest.rewrite(route.nativeModelID); err != nil {
-		logger.Error("rewriting upstream request", "provider", route.providerName, "model", requestedModel, "error", err)
+		requestLogger.Error("rewriting upstream request", "provider", route.providerName, "model", requestedModel, "error", err)
 		writeError(w, http.StatusInternalServerError, "Unable to encode request body.", "internal_error")
 		return
 	}
 	target, err := url.Parse(route.baseURL)
 	if err != nil {
-		logger.Error(
+		requestLogger.Error(
 			"parsing provider URL",
 			"provider", route.providerName,
 			"provider_url", redactProviderURLForLogging(route.baseURL),
@@ -300,7 +307,14 @@ func (h *ModelsHandler) proxy(
 		return
 	}
 
-	proxy := &httputil.ReverseProxy{}
+	upstreamLogger := requestLogger.With(
+		"provider", route.providerName,
+		"provider_url", redactProviderURLForLogging(route.baseURL),
+		"model", requestedModel,
+	)
+	proxy := &httputil.ReverseProxy{
+		ErrorLog: slog.NewLogLogger(upstreamLogger.Handler(), slog.LevelError),
+	}
 	proxy.Rewrite = func(request *httputil.ProxyRequest) {
 		request.Out.URL.Scheme = target.Scheme
 		request.Out.URL.Host = target.Host
@@ -317,6 +331,9 @@ func (h *ModelsHandler) proxy(
 	}
 	proxy.FlushInterval = -1
 	proxy.ModifyResponse = func(response *http.Response) error {
+		if response.StatusCode >= http.StatusBadRequest {
+			upstreamLogger.Error("upstream request failed", "status", response.StatusCode)
+		}
 		removeCORSHeaders(response.Header)
 		mediaType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
 		if strings.EqualFold(mediaType, "text/event-stream") {
@@ -329,7 +346,7 @@ func (h *ModelsHandler) proxy(
 			responseWriter,
 			request,
 			proxyErr,
-			logger,
+			requestLogger,
 			route.providerName,
 			route.baseURL,
 			requestedModel,
@@ -343,7 +360,7 @@ func (h *ModelsHandler) proxy(
 		if recovered != http.ErrAbortHandler {
 			panic(recovered)
 		}
-		logger.Info(
+		requestLogger.Debug(
 			"upstream response stream terminated",
 			"provider", route.providerName,
 			"provider_url", redactProviderURLForLogging(route.baseURL),
