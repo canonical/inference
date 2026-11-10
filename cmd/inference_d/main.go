@@ -25,6 +25,7 @@ const (
 	sharedProvidersPathEnvVar = "SHARED_PROVIDERS_PATH"
 	httpHostEnvVar            = "HTTP_HOST"
 	httpPortEnvVar            = "HTTP_PORT"
+	logLevelEnvVar            = "LOG_LEVEL"
 	defaultHost               = "127.0.0.1"
 	defaultPort               = 8400
 	catalogRefreshInterval    = 12 * time.Hour
@@ -37,7 +38,12 @@ const (
 )
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	level, err := logLevelFromEnvironment()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "configuring logging: %v\n", err)
+		os.Exit(1)
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -94,6 +100,16 @@ func main() {
 		logger.Error("serving requests", "error", err)
 		os.Exit(1)
 	}
+}
+
+func logLevelFromEnvironment() (slog.Level, error) {
+	level := slog.LevelInfo
+	if value := os.Getenv(logLevelEnvVar); value != "" {
+		if err := level.UnmarshalText([]byte(value)); err != nil {
+			return 0, fmt.Errorf("%s: %w", logLevelEnvVar, err)
+		}
+	}
+	return level, nil
 }
 
 func newUpstreamClient() *http.Client {

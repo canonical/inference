@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -63,7 +64,7 @@ func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 	handler := NewModelsHandler(
 		listProviders,
 		upstream.Client(),
-		slog.New(slog.NewTextHandler(&logs, nil)),
+		slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	)
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
@@ -119,6 +120,123 @@ func TestProxyUsesStartupSnapshotAndRewritesQualifiedModel(t *testing.T) {
 		if strings.Contains(logOutput, sensitive) {
 			t.Errorf("logs contain sensitive value %q:\n%s", sensitive, logOutput)
 		}
+	}
+}
+
+func TestProxyLoggingLevels(t *testing.T) {
+	for _, level := range []slog.Level{slog.LevelInfo, slog.LevelDebug, slog.LevelError} {
+		t.Run(level.String(), func(t *testing.T) {
+			for _, test := range []struct {
+				name   string
+				status int
+				err    error
+			}{
+				{name: "success", status: http.StatusOK},
+				{name: "client error", status: http.StatusBadRequest},
+				{name: "server error", status: http.StatusInternalServerError},
+				{name: "connection error", status: http.StatusBadGateway, err: errors.New("connection refused")},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					var logs bytes.Buffer
+					transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
+						body := `{"data":[{"id":"native-model"}]}`
+						status := http.StatusOK
+						if request.URL.Path != "/v1/models" {
+							if test.err != nil {
+								return nil, &url.Error{
+									Op:  "Post",
+									URL: request.URL.String(),
+									Err: test.err,
+								}
+							}
+							status = test.status
+							body = "private upstream response"
+						}
+						return &http.Response{
+							StatusCode: status,
+							Header:     make(http.Header),
+							Body:       io.NopCloser(strings.NewReader(body)),
+							Request:    request,
+						}, nil
+					})
+					handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
+						return []providers.Provider{{
+							Name:    "provider",
+							BaseURL: "http://test-user:test-password@provider.test/v1?token=private-query#private-fragment",
+						}}, nil
+					}, &http.Client{Transport: transport}, slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: level})))
+					if err := handler.Refresh(context.Background()); err != nil {
+						t.Fatal(err)
+					}
+					logs.Reset()
+					response := httptest.NewRecorder()
+					request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions?secret=private-query",
+						strings.NewReader(`{"model":"provider/native-model","messages":[{"role":"user","content":"private prompt"}]}`))
+					request.Header.Set("Authorization", "private-authorization")
+					handler.ServeHTTP(response, request)
+					if response.Code != test.status {
+						t.Fatalf("status = %d, want %d", response.Code, test.status)
+					}
+					if test.err == nil && response.Body.String() != "private upstream response" {
+						t.Fatalf("upstream body changed: %q", response.Body.String())
+					}
+					output := logs.String()
+					for _, message := range []string{`msg="handled HTTP request"`, `msg="routing inference request"`} {
+						if got := strings.Contains(output, message); got != (level == slog.LevelDebug) {
+							t.Errorf("log %q present = %v at %v:\n%s", message, got, level, output)
+						}
+					}
+					if test.status >= http.StatusBadRequest {
+						expected := []string{
+							"level=ERROR", "request_id=1", "method=POST", "path=/v1/chat/completions",
+							"provider=provider", "provider_url=http://provider.test/v1", "model=provider/native-model",
+						}
+						if test.err != nil {
+							expected = append(expected, `msg="proxying inference request"`, "connection refused")
+						} else {
+							expected = append(expected, `msg="upstream request failed"`, "status="+strconv.Itoa(test.status))
+						}
+						for _, want := range expected {
+							if !strings.Contains(output, want) {
+								t.Errorf("missing %q:\n%s", want, output)
+							}
+						}
+					} else if level != slog.LevelDebug && output != "" {
+						t.Errorf("successful request logged outside debug:\n%s", output)
+					}
+					for _, sensitive := range []string{
+						"test-user", "test-password", "private-query", "private-fragment",
+						"private prompt", "private upstream response", "private-authorization",
+					} {
+						if strings.Contains(output, sensitive) {
+							t.Errorf("logs contain %q:\n%s", sensitive, output)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestDebugLogsEveryHandledRequest(t *testing.T) {
+	var logs bytes.Buffer
+	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
+		return nil, nil
+	}, nil, slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	for _, path := range []string{"/", "/v1", "/v1/models", "/v1/models/missing", "/missing", "/v1/chat/completions"} {
+		t.Run(path, func(t *testing.T) {
+			logs.Reset()
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+			for _, want := range []string{
+				"level=DEBUG", `msg="handled HTTP request"`, "request_id=", "method=GET",
+				"path=" + path, "status=" + strconv.Itoa(response.Code), "response_bytes=", "duration=",
+			} {
+				if !strings.Contains(logs.String(), want) {
+					t.Errorf("missing %q:\n%s", want, logs.String())
+				}
+			}
+		})
 	}
 }
 
@@ -459,11 +577,17 @@ func TestProxyErrorClassification(t *testing.T) {
 		cancel()
 		recorder := httptest.NewRecorder()
 		writer := &loggingResponseWriter{ResponseWriter: recorder}
+		var logs bytes.Buffer
 
-		handleProxyError(writer, request, context.Canceled, discardLogger(), "provider", "http://provider.test/v1", "model")
+		handleProxyError(writer, request, context.Canceled,
+			slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+			"provider", "http://provider.test/v1", "model")
 
 		if writer.statusCode() != statusClientClosed || writer.WroteHeader() || recorder.Body.Len() != 0 {
 			t.Fatalf("status = %d, wrote header = %v, body = %q", writer.statusCode(), writer.WroteHeader(), recorder.Body.String())
+		}
+		if !strings.Contains(logs.String(), "level=DEBUG") || strings.Contains(logs.String(), "level=ERROR") {
+			t.Fatalf("client disconnect was not logged as debug only:\n%s", logs.String())
 		}
 	})
 
@@ -533,6 +657,7 @@ func TestProxyErrorClassification(t *testing.T) {
 }
 
 func TestProxyRecoversTruncatedUpstreamStream(t *testing.T) {
+	var logs bytes.Buffer
 	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		body := io.NopCloser(strings.NewReader(`{"data":[{"id":"streamer"}]}`))
 		header := make(http.Header)
@@ -551,11 +676,15 @@ func TestProxyRecoversTruncatedUpstreamStream(t *testing.T) {
 	})
 	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
 		return []providers.Provider{{Name: "provider", BaseURL: "http://provider.test/v1"}}, nil
-	}, &http.Client{Transport: transport}, discardLogger())
+	}, &http.Client{Transport: transport}, slog.New(slog.NewTextHandler(&logs, nil)))
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(handler)
+	done := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(done)
+		handler.ServeHTTP(w, r)
+	}))
 	defer server.Close()
 
 	response, err := server.Client().Post(
@@ -570,6 +699,16 @@ func TestProxyRecoversTruncatedUpstreamStream(t *testing.T) {
 	body, _ := io.ReadAll(response.Body)
 	if strings.Contains(string(body), `"error"`) {
 		t.Fatalf("proxy appended an error body to stream: %q", body)
+	}
+	<-done
+	for _, want := range []string{
+		"level=ERROR", "upstream stream failed", "request_id=1", "method=POST",
+		"path=/v1/chat/completions", "provider=provider",
+		"provider_url=http://provider.test/v1", "model=provider/streamer",
+	} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("missing %q:\n%s", want, logs.String())
+		}
 	}
 }
 

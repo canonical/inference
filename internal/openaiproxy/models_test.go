@@ -1,6 +1,7 @@
 package openaiproxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -198,12 +199,21 @@ func TestModelsHandlerSkipsUnavailableProvider(t *testing.T) {
 	root := t.TempDir()
 	writeProvider(t, root, "healthy", "healthy", healthy.URL+"/v1")
 	writeProvider(t, root, "broken", "broken", "http://127.0.0.1:1/v1")
-	handler := NewModelsHandler(connectedProviderLister(root), healthy.Client(), discardLogger())
+	var logs bytes.Buffer
+	handler := NewModelsHandler(connectedProviderLister(root), healthy.Client(), slog.New(slog.NewTextHandler(&logs, nil)))
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":"healthy/ready"`) {
 		t.Fatalf("got status %d body %s", response.Code, response.Body.String())
+	}
+	for _, want := range []string{
+		"level=ERROR", `msg="discovering provider models"`, "provider=broken", "error=",
+		"request_id=1", "method=GET", "path=/v1/models",
+	} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("missing %q:\n%s", want, logs.String())
+		}
 	}
 }
 

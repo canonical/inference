@@ -103,6 +103,45 @@ func TestServerOptionsFromEnvironment(t *testing.T) {
 	}
 }
 
+func TestLogLevelFromEnvironment(t *testing.T) {
+	tests := []struct {
+		value   string
+		want    slog.Level
+		wantErr bool
+	}{
+		{value: "", want: slog.LevelInfo},
+		{value: "DEBUG", want: slog.LevelDebug},
+		{value: "info", want: slog.LevelInfo},
+		{value: "WARN", want: slog.LevelWarn},
+		{value: "ERROR", want: slog.LevelError},
+		{value: "invalid", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			t.Setenv(logLevelEnvVar, tt.value)
+			level, err := logLevelFromEnvironment()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("logLevelFromEnvironment() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err != nil {
+				if !strings.Contains(err.Error(), logLevelEnvVar) {
+					t.Fatalf("error %q does not identify %s", err, logLevelEnvVar)
+				}
+				return
+			}
+			if level != tt.want {
+				t.Fatalf("level = %v, want %v", level, tt.want)
+			}
+			var output bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: level}))
+			logger.Debug("debug request")
+			if got := strings.Contains(output.String(), "debug request"); got != (level <= slog.LevelDebug) {
+				t.Fatalf("debug record enabled = %v for level %v", got, level)
+			}
+		})
+	}
+}
+
 func TestUpstreamClientAllowsSlowInferenceHeaders(t *testing.T) {
 	client := newUpstreamClient()
 	transport, ok := client.Transport.(*http.Transport)
