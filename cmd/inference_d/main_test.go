@@ -99,9 +99,9 @@ func TestServerOptionsFromEnvironment(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:      "invalid log level",
-			logLevel:  "invalid",
-			wantErr:   true,
+			name:     "invalid log level",
+			logLevel: "invalid",
+			wantErr:  true,
 		},
 		{
 			name:     "log level warn",
