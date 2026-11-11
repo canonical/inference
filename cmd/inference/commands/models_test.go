@@ -79,7 +79,7 @@ func TestModelsCommandWithoutProviders(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "table", want: "PROVIDER  MODEL\n"},
+		{name: "table", want: "No models found.\n"},
 		{name: "json", args: []string{"--format=json"}, want: "{\n  \"models\": []\n}\n"},
 	}
 
@@ -152,7 +152,7 @@ func TestModelsPrintsHintWhenSomeProvidersFail(t *testing.T) {
 	if want := "PROVIDER  MODEL\ngemma4    gemma4-e2b\n"; stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 	}
-	wantHint := "\nHint: Unable to retrieve models from some providers. Run \"inference status\" for details.\n"
+	wantHint := "\nHint: Cannot retrieve models from some providers. Run \"inference status\" for details.\n"
 	if stderr.String() != wantHint {
 		t.Fatalf("stderr = %q, want %q", stderr.String(), wantHint)
 	}
@@ -173,7 +173,7 @@ func TestModelsOmitsHintWhenAllProvidersSucceed(t *testing.T) {
 }
 
 func TestModelsPrintsEmptyListWithHintWhenNoModelCanBeRetrieved(t *testing.T) {
-	wantStdErr := "\nHint: Unable to retrieve models from some providers. Run \"inference status\" for details.\n"
+	wantStdErr := "\nHint: Cannot retrieve models from some providers. Run \"inference status\" for details.\n"
 	failing := []models.ProviderModels{
 		{ProviderName: "first", Models: []models.Model{}, Err: errors.New("upstream returned 500")},
 		{ProviderName: "second", Models: []models.Model{}, Err: errors.New("connection refused")},
@@ -184,7 +184,7 @@ func TestModelsPrintsEmptyListWithHintWhenNoModelCanBeRetrieved(t *testing.T) {
 		format string
 		want   string
 	}{
-		{name: "table", format: "table", want: "PROVIDER  MODEL\n"},
+		{name: "table", format: "table", want: "No models found.\n"},
 		{name: "json", format: "json", want: "{\n  \"models\": []\n}\n"},
 	}
 
