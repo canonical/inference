@@ -75,12 +75,13 @@ func TestModelsOutput(t *testing.T) {
 
 func TestModelsCommandWithoutProviders(t *testing.T) {
 	tests := []struct {
-		name string
-		args []string
-		want string
+		name       string
+		args       []string
+		wantStdout string
+		wantStderr string
 	}{
-		{name: "table", want: "No models found.\n"},
-		{name: "json", args: []string{"--format=json"}, want: "{\n  \"models\": []\n}\n"},
+		{name: "table", wantStdout: "", wantStderr: "No models found.\n"},
+		{name: "json", args: []string{"--format=json"}, wantStdout: "{\n  \"models\": []\n}\n", wantStderr: ""},
 	}
 
 	for _, test := range tests {
@@ -91,11 +92,11 @@ func TestModelsCommandWithoutProviders(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if stdout.String() != test.want {
-				t.Fatalf("stdout = %q, want %q", stdout.String(), test.want)
+			if stdout.String() != test.wantStdout {
+				t.Fatalf("stdout = %q, want %q", stdout.String(), test.wantStdout)
 			}
-			if stderr.Len() != 0 {
-				t.Fatalf("expected no output on stderr, got %q", stderr.String())
+			if stderr.String() != test.wantStderr {
+				t.Fatalf("stderr = %q, want %q", stderr.String(), test.wantStderr)
 			}
 		})
 	}
@@ -173,19 +174,20 @@ func TestModelsOmitsHintWhenAllProvidersSucceed(t *testing.T) {
 }
 
 func TestModelsPrintsEmptyListWithHintWhenNoModelCanBeRetrieved(t *testing.T) {
-	wantStdErr := "\nHint: Cannot retrieve models from some providers. Run \"inference status\" for details.\n"
+	wantHint := "\nHint: Cannot retrieve models from some providers. Run \"inference status\" for details.\n"
 	failing := []models.ProviderModels{
 		{ProviderName: "first", Models: []models.Model{}, Err: errors.New("upstream returned 500")},
 		{ProviderName: "second", Models: []models.Model{}, Err: errors.New("connection refused")},
 	}
 
 	tests := []struct {
-		name   string
-		format string
-		want   string
+		name       string
+		format     string
+		wantStdout string
+		wantStderr string
 	}{
-		{name: "table", format: "table", want: "No models found.\n"},
-		{name: "json", format: "json", want: "{\n  \"models\": []\n}\n"},
+		{name: "table", format: "table", wantStdout: "", wantStderr: "No models found.\n" + wantHint},
+		{name: "json", format: "json", wantStdout: "{\n  \"models\": []\n}\n", wantStderr: wantHint},
 	}
 
 	for _, test := range tests {
@@ -196,11 +198,11 @@ func TestModelsPrintsEmptyListWithHintWhenNoModelCanBeRetrieved(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if stdout.String() != test.want {
-				t.Fatalf("stdout = %q, want %q", stdout.String(), test.want)
+			if stdout.String() != test.wantStdout {
+				t.Fatalf("stdout = %q, want %q", stdout.String(), test.wantStdout)
 			}
-			if stderr.String() != wantStdErr {
-				t.Fatalf("stderr = %q, want %q", stderr.String(), wantStdErr)
+			if stderr.String() != test.wantStderr {
+				t.Fatalf("stderr = %q, want %q", stderr.String(), test.wantStderr)
 			}
 		})
 	}

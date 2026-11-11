@@ -73,7 +73,7 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 				return err
 			}
 		} else {
-			_, err = fmt.Fprintln(cmd.Stdout, "No inference providers installed.")
+			_, err = fmt.Fprintln(cmd.Stderr, "No inference providers installed.")
 			return err
 		}
 	}

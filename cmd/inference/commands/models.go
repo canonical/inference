@@ -99,7 +99,7 @@ func (cmd *modelsCommand) printProviderModels(providerModels []models.ProviderMo
 				return err
 			}
 		} else {
-			_, err = fmt.Fprintln(cmd.Stdout, "No models found.")
+			_, err = fmt.Fprintln(cmd.Stderr, "No models found.")
 			if err != nil {
 				return err
 			}

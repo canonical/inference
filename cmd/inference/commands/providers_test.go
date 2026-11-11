@@ -152,16 +152,17 @@ func TestProviders_NoInstalledProviders(t *testing.T) {
 			if err := execute(Providers(ctx), "--format="+format); err != nil {
 				t.Fatalf("Providers: %v", err)
 			}
-			want := "No inference providers installed.\n"
-			wantHint := ""
+			wantStdout := ""
+			wantStderr := "No inference providers installed.\n"
 			if format == "json" {
-				want = "{\n  \"providers\": []\n}\n"
+				wantStdout = "{\n  \"providers\": []\n}\n"
+				wantStderr = ""
 			}
-			if got := stdout.String(); got != want {
-				t.Fatalf("got:\n%q\nwant:\n%q", got, want)
+			if got := stdout.String(); got != wantStdout {
+				t.Fatalf("got:\n%q\nwant:\n%q", got, wantStdout)
 			}
-			if got := stderr.String(); got != wantHint {
-				t.Fatalf("stderr = %q, want %q", got, wantHint)
+			if got := stderr.String(); got != wantStderr {
+				t.Fatalf("stderr = %q, want %q", got, wantStderr)
 			}
 		})
 	}
