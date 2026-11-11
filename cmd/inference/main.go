@@ -85,7 +85,6 @@ func root(ctx *common.Context) *cobra.Command {
 		Short:             "Manage inference snaps",
 		Long:              "inference provides a CLI to discover, install and remove inference snaps.",
 		SilenceUsage:      true,
-		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 	}
 	cmd.CompletionOptions.HiddenDefaultCmd = true
