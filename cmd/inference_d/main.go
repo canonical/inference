@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -26,6 +27,7 @@ const (
 	httpHostEnvVar            = "HTTP_HOST"
 	httpPortEnvVar            = "HTTP_PORT"
 	logLevelEnvVar            = "LOG_LEVEL"
+	enableTimestampsEnvVar    = "LOG_TIMESTAMPS"
 	defaultHost               = "127.0.0.1"
 	defaultPort               = 8400
 	catalogRefreshInterval    = 12 * time.Hour
@@ -38,21 +40,16 @@ const (
 )
 
 func main() {
-	level, err := logLevelFromEnvironment()
-	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "configuring logging: %v\n", err)
-		os.Exit(1)
-	}
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	options, err := serverOptionsFromEnvironment()
 	if err != nil {
-		logger.Error("reading server configuration", "error", err)
+		_, _ = fmt.Fprintf(os.Stderr, "reading server configuration: %v\n", err)
 		os.Exit(1)
 	}
+
+	logger := slog.New(newLogHandler(os.Stderr, options.logLevel, options.logTimestamps))
 
 	address, err := listenAddress(options.host, options.port)
 	if err != nil {
@@ -100,16 +97,6 @@ func main() {
 		logger.Error("serving requests", "error", err)
 		os.Exit(1)
 	}
-}
-
-func logLevelFromEnvironment() (slog.Level, error) {
-	level := slog.LevelInfo
-	if value := os.Getenv(logLevelEnvVar); value != "" {
-		if err := level.UnmarshalText([]byte(value)); err != nil {
-			return 0, fmt.Errorf("%s: %w", logLevelEnvVar, err)
-		}
-	}
-	return level, nil
 }
 
 func newUpstreamClient() *http.Client {
@@ -246,8 +233,10 @@ func (h *hijackedConnections) close() {
 }
 
 type serverOptions struct {
-	host string
-	port int
+	host          string
+	port          int
+	logLevel      slog.Level
+	logTimestamps bool
 }
 
 func serverOptionsFromEnvironment() (serverOptions, error) {
@@ -257,14 +246,30 @@ func serverOptionsFromEnvironment() (serverOptions, error) {
 	}
 
 	portValue := os.Getenv(httpPortEnvVar)
-	if portValue == "" {
-		return serverOptions{host: host, port: defaultPort}, nil
+	port := defaultPort
+	if portValue != "" {
+		var err error
+		port, err = strconv.Atoi(portValue)
+		if err != nil {
+			return serverOptions{}, fmt.Errorf("%s must be an integer: %w", httpPortEnvVar, err)
+		}
 	}
-	port, err := strconv.Atoi(portValue)
-	if err != nil {
-		return serverOptions{}, fmt.Errorf("%s must be an integer: %w", httpPortEnvVar, err)
+
+	level := slog.LevelInfo
+	if value := os.Getenv(logLevelEnvVar); value != "" {
+		if err := level.UnmarshalText([]byte(value)); err != nil {
+			return serverOptions{}, fmt.Errorf("%s: %w", logLevelEnvVar, err)
+		}
 	}
-	return serverOptions{host: host, port: port}, nil
+
+	timestamps := os.Getenv(enableTimestampsEnvVar) == "true"
+
+	return serverOptions{
+		host:          host,
+		port:          port,
+		logLevel:      level,
+		logTimestamps: timestamps,
+	}, nil
 }
 
 func listenAddress(host string, port int) (string, error) {
@@ -285,4 +290,19 @@ func shareProvidersPath() string {
 		return filepath.Join(snapRoot, "share/providers")
 	}
 	return ""
+}
+
+func newLogHandler(w io.Writer, level slog.Level, enableTimestamps bool) slog.Handler {
+	opts := &slog.HandlerOptions{Level: level}
+
+	if !enableTimestamps {
+		opts.ReplaceAttr = func(_ []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey {
+				return slog.Attr{}
+			}
+			return a
+		}
+	}
+
+	return slog.NewTextHandler(w, opts)
 }
