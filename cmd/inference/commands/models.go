@@ -79,20 +79,41 @@ func (cmd *modelsCommand) printProviderModels(providerModels []models.ProviderMo
 
 	if cmd.format == "json" {
 		output, err = cmd.outputJSON(models)
-	} else {
-		output, err = cmd.outputTable(models)
-	}
-	if err != nil {
-		return err
-	}
+		if err != nil {
+			return err
+		}
 
-	_, err = fmt.Fprint(cmd.Stdout, output)
+		_, err = fmt.Fprint(cmd.Stdout, output)
+		if err != nil {
+			return err
+		}
+	} else {
+		if len(models) > 0 { // table should only be rendered if there are models
+			output, err = cmd.outputTable(models)
+			if err != nil {
+				return err
+			}
+
+			_, err = fmt.Fprint(cmd.Stdout, output)
+			if err != nil {
+				return err
+			}
+		} else {
+			_, err = fmt.Fprintln(cmd.Stdout, "No models found.")
+			if err != nil {
+				return err
+			}
+		}
+	}
 
 	if someProvidersFailed {
-		_, _ = fmt.Fprintf(cmd.Stderr, "\nHint: Unable to retrieve models from some providers. Run \"inference status\" for details.\n")
+		_, err = fmt.Fprintf(cmd.Stderr, "\nHint: Cannot retrieve models from some providers. Run \"inference status\" for details.\n")
+		if err != nil {
+			return err
+		}
 	}
 
-	return err
+	return nil
 }
 
 func (cmd *modelsCommand) outputJSON(list []models.Model) (string, error) {
