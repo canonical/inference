@@ -23,10 +23,19 @@ type findCommand struct {
 func Find(ctx *common.Context) *cobra.Command {
 	cmd := findCommand{Context: ctx}
 	return &cobra.Command{
-		Use:               "find [query]...",
-		Aliases:           []string{"catalog"},
-		Short:             "Search for inference snaps",
-		Long:              "List inference snaps in the catalog or search for a particular one",
+		Use:     "find [keyword]...",
+		Aliases: []string{"catalog"},
+		Short:   "Find inference providers",
+		Long: `Discover inference providers from the catalog.
+
+Run it without an argument to list all providers.
+Set a keyword to filter providers based on their name, title, and description.
+Pass multiple keywords to refine the results.
+
+The results currently only include supported inference snaps.`,
+		Example: `  List all providers: inference find
+  Filter with a keyword: inference find gemma,
+  Filter with multiple keywords: inference find nemotron nano`,
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
@@ -60,7 +69,7 @@ func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
 		}
 	}
 	if len(results) == 0 {
-		_, err := fmt.Fprintf(cmd.Stderr, "No inference snaps matched the query %q\n", query)
+		_, err := fmt.Fprintf(cmd.Stderr, "No provider matched the query %q\n", query)
 		return err
 	}
 	output, err := cmd.outputTable(results)
