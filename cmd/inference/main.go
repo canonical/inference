@@ -82,7 +82,7 @@ func httpPort() string {
 func root(ctx *common.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "inference",
-		Long:              "The inference CLI lets you discover and manage local inference on Ubuntu.",
+		Long:              "The inference CLI lets you discover and manage local inference on your machine.",
 		SilenceUsage:      true,
 		ValidArgsFunction: cobra.NoFileCompletions,
 	}
