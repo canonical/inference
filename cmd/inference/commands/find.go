@@ -23,10 +23,17 @@ type findCommand struct {
 func Find(ctx *common.Context) *cobra.Command {
 	cmd := findCommand{Context: ctx}
 	return &cobra.Command{
-		Use:               "find [query]...",
-		Aliases:           []string{"catalog"},
-		Short:             "Search for inference snaps",
-		Long:              "List inference snaps in the catalog or search for a particular one",
+		Use:     "find [keyword]...",
+		Aliases: []string{"catalog"},
+		Short:   "Find inference providers",
+		Long: `Use the find command to discover inference providers.
+
+Run it without an argument to list all providers.
+Pass one or more keywords to search for specific providers based on their name, title, and description.
+
+The results currently only include supported inference snaps.`,
+		Example: `  List all providers: inference find
+  Search with a keyword: inference find gemma`,
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
