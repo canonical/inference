@@ -55,62 +55,76 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		cmd.SnapdClient,
 		cmd.ShareProvidersPath,
 	)
-
 	if err != nil {
 		return err
 	}
 
-	return cmd.printProviderModels(providerModels)
-}
-
-func (cmd *modelsCommand) printProviderModels(providerModels []models.ProviderModels) error {
-	models := make([]models.Model, 0)
-	someProvidersFailed := false
-	for _, pm := range providerModels {
-		if pm.Err == nil {
-			models = append(models, pm.Models...)
-		} else {
-			someProvidersFailed = true
-		}
+	models, err := cmd.filterAvailableModels(providerModels)
+	if err != nil {
+		return err
 	}
 
-	var output string
-	var err error
-
 	if cmd.format == "json" {
-		output, err = cmd.outputJSON(models)
-		if err != nil {
-			return err
-		}
-
-		_, err = fmt.Fprint(cmd.Stdout, output)
-		if err != nil {
+		if err := cmd.printModelsJSON(models); err != nil {
 			return err
 		}
 	} else {
-		if len(models) > 0 { // table should only be rendered if there are models
-			output, err = cmd.outputTable(models)
-			if err != nil {
-				return err
-			}
-
-			_, err = fmt.Fprint(cmd.Stdout, output)
-			if err != nil {
-				return err
-			}
-		} else {
-			_, err = fmt.Fprintln(cmd.Stderr, "No models found.")
-			if err != nil {
-				return err
-			}
+		if err := cmd.printModelsTable(models); err != nil {
+			return err
 		}
 	}
 
-	if someProvidersFailed {
-		_, err = fmt.Fprintf(cmd.Stderr, "\nHint: Cannot retrieve models from some providers. Run \"inference status\" for details.\n")
+	if len(providerModels) != len(models) {
+		_, err := fmt.Fprintf(cmd.Stderr, "\nHint: Cannot retrieve models from some providers. Run \"inference status\" for details.\n")
 		if err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (cmd *modelsCommand) filterAvailableModels(providerModels []models.ProviderModels) ([]models.Model, error) {
+	models := make([]models.Model, 0)
+	for _, pm := range providerModels {
+		if pm.Err == nil {
+			models = append(models, pm.Models...)
+		}
+	}
+	return models, nil
+}
+
+func (cmd *modelsCommand) printModelsJSON(models []models.Model) error {
+	output, err := cmd.outputJSON(models)
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprint(cmd.Stdout, output)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (cmd *modelsCommand) printModelsTable(models []models.Model) error {
+	if len(models) == 0 {
+		_, err := fmt.Fprintln(cmd.Stderr, "No models found.")
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	output, err := cmd.outputTable(models)
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprint(cmd.Stdout, output)
+	if err != nil {
+		return err
 	}
 
 	return nil
