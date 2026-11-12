@@ -11,7 +11,10 @@ import (
 	"github.com/canonical/inference/internal/snapcatalog"
 )
 
-// Command level tests
+//
+// Command level testing
+//
+
 func TestModelsCommandWithoutProviders(t *testing.T) {
 	tests := []struct {
 		name       string
