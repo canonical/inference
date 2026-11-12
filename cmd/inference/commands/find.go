@@ -77,7 +77,7 @@ func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
 		return err
 	}
 	_, _ = fmt.Fprint(cmd.Stdout, output)
-	_, _ = fmt.Fprintln(cmd.Stderr, "\nHint: Run \"inference info <name>\" for details.")
+	_, _ = fmt.Fprintln(cmd.Stderr, "\nHint: Run \"inference info <provider>\" for details.")
 
 	return nil
 }
@@ -112,7 +112,7 @@ func findMatchCounts(result snapd.FindResult, words []string) [4]int {
 }
 
 func (cmd *findCommand) outputTable(entries []snapcatalog.Entry) (string, error) {
-	headers := []string{"NAME", "CAPABILITIES"}
+	headers := []string{"PROVIDER", "CAPABILITIES"}
 	nameMaxLen := len(headers[0])
 	capabilitiesMaxLen := len(headers[1])
 	rows := make([][]string, 0, len(entries))

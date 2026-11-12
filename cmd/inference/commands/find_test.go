@@ -43,7 +43,7 @@ func TestFindFiltersStoreResults(t *testing.T) {
 	t.Cleanup(server.Close)
 	ctx.SnapdClient = &snapd.Client{Socket: socket}
 
-	want := fmt.Sprintf("%-13s%s\n", "NAME", "CAPABILITIES") +
+	want := fmt.Sprintf("%-13s%s\n", "PROVIDER", "CAPABILITIES") +
 		fmt.Sprintf("%-13s%s\n", "gemma4", "text, vision") +
 		fmt.Sprintf("%-13s%s\n", "aaa-related", "-")
 	for _, args := range [][]string{{"Gemma 4"}, {"Gemma", "4"}} {
@@ -55,7 +55,7 @@ func TestFindFiltersStoreResults(t *testing.T) {
 		if got := stdout.String(); got != want {
 			t.Fatalf("args %q: got:\n%q\nwant:\n%q", args, got, want)
 		}
-		wantStderr := "\n" + `Hint: Run "inference info <name>" for details.` + "\n"
+		wantStderr := "\n" + `Hint: Run "inference info <provider>" for details.` + "\n"
 		if got := stderr.String(); got != wantStderr {
 			t.Fatalf("unexpected stderr: want %q, got %q", wantStderr, got)
 		}
@@ -126,8 +126,8 @@ func TestFindTableMissingMetadata(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := fmt.Sprintf("%-8s%s\n", "NAME", "CAPABILITIES") +
-			fmt.Sprintf("%-8s%s\n", "gemma4", "-")
+		want := fmt.Sprintf("%-10s%s\n", "PROVIDER", "CAPABILITIES") +
+			fmt.Sprintf("%-10s%s\n", "gemma4", "-")
 		if got != want {
 			t.Fatalf("got %q, want %q", got, want)
 		}
@@ -228,13 +228,13 @@ func TestFindListsCatalogueWithoutQuery(t *testing.T) {
 			if err := execute(Find(ctx), args...); err != nil {
 				t.Fatal(err)
 			}
-			want := fmt.Sprintf("%-8s%s\n", "NAME", "CAPABILITIES") +
-				fmt.Sprintf("%-8s%s\n", "gemma4", "-") +
-				fmt.Sprintf("%-8s%s\n", "qwen3", "-")
+			want := fmt.Sprintf("%-10s%s\n", "PROVIDER", "CAPABILITIES") +
+				fmt.Sprintf("%-10s%s\n", "gemma4", "-") +
+				fmt.Sprintf("%-10s%s\n", "qwen3", "-")
 			if got := stdout.String(); got != want {
 				t.Fatalf("got %q, want %q", got, want)
 			}
-			wantStderr := "\n" + `Hint: Run "inference info <name>" for details.` + "\n"
+			wantStderr := "\n" + `Hint: Run "inference info <provider>" for details.` + "\n"
 			if got := stderr.String(); got != wantStderr {
 				t.Fatalf("unexpected stderr: want %q, got %q", wantStderr, got)
 			}
