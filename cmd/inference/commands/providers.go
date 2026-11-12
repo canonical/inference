@@ -66,16 +66,19 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		if err != nil {
 			return err
 		}
-		_, _ = fmt.Fprint(cmd.Stdout, output)
 	} else {
-		output, err = cmd.outputTable(list)
-		if err != nil {
+		if len(list) > 0 { // table should only be rendered if there are providers
+			output, err = cmd.outputTable(list)
+			if err != nil {
+				return err
+			}
+		} else {
+			_, err = fmt.Fprintln(cmd.Stderr, "No inference providers installed.")
 			return err
 		}
-		_, _ = fmt.Fprint(cmd.Stdout, output)
-		_, _ = fmt.Fprintln(cmd.Stderr, "\nHint: Run \"inference find\" to discover other inference snaps.")
 	}
 
+	_, err = fmt.Fprint(cmd.Stdout, output)
 	return err
 }
 
