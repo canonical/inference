@@ -49,8 +49,10 @@ func ConnectedSnapProviders(root string) ([]Provider, error) {
 		}
 
 		baseURL := values["OPENAI_BASE_URL"]
-		if err := verifyBaseURL(baseURL); err != nil {
-			return nil, fmt.Errorf("reading connected provider %q: %w", directoryName, err)
+		if baseURL != "" {
+			if err := verifyBaseURL(baseURL); err != nil {
+				return nil, fmt.Errorf("reading connected provider %q: %w", directoryName, err)
+			}
 		}
 
 		providersByName[name] = Provider{

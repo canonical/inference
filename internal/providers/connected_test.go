@@ -50,6 +50,25 @@ func TestConnectedSnapProviders(t *testing.T) {
 	}
 }
 
+func TestConnectedSnapProvidersAllowsMissingBaseURL(t *testing.T) {
+	root := t.TempDir()
+	writeProviderEnv(t, root, "socket-only", "SNAP_NAME=socket-only\nUNIX_SOCKET=x.sock\n")
+
+	got, err := ConnectedSnapProviders(root)
+	if err != nil {
+		t.Fatalf("ConnectedSnapProviders: %v", err)
+	}
+	want := []Provider{{
+		Name:       "socket-only",
+		Backend:    BackendSnap,
+		State:      StateUnknown,
+		Connection: ConnectionConnected,
+	}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
 func TestConnectedSnapProvidersMissingRoot(t *testing.T) {
 	got, err := ConnectedSnapProviders(filepath.Join(t.TempDir(), "missing"))
 	if err != nil {
@@ -150,6 +169,31 @@ func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
 		if !reflect.DeepEqual(result[i], want[i]) {
 			t.Fatalf("provider %d: got %+v, want %+v", i, result[i], want[i])
 		}
+	}
+}
+
+func TestListIncludesConnectedProviderWithoutBaseURL(t *testing.T) {
+	root := t.TempDir()
+	writeProviderEnv(t, root, "socket-mount", "SNAP_NAME=socket-only\nUNIX_SOCKET=x.sock\n")
+	client, _ := snapd.NewFakeServer(t, map[string]string{"socket-only": snapd.SnapStatusActive})
+
+	got, err := ListInstalled(
+		context.Background(),
+		snapcatalog.WriteFakeCatalog(t, `[]`),
+		client,
+		root,
+	)
+	if err != nil {
+		t.Fatalf("ListInstalled: %v", err)
+	}
+	want := []Provider{{
+		Name:       "socket-only",
+		Backend:    BackendSnap,
+		State:      StateEnabled,
+		Connection: ConnectionConnected,
+	}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
 

@@ -74,10 +74,13 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	if len(providerModels) != len(models) {
-		_, err := fmt.Fprintf(cmd.Stderr, "\nHint: Cannot retrieve models from some providers. Run \"inference status\" for details.\n")
-		if err != nil {
-			return err
+	for _, providerModel := range providerModels {
+		if providerModel.Err != nil {
+			_, err := fmt.Fprintf(cmd.Stderr, "\nHint: Cannot retrieve models from some providers. Run \"inference status\" for details.\n")
+			if err != nil {
+				return err
+			}
+			break
 		}
 	}
 

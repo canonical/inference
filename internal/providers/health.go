@@ -29,14 +29,21 @@ func CheckHealth(ctx context.Context, providers []Provider) map[string]HealthSta
 		health HealthStatus
 	}
 
-	// Only check enabled providers that have a base URL configured.
 	enabled := make([]Provider, 0, len(providers))
+	health := make(map[string]HealthStatus, len(providers))
 	for _, provider := range providers {
-		if provider.State == StateEnabled && provider.BaseURL != "" {
-			enabled = append(enabled, provider)
+		if provider.State != StateEnabled {
+			continue
 		}
+		if provider.BaseURL == "" {
+			if provider.Connection == ConnectionConnected {
+				health[provider.Name] = HealthError
+			}
+			continue
+		}
+		enabled = append(enabled, provider)
 	}
-	if len(enabled) == 0 {
+	if len(enabled) == 0 && len(health) == 0 {
 		return nil
 	}
 
@@ -56,7 +63,6 @@ func CheckHealth(ctx context.Context, providers []Provider) map[string]HealthSta
 	checks.Wait()
 	close(results)
 
-	health := make(map[string]HealthStatus, len(enabled))
 	for result := range results {
 		health[result.name] = result.health
 	}

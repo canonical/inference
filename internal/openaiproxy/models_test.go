@@ -223,18 +223,25 @@ func TestModelsHandlerSkipsProviderWithoutBaseURL(t *testing.T) {
 	}))
 	defer healthy.Close()
 
-	listProviders := func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{
-			{Name: "catalog-only"},
-			{Name: "healthy", BaseURL: healthy.URL + "/v1"},
-		}, nil
-	}
-	handler := NewModelsHandler(listProviders, healthy.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	root := t.TempDir()
+	writeProvider(t, root, "socket-only", "socket-only", "")
+	writeProvider(t, root, "healthy", "healthy", healthy.URL+"/v1")
+	var logs bytes.Buffer
+	handler := NewModelsHandler(connectedProviderLister(root), healthy.Client(), slog.New(slog.NewTextHandler(&logs, nil)))
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":"healthy/ready"`) {
 		t.Fatalf("got status %d body %s", response.Code, response.Body.String())
+	}
+	for _, want := range []string{
+		`msg="discovering provider models"`,
+		"provider=socket-only",
+		"OPENAI_BASE_URL is empty",
+	} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("missing %q:\n%s", want, logs.String())
+		}
 	}
 }
 

@@ -33,6 +33,8 @@ func TestDiscoverReportsModelsAndErrorsPerProvider(t *testing.T) {
 		{Name: "broken", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: second.URL + "/v1"},
 		{Name: "openai", Backend: providers.BackendProxy, BaseURL: third.URL + "/v1"},
 		{Name: "unavailable", Backend: providers.BackendSnap},
+		{Name: "socket-only", Backend: providers.BackendSnap, State: providers.StateEnabled, Connection: providers.ConnectionConnected},
+		{Name: "not-connected", Backend: providers.BackendSnap, State: providers.StateEnabled, Connection: providers.ConnectionNotConnected},
 		{Name: "disabled", Backend: providers.BackendSnap, State: providers.StateDisabled, BaseURL: second.URL + "/v1"},
 	}
 	got, err := Discover(context.Background(), list, first.Client())
@@ -59,6 +61,11 @@ func TestDiscoverReportsModelsAndErrorsPerProvider(t *testing.T) {
 				{PublicID: "openai/gpt4.5", NativeID: "gpt4.5", ProviderName: "openai", ProviderBaseURL: third.URL + "/v1"},
 			},
 			Err: nil,
+		},
+		{
+			ProviderName: "socket-only",
+			Models:       []Model{},
+			Err:          errors.New("OPENAI_BASE_URL is empty"),
 		},
 	}
 	if len(got) != len(want) {

@@ -110,7 +110,6 @@ func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string
 		return nil, common.FriendlySnapdError(err)
 	}
 
-	// Check health only returns results for providers that are enabled and have an openai base url defined
 	health := providers.CheckHealth(ctx, list)
 	if health == nil {
 		return nil, nil

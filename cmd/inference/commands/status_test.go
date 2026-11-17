@@ -1,11 +1,13 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -86,6 +88,35 @@ func TestStatusUsesSnapInstanceName(t *testing.T) {
 	want := "services:\n  inference_gpu.d: active\nproxy:\n  openai:\n    base-url: http://127.0.0.1:8400/v1\n"
 	if stdout.String() != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", stdout.String(), want)
+	}
+}
+
+func TestStatusReportsEnabledProviderWithoutBaseURL(t *testing.T) {
+	root := t.TempDir()
+	providerDir := filepath.Join(root, "socket-only")
+	if err := os.MkdirAll(providerDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(providerDir, "provider.env"),
+		[]byte("SNAP_NAME=socket-only\nUNIX_SOCKET=x.sock\n"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	client, _ := snapd.NewFakeServer(t, map[string]string{"socket-only": snapd.SnapStatusActive})
+	cmd := statusCommand{Context: &common.Context{
+		SnapdClient:        client,
+		SnapCatalog:        &snapcatalog.Reader{},
+		ShareProvidersPath: root,
+	}}
+
+	got, err := cmd.providerHealth(context.Background())
+	if err != nil {
+		t.Fatalf("providerHealth: %v", err)
+	}
+	if got["socket-only"] != "error" {
+		t.Fatalf("health = %q, want %q", got["socket-only"], "error")
 	}
 }
 

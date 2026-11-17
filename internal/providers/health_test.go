@@ -83,7 +83,9 @@ func TestCheckHealth(t *testing.T) {
 		{Name: "unresponsive", State: StateEnabled, BaseURL: unresponsive.URL + "/v1"},
 		{Name: "offline", State: StateEnabled, BaseURL: offlineURL},
 		{Name: "disabled", State: StateDisabled, BaseURL: healthy.URL + "/v1"},
-		{Name: "no-url", State: StateEnabled},
+		{Name: "no-url", State: StateEnabled, Connection: ConnectionConnected},
+		{Name: "not-connected", State: StateEnabled, Connection: ConnectionNotConnected},
+		{Name: "disabled-no-url", State: StateDisabled, Connection: ConnectionConnected},
 	})
 
 	want := map[string]HealthStatus{
@@ -94,11 +96,43 @@ func TestCheckHealth(t *testing.T) {
 		"error":                HealthError,
 		"unresponsive":         HealthNotResponsive,
 		"offline":              HealthOffline,
+		"no-url":               HealthError,
 	}
 	if !maps.Equal(got, want) {
 		t.Fatalf("got %#v, want %#v", got, want)
 	}
 	if modelRequests.Load() != 1 {
 		t.Fatalf("got %d model requests, want 1", modelRequests.Load())
+	}
+}
+
+func TestCheckHealthWithoutQueryableProviders(t *testing.T) {
+	tests := []struct {
+		name       string
+		connection ConnectionState
+		want       map[string]HealthStatus
+	}{
+		{
+			name:       "connected without URL",
+			connection: ConnectionConnected,
+			want:       map[string]HealthStatus{"provider": HealthError},
+		},
+		{
+			name:       "not connected",
+			connection: ConnectionNotConnected,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := CheckHealth(context.Background(), []Provider{{
+				Name:       "provider",
+				Backend:    BackendSnap,
+				State:      StateEnabled,
+				Connection: test.connection,
+			}})
+			if !maps.Equal(got, test.want) || (got == nil) != (test.want == nil) {
+				t.Fatalf("got %#v, want %#v", got, test.want)
+			}
+		})
 	}
 }

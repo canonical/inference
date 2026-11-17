@@ -68,26 +68,35 @@ func Discover(
 ) ([]ProviderModels, error) {
 	availableProviders := make([]providers.Provider, 0, len(allProviders))
 	providerNames := make(map[string]struct{}, len(allProviders))
+	resultsWithoutURL := make([]ProviderModels, 0)
 	for _, provider := range allProviders {
-		if provider.BaseURL == "" {
-			continue
-		}
 		if provider.Backend == providers.BackendSnap && provider.State != providers.StateEnabled {
 			continue
 		}
+		if provider.BaseURL == "" &&
+			(provider.Backend != providers.BackendSnap || provider.Connection != providers.ConnectionConnected) {
+			continue
+		}
 		if provider.Name == "" {
-			return nil, errors.New("provider with an API base URL has an empty name")
+			return nil, errors.New("provider has an empty name")
 		}
 		if _, exists := providerNames[provider.Name]; exists {
 			return nil, fmt.Errorf("duplicate provider name %q", provider.Name)
 		}
 		providerNames[provider.Name] = struct{}{}
+		if provider.BaseURL == "" {
+			if provider.Backend == providers.BackendSnap {
+				resultsWithoutURL = append(resultsWithoutURL, ProviderModels{
+					ProviderName: provider.Name,
+					Models:       []Model{},
+					Err:          errors.New("OPENAI_BASE_URL is empty"),
+				})
+			}
+			continue
+		}
 		availableProviders = append(availableProviders, provider)
 	}
 
-	if len(availableProviders) == 0 {
-		return []ProviderModels{}, nil
-	}
 	if client == nil {
 		client = http.DefaultClient
 	}
@@ -115,7 +124,7 @@ func Discover(
 	requests.Wait()
 	close(results)
 
-	pm := make([]ProviderModels, 0)
+	pm := resultsWithoutURL
 	for result := range results {
 		pm = append(pm, result)
 	}
