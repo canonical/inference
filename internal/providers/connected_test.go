@@ -45,12 +45,12 @@ func TestConnectedSnapProviders(t *testing.T) {
 		Connection: ConnectionConnected,
 		BaseURL:    "https://user:password@example.com/v1/?region=eu#backend",
 	}
-	if len(got) != 1 || !reflect.DeepEqual(got[0], want) {
+	if len(got) != 1 || !reflect.DeepEqual(got[0], ListedProvider{Provider: want}) {
 		t.Fatalf("got %+v, want [%+v]", got, want)
 	}
 }
 
-func TestConnectedSnapProvidersAllowsMissingBaseURL(t *testing.T) {
+func TestConnectedSnapProvidersReportsMissingBaseURL(t *testing.T) {
 	root := t.TempDir()
 	writeProviderEnv(t, root, "socket-only", "SNAP_NAME=socket-only\nUNIX_SOCKET=x.sock\n")
 
@@ -58,14 +58,34 @@ func TestConnectedSnapProvidersAllowsMissingBaseURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConnectedSnapProviders: %v", err)
 	}
-	want := []Provider{{
+	want := Provider{
 		Name:       "socket-only",
 		Backend:    BackendSnap,
 		State:      StateUnknown,
 		Connection: ConnectionConnected,
-	}}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	assertSingleProviderError(t, got, want, "OPENAI_BASE_URL is empty")
+}
+
+func TestConnectedSnapProvidersReportsInvalidBaseURL(t *testing.T) {
+	root := t.TempDir()
+	writeProviderEnv(t, root, "invalid", "OPENAI_BASE_URL=ftp://example.com\nSNAP_NAME=invalid\n")
+
+	got, err := ConnectedSnapProviders(root)
+	if err != nil {
+		t.Fatalf("ConnectedSnapProviders: %v", err)
+	}
+	want := Provider{Name: "invalid", Backend: BackendSnap, State: StateUnknown, Connection: ConnectionConnected}
+	assertSingleProviderError(t, got, want, "scheme must be http or https")
+}
+
+func assertSingleProviderError(t *testing.T, got []ListedProvider, want Provider, wantError string) {
+	t.Helper()
+	if len(got) != 1 || !reflect.DeepEqual(got[0].Provider, want) {
+		t.Fatalf("got %+v, want provider %+v", got, want)
+	}
+	if got[0].Err == nil || !strings.Contains(got[0].Err.Error(), wantError) {
+		t.Fatalf("got error %v, want one containing %q", got[0].Err, wantError)
 	}
 }
 
@@ -79,21 +99,24 @@ func TestConnectedSnapProvidersMissingRoot(t *testing.T) {
 	}
 }
 
-func TestConnectedSnapProvidersRejectsInvalidEntries(t *testing.T) {
+func TestConnectedSnapProvidersReportsInvalidEntries(t *testing.T) {
 	tests := []struct {
 		name string
 		envs map[string]string
-		want string
+		want Provider
+		err  string
 	}{
-		{
-			name: "invalid URL",
-			envs: map[string]string{"invalid": "OPENAI_BASE_URL=ftp://example.com\nSNAP_NAME=invalid\n"},
-			want: "invalid",
-		},
 		{
 			name: "missing snap name",
 			envs: map[string]string{"custom": "OPENAI_BASE_URL=http://localhost:8081/v1\n"},
-			want: "SNAP_NAME is empty",
+			want: Provider{Name: "custom", Backend: BackendSnap, State: StateUnknown, Connection: ConnectionConnected},
+			err:  "SNAP_NAME is empty",
+		},
+		{
+			name: "unreadable env file",
+			envs: map[string]string{"custom": "SNAP_NAME='unterminated\n"},
+			want: Provider{Name: "custom", Backend: BackendSnap, State: StateUnknown, Connection: ConnectionConnected},
+			err:  `reading connected provider "custom"`,
 		},
 	}
 
@@ -104,22 +127,39 @@ func TestConnectedSnapProvidersRejectsInvalidEntries(t *testing.T) {
 				writeProviderEnv(t, root, name, contents)
 			}
 
-			_, err := ConnectedSnapProviders(root)
-			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("got error %v, want one containing %q", err, tt.want)
+			got, err := ConnectedSnapProviders(root)
+			if err != nil {
+				t.Fatalf("ConnectedSnapProviders: %v", err)
 			}
+			assertSingleProviderError(t, got, tt.want, tt.err)
 		})
 	}
 }
 
-func TestConnectedSnapProvidersRejectsDuplicateSnapName(t *testing.T) {
+func TestConnectedSnapProvidersReportsDuplicateSnapName(t *testing.T) {
 	root := t.TempDir()
 	writeProviderEnv(t, root, "a", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=same\n")
 	writeProviderEnv(t, root, "b", "OPENAI_BASE_URL=http://localhost:8081/v1\nSNAP_NAME=same\n")
 
-	_, err := ConnectedSnapProviders(root)
-	if err == nil || !strings.Contains(err.Error(), `duplicate SNAP_NAME "same"`) {
-		t.Fatalf("got error %v, want duplicate SNAP_NAME error", err)
+	got, err := ConnectedSnapProviders(root)
+	if err != nil {
+		t.Fatalf("ConnectedSnapProviders: %v", err)
+	}
+	want := Provider{Name: "same", Backend: BackendSnap, State: StateUnknown, Connection: ConnectionConnected}
+	assertSingleProviderError(t, got, want, `duplicate provider name "same"`)
+}
+
+func TestConnectedSnapProvidersKeepsValidProvidersNextToInvalidOnes(t *testing.T) {
+	root := t.TempDir()
+	writeProviderEnv(t, root, "broken", "SNAP_NAME=broken\nOPENAI_BASE_URL=not a url\n")
+	writeProviderEnv(t, root, "healthy", "SNAP_NAME=healthy\nOPENAI_BASE_URL=http://localhost:8080/v1\n")
+
+	got, err := ConnectedSnapProviders(root)
+	if err != nil {
+		t.Fatalf("ConnectedSnapProviders: %v", err)
+	}
+	if len(got) != 2 || got[0].Name != "broken" || got[0].Err == nil || got[1].Name != "healthy" || got[1].Err != nil {
+		t.Fatalf("got %+v, want broken provider with an error followed by healthy provider", got)
 	}
 }
 
@@ -166,13 +206,13 @@ func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
 		t.Fatalf("got %+v, want %+v", result, want)
 	}
 	for i := range want {
-		if !reflect.DeepEqual(result[i], want[i]) {
+		if !reflect.DeepEqual(result[i].Provider, want[i]) || result[i].Err != nil {
 			t.Fatalf("provider %d: got %+v, want %+v", i, result[i], want[i])
 		}
 	}
 }
 
-func TestListIncludesConnectedProviderWithoutBaseURL(t *testing.T) {
+func TestListReportsConnectedProviderWithoutBaseURL(t *testing.T) {
 	root := t.TempDir()
 	writeProviderEnv(t, root, "socket-mount", "SNAP_NAME=socket-only\nUNIX_SOCKET=x.sock\n")
 	client, _ := snapd.NewFakeServer(t, map[string]string{"socket-only": snapd.SnapStatusActive})
@@ -186,15 +226,13 @@ func TestListIncludesConnectedProviderWithoutBaseURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListInstalled: %v", err)
 	}
-	want := []Provider{{
+	want := Provider{
 		Name:       "socket-only",
 		Backend:    BackendSnap,
-		State:      StateEnabled,
+		State:      StateUnknown,
 		Connection: ConnectionConnected,
-	}}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %+v, want %+v", got, want)
 	}
+	assertSingleProviderError(t, got, want, "OPENAI_BASE_URL is empty")
 }
 
 func TestListFailsWhenSnapStatusCannotBeRead(t *testing.T) {

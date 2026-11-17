@@ -11,21 +11,26 @@ import (
 	"github.com/joho/godotenv"
 )
 
-func ConnectedSnapProviders(root string) ([]Provider, error) {
+type connectedEntry struct {
+	provider  ListedProvider
+	directory string
+}
+
+func ConnectedSnapProviders(root string) ([]ListedProvider, error) {
 	if root == "" {
-		return []Provider{}, nil
+		return []ListedProvider{}, nil
 	}
 
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
-		return []Provider{}, nil
+		return []ListedProvider{}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("reading connected provider directory %q: %w", root, err)
 	}
 
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-	providersByName := make(map[string]Provider, len(entries))
+	entriesByName := make(map[string]connectedEntry, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -37,39 +42,49 @@ func ConnectedSnapProviders(root string) ([]Provider, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
-		if err != nil {
-			return nil, fmt.Errorf("reading connected provider %q: %w", directoryName, err)
-		}
+
 		name := values["SNAP_NAME"]
-		if name == "" {
-			return nil, fmt.Errorf("reading connected provider %q: SNAP_NAME is empty", directoryName)
+		if err == nil && name == "" {
+			err = errors.New("SNAP_NAME is empty")
 		}
-		if _, exists := providersByName[name]; exists {
-			return nil, fmt.Errorf("reading connected provider %q: duplicate SNAP_NAME %q", directoryName, name)
+		if err != nil {
+			addConnectedEntry(entriesByName, directoryName, directoryName, "", fmt.Errorf("reading connected provider %q: %w", directoryName, err))
+			continue
 		}
 
 		baseURL := values["OPENAI_BASE_URL"]
-		if baseURL != "" {
-			if err := verifyBaseURL(baseURL); err != nil {
-				return nil, fmt.Errorf("reading connected provider %q: %w", directoryName, err)
-			}
+		if err := verifyBaseURL(baseURL); err != nil {
+			addConnectedEntry(entriesByName, directoryName, name, "", fmt.Errorf("reading connected provider %q: %w", directoryName, err))
+			continue
 		}
+		addConnectedEntry(entriesByName, directoryName, name, baseURL, nil)
+	}
 
-		providersByName[name] = Provider{
+	providers := make([]ListedProvider, 0, len(entriesByName))
+	for _, entry := range entriesByName {
+		providers = append(providers, entry.provider)
+	}
+	sort.Slice(providers, func(i, j int) bool { return providers[i].Name < providers[j].Name })
+	return providers, nil
+}
+
+func addConnectedEntry(entriesByName map[string]connectedEntry, directory, name, baseURL string, err error) {
+	provider := ListedProvider{
+		Provider: Provider{
 			Name:       name,
 			Backend:    BackendSnap,
 			State:      StateUnknown,
 			Connection: ConnectionConnected,
 			BaseURL:    baseURL,
-		}
+		},
+		Err: err,
 	}
-
-	providers := make([]Provider, 0, len(providersByName))
-	for _, provider := range providersByName {
-		providers = append(providers, provider)
+	if existing, exists := entriesByName[name]; exists {
+		provider.BaseURL = ""
+		provider.Err = fmt.Errorf("duplicate provider name %q in directories %q and %q", name, existing.directory, directory)
+		directory = existing.directory
 	}
-	sort.Slice(providers, func(i, j int) bool { return providers[i].Name < providers[j].Name })
-	return providers, nil
+	entriesByName[name] = connectedEntry{provider: provider, directory: directory}
 }
 
 func verifyBaseURL(value string) error {

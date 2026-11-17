@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"net"
 	"net/http"
@@ -74,18 +75,20 @@ func TestCheckHealth(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	got := CheckHealth(ctx, []Provider{
-		{Name: "healthy", State: StateEnabled, BaseURL: healthy.URL + "/v1"},
-		{Name: "healthy-models-field", State: StateEnabled, BaseURL: healthyModelsField.URL + "/v1"},
-		{Name: "empty", State: StateEnabled, BaseURL: empty.URL + "/v3"},
-		{Name: "malformed", State: StateEnabled, BaseURL: malformed.URL + "/v1"},
-		{Name: "error", State: StateEnabled, BaseURL: failing.URL + "/v1"},
-		{Name: "unresponsive", State: StateEnabled, BaseURL: unresponsive.URL + "/v1"},
-		{Name: "offline", State: StateEnabled, BaseURL: offlineURL},
-		{Name: "disabled", State: StateDisabled, BaseURL: healthy.URL + "/v1"},
-		{Name: "no-url", State: StateEnabled, Connection: ConnectionConnected},
-		{Name: "not-connected", State: StateEnabled, Connection: ConnectionNotConnected},
-		{Name: "disabled-no-url", State: StateDisabled, Connection: ConnectionConnected},
+	got := CheckHealth(ctx, []ListedProvider{
+		{Provider: Provider{Name: "healthy", State: StateEnabled, BaseURL: healthy.URL + "/v1"}},
+		{Provider: Provider{Name: "healthy-models-field", State: StateEnabled, BaseURL: healthyModelsField.URL + "/v1"}},
+		{Provider: Provider{Name: "empty", State: StateEnabled, BaseURL: empty.URL + "/v3"}},
+		{Provider: Provider{Name: "malformed", State: StateEnabled, BaseURL: malformed.URL + "/v1"}},
+		{Provider: Provider{Name: "error", State: StateEnabled, BaseURL: failing.URL + "/v1"}},
+		{Provider: Provider{Name: "unresponsive", State: StateEnabled, BaseURL: unresponsive.URL + "/v1"}},
+		{Provider: Provider{Name: "offline", State: StateEnabled, BaseURL: offlineURL}},
+		{Provider: Provider{Name: "disabled", State: StateDisabled, BaseURL: healthy.URL + "/v1"}},
+		{Provider: Provider{Name: "not-connected", State: StateEnabled, Connection: ConnectionNotConnected}},
+		{
+			Provider: Provider{Name: "broken-config", State: StateUnknown, Connection: ConnectionConnected},
+			Err:      errors.New("OPENAI_BASE_URL is empty"),
+		},
 	})
 
 	want := map[string]HealthStatus{
@@ -96,7 +99,7 @@ func TestCheckHealth(t *testing.T) {
 		"error":                HealthError,
 		"unresponsive":         HealthNotResponsive,
 		"offline":              HealthOffline,
-		"no-url":               HealthError,
+		"broken-config":        HealthError,
 	}
 	if !maps.Equal(got, want) {
 		t.Fatalf("got %#v, want %#v", got, want)
@@ -108,28 +111,28 @@ func TestCheckHealth(t *testing.T) {
 
 func TestCheckHealthWithoutQueryableProviders(t *testing.T) {
 	tests := []struct {
-		name       string
-		connection ConnectionState
-		want       map[string]HealthStatus
+		name     string
+		provider ListedProvider
+		want     map[string]HealthStatus
 	}{
 		{
-			name:       "connected without URL",
-			connection: ConnectionConnected,
-			want:       map[string]HealthStatus{"provider": HealthError},
+			name: "provider error",
+			provider: ListedProvider{
+				Provider: Provider{Name: "provider", Backend: BackendSnap, Connection: ConnectionConnected},
+				Err:      errors.New("invalid configuration"),
+			},
+			want: map[string]HealthStatus{"provider": HealthError},
 		},
 		{
-			name:       "not connected",
-			connection: ConnectionNotConnected,
+			name: "not connected",
+			provider: ListedProvider{
+				Provider: Provider{Name: "provider", Backend: BackendSnap, State: StateEnabled, Connection: ConnectionNotConnected},
+			},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got := CheckHealth(context.Background(), []Provider{{
-				Name:       "provider",
-				Backend:    BackendSnap,
-				State:      StateEnabled,
-				Connection: test.connection,
-			}})
+			got := CheckHealth(context.Background(), []ListedProvider{test.provider})
 			if !maps.Equal(got, test.want) || (got == nil) != (test.want == nil) {
 				t.Fatalf("got %#v, want %#v", got, test.want)
 			}

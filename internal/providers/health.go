@@ -23,7 +23,7 @@ const (
 	HealthError         HealthStatus = "error"
 )
 
-func CheckHealth(ctx context.Context, providers []Provider) map[string]HealthStatus {
+func CheckHealth(ctx context.Context, providers []ListedProvider) map[string]HealthStatus {
 	type result struct {
 		name   string
 		health HealthStatus
@@ -32,16 +32,14 @@ func CheckHealth(ctx context.Context, providers []Provider) map[string]HealthSta
 	enabled := make([]Provider, 0, len(providers))
 	health := make(map[string]HealthStatus, len(providers))
 	for _, provider := range providers {
-		if provider.State != StateEnabled {
+		if provider.Err != nil {
+			health[provider.Name] = HealthError
 			continue
 		}
-		if provider.BaseURL == "" {
-			if provider.Connection == ConnectionConnected {
-				health[provider.Name] = HealthError
-			}
+		if provider.State != StateEnabled || provider.BaseURL == "" {
 			continue
 		}
-		enabled = append(enabled, provider)
+		enabled = append(enabled, provider.Provider)
 	}
 	if len(enabled) == 0 && len(health) == 0 {
 		return nil

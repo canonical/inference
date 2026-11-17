@@ -63,17 +63,13 @@ func List(
 
 func Discover(
 	ctx context.Context,
-	allProviders []providers.Provider,
+	allProviders []providers.ListedProvider,
 	client *http.Client,
 ) ([]ProviderModels, error) {
-	availableProviders := make([]providers.Provider, 0, len(allProviders))
+	availableProviders := make([]providers.ListedProvider, 0, len(allProviders))
 	providerNames := make(map[string]struct{}, len(allProviders))
 	for _, provider := range allProviders {
-		if provider.Backend == providers.BackendSnap && provider.State != providers.StateEnabled {
-			continue
-		}
-		if provider.BaseURL == "" &&
-			(provider.Backend != providers.BackendSnap || provider.Connection != providers.ConnectionConnected) {
+		if provider.Err == nil && !isQueryable(provider.Provider) {
 			continue
 		}
 		if provider.Name == "" {
@@ -95,9 +91,13 @@ func Discover(
 	for _, provider := range availableProviders {
 		requests.Go(func() {
 			models := make([]Model, 0)
-			upstreamModels, err := fetchProviderModels(ctx, client, provider)
+			err := provider.Err
+			var upstreamModels []upstreamModel
 			if err == nil {
-				models = normalizeModels(provider, upstreamModels)
+				upstreamModels, err = fetchModels(ctx, client, provider.BaseURL)
+			}
+			if err == nil {
+				models = normalizeModels(provider.Provider, upstreamModels)
 				sort.Slice(models, func(i, j int) bool {
 					return models[i].NativeID < models[j].NativeID
 				})
@@ -123,11 +123,11 @@ func Discover(
 	return pm, nil
 }
 
-func fetchProviderModels(ctx context.Context, client *http.Client, provider providers.Provider) ([]upstreamModel, error) {
-	if provider.BaseURL == "" {
-		return nil, errors.New("OPENAI_BASE_URL is empty")
+func isQueryable(provider providers.Provider) bool {
+	if provider.Backend == providers.BackendSnap && provider.State != providers.StateEnabled {
+		return false
 	}
-	return fetchModels(ctx, client, provider.BaseURL)
+	return provider.BaseURL != ""
 }
 
 func normalizeModels(provider providers.Provider, upstreamModels []upstreamModel) []Model {
@@ -198,7 +198,7 @@ func fetchModels(ctx context.Context, client *http.Client, baseURL string) ([]up
 func modelsURL(baseURL string) (string, error) {
 	endpoint, err := url.Parse(baseURL)
 	if err != nil {
-		return "", fmt.Errorf("parsing provider URL: %w", err)
+		return "", fmt.Errorf("parsing provider URL: %w", redactURLError(err))
 	}
 	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + "/models"
 	endpoint.RawPath = ""

@@ -50,7 +50,7 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	list, err := providers.ListInstalled(
+	listedProviders, err := providers.ListInstalled(
 		cobraCmd.Context(),
 		cmd.SnapCatalog,
 		cmd.SnapdClient,
@@ -60,15 +60,20 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return common.FriendlySnapdError(err)
 	}
 
+	providers := make([]providers.Provider, 0, len(listedProviders))
+	for _, listed := range listedProviders {
+		providers = append(providers, listed.Provider)
+	}
+
 	var output string
 	if cmd.format == "json" {
-		output, err = cmd.outputJSON(list)
+		output, err = cmd.outputJSON(providers)
 		if err != nil {
 			return err
 		}
 	} else {
-		if len(list) > 0 { // table should only be rendered if there are providers
-			output, err = cmd.outputTable(list)
+		if len(providers) > 0 { // table should only be rendered if there are providers
+			output, err = cmd.outputTable(providers)
 			if err != nil {
 				return err
 			}

@@ -33,11 +33,16 @@ func TestDiscoverReportsModelsAndErrorsPerProvider(t *testing.T) {
 		{Name: "broken", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: second.URL + "/v1"},
 		{Name: "openai", Backend: providers.BackendProxy, BaseURL: third.URL + "/v1"},
 		{Name: "unavailable", Backend: providers.BackendSnap},
-		{Name: "socket-only", Backend: providers.BackendSnap, State: providers.StateEnabled, Connection: providers.ConnectionConnected},
 		{Name: "not-connected", Backend: providers.BackendSnap, State: providers.StateEnabled, Connection: providers.ConnectionNotConnected},
 		{Name: "disabled", Backend: providers.BackendSnap, State: providers.StateDisabled, BaseURL: second.URL + "/v1"},
 	}
-	got, err := Discover(context.Background(), list, first.Client())
+	listedProviders := append(listed(list...), providers.ListedProvider{
+		Provider: providers.Provider{
+			Name: "socket-only", Backend: providers.BackendSnap, State: providers.StateUnknown, Connection: providers.ConnectionConnected,
+		},
+		Err: errors.New("OPENAI_BASE_URL is empty"),
+	})
+	got, err := Discover(context.Background(), listedProviders, first.Client())
 	if err != nil {
 		t.Fatal("expected no error, got", err)
 	}
@@ -92,6 +97,27 @@ func TestDiscoverReportsModelsAndErrorsPerProvider(t *testing.T) {
 	}
 }
 
+func TestDiscoverReportsInvalidBaseURLsPerProvider(t *testing.T) {
+	list := []providers.Provider{
+		{Name: "bad-scheme", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: "ftp://user:secret@example.com/v1"},
+		{Name: "unparsable", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: "http://user:secret@exa mple.com/v1"},
+	}
+	got, err := Discover(context.Background(), listed(list...), http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(list) {
+		t.Fatalf("got %+v, want %d providers", got, len(list))
+	}
+	for _, providerModels := range got {
+		if providerModels.Err == nil {
+			t.Errorf("provider %q: expected error", providerModels.ProviderName)
+		} else if strings.Contains(providerModels.Err.Error(), "secret") {
+			t.Errorf("provider %q: error leaks credentials: %v", providerModels.ProviderName, providerModels.Err)
+		}
+	}
+}
+
 func TestListProviderModelsReturnsEmptyWithoutAvailableProviders(t *testing.T) {
 	got, err := Discover(context.Background(), nil, http.DefaultClient)
 	if err != nil {
@@ -108,9 +134,9 @@ func TestDiscoverReturnsProviderErrorForBrokenProvider(t *testing.T) {
 	}))
 	defer server.Close()
 
-	got, err := Discover(context.Background(), []providers.Provider{
-		{Name: "broken", Backend: providers.BackendProxy, BaseURL: server.URL + "/v1"},
-	}, server.Client())
+	got, err := Discover(context.Background(), listed(
+		providers.Provider{Name: "broken", Backend: providers.BackendProxy, BaseURL: server.URL + "/v1"},
+	), server.Client())
 
 	if err != nil {
 		t.Fatalf("got unexpected error %v", err)
@@ -143,4 +169,12 @@ func TestFetchModelsRejectsMissingData(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "missing data array") {
 		t.Fatalf("got error %v, want missing data array", err)
 	}
+}
+
+func listed(list ...providers.Provider) []providers.ListedProvider {
+	result := make([]providers.ListedProvider, 0, len(list))
+	for _, provider := range list {
+		result = append(result, providers.ListedProvider{Provider: provider})
+	}
+	return result
 }

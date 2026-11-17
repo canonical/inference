@@ -120,6 +120,35 @@ func TestStatusReportsEnabledProviderWithoutBaseURL(t *testing.T) {
 	}
 }
 
+func TestStatusReportsEnabledProviderWithInvalidBaseURL(t *testing.T) {
+	root := t.TempDir()
+	providerDir := filepath.Join(root, "bad-url")
+	if err := os.MkdirAll(providerDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(providerDir, "provider.env"),
+		[]byte("SNAP_NAME=bad-url\nOPENAI_BASE_URL=ftp://example.com\n"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	client, _ := snapd.NewFakeServer(t, map[string]string{"bad-url": snapd.SnapStatusActive})
+	cmd := statusCommand{Context: &common.Context{
+		SnapdClient:        client,
+		SnapCatalog:        &snapcatalog.Reader{},
+		ShareProvidersPath: root,
+	}}
+
+	got, err := cmd.providerHealth(context.Background())
+	if err != nil {
+		t.Fatalf("providerHealth: %v", err)
+	}
+	if got["bad-url"] != "error" {
+		t.Fatalf("health = %q, want %q", got["bad-url"], "error")
+	}
+}
+
 func TestProxyOpenAIBaseURL(t *testing.T) {
 	got := (&statusCommand{Context: &common.Context{
 		HTTPHost: "::1",

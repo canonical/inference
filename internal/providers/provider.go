@@ -54,6 +54,11 @@ type Provider struct {
 	Engines    []Engine
 }
 
+type ListedProvider struct {
+	Provider
+	Err error
+}
+
 type ProviderIdentity struct {
 	Backend ProviderBackend
 	Name    string
@@ -99,7 +104,10 @@ func Find(
 	case 0:
 		return Provider{}, fmt.Errorf("unknown provider %q", name)
 	case 1:
-		return matches[0], nil
+		if matches[0].Err != nil {
+			return Provider{}, fmt.Errorf("provider %q: %w", name, matches[0].Err)
+		}
+		return matches[0].Provider, nil
 	default:
 		return Provider{}, fmt.Errorf("ambiguous provider %q: matches multiple provider backends", name)
 	}
@@ -110,7 +118,7 @@ func ListInstalled(
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
-) ([]Provider, error) {
+) ([]ListedProvider, error) {
 	return list(ctx, catalog, snapdClient, shareProvidersPath, listOptions{InstalledOnly: true})
 }
 
@@ -119,7 +127,7 @@ func ListAll(
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
-) ([]Provider, error) {
+) ([]ListedProvider, error) {
 	return list(ctx, catalog, snapdClient, shareProvidersPath, listOptions{})
 }
 
@@ -129,7 +137,7 @@ func list(
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
 	options listOptions,
-) ([]Provider, error) {
+) ([]ListedProvider, error) {
 
 	catalogProviders, err := CatalogSnapProviders(catalog)
 	if errors.Is(err, snapcatalog.ErrNotConfigured) || errors.Is(err, os.ErrNotExist) {
@@ -149,31 +157,32 @@ func list(
 	}
 
 	// Union catalog and connected inference snap providers
-	merged := make(map[ProviderIdentity]Provider)
+	merged := make(map[ProviderIdentity]ListedProvider)
 	for _, provider := range catalogProviders {
-		merged[provider.Identity()] = provider
+		merged[provider.Identity()] = ListedProvider{Provider: provider}
 	}
 	for _, provider := range connectedProviders {
 		key := provider.Identity()
 		if existing, ok := merged[key]; ok {
 			existing.Connection = provider.Connection
 			existing.BaseURL = provider.BaseURL
+			existing.Err = provider.Err
 			merged[key] = existing
 			continue
 		}
 		merged[key] = provider
 	}
 	for _, provider := range configuredProviders {
-		merged[provider.Identity()] = provider
+		merged[provider.Identity()] = ListedProvider{Provider: provider}
 	}
 
 	// Add snap state and optionally filter for only installed providers
-	result := make([]Provider, 0, len(merged))
+	result := make([]ListedProvider, 0, len(merged))
 	for _, provider := range merged {
 		if options.Name != "" && provider.Name != options.Name {
 			continue
 		}
-		if provider.Backend == BackendSnap {
+		if provider.Backend == BackendSnap && provider.Err == nil {
 			state, err := snapProviderLifecycleState(ctx, snapdClient, provider.Name)
 			if err != nil {
 				return nil, err
@@ -181,7 +190,7 @@ func list(
 			provider.State = state
 		}
 
-		if options.InstalledOnly && !provider.Installed() {
+		if options.InstalledOnly && provider.Err == nil && !provider.Installed() {
 			continue
 		}
 		result = append(result, provider)
