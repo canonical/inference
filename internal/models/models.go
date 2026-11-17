@@ -89,25 +89,26 @@ func Discover(
 	results := make(chan ProviderModels, len(availableProviders))
 	var requests sync.WaitGroup
 	for _, provider := range availableProviders {
+		result := ProviderModels{
+			ProviderName: provider.Name,
+			Models:       []Model{},
+			Err:          provider.Err,
+		}
+		if result.Err != nil {
+			results <- result
+			continue
+		}
 		requests.Go(func() {
-			models := make([]Model, 0)
-			err := provider.Err
-			var upstreamModels []upstreamModel
+			upstreamModels, err := fetchModels(ctx, client, provider.BaseURL)
+			result.Err = err
 			if err == nil {
-				upstreamModels, err = fetchModels(ctx, client, provider.BaseURL)
-			}
-			if err == nil {
-				models = normalizeModels(provider.Provider, upstreamModels)
-				sort.Slice(models, func(i, j int) bool {
-					return models[i].NativeID < models[j].NativeID
+				result.Models = normalizeModels(provider.Provider, upstreamModels)
+				sort.Slice(result.Models, func(i, j int) bool {
+					return result.Models[i].NativeID < result.Models[j].NativeID
 				})
 			}
 
-			results <- ProviderModels{
-				ProviderName: provider.Name,
-				Models:       models,
-				Err:          err,
-			}
+			results <- result
 		})
 	}
 	requests.Wait()

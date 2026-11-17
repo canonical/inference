@@ -60,20 +60,20 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return common.FriendlySnapdError(err)
 	}
 
-	providers := make([]providers.Provider, 0, len(listedProviders))
+	installed := make([]providers.Provider, 0, len(listedProviders))
 	for _, listed := range listedProviders {
-		providers = append(providers, listed.Provider)
+		installed = append(installed, listed.Provider)
 	}
 
 	var output string
 	if cmd.format == "json" {
-		output, err = cmd.outputJSON(providers)
+		output, err = cmd.outputJSON(installed)
 		if err != nil {
 			return err
 		}
 	} else {
-		if len(providers) > 0 { // table should only be rendered if there are providers
-			output, err = cmd.outputTable(providers)
+		if len(installed) > 0 { // table should only be rendered if there are providers
+			output, err = cmd.outputTable(installed)
 			if err != nil {
 				return err
 			}

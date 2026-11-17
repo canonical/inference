@@ -118,6 +118,33 @@ func TestDiscoverReportsInvalidBaseURLsPerProvider(t *testing.T) {
 	}
 }
 
+func TestDiscoverPreservesProviderErrorsWithoutRequests(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("unexpected request for a provider with a configuration error")
+		http.Error(w, "unexpected request", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	providerErr := errors.New("invalid configuration")
+	got, err := Discover(context.Background(), []providers.ListedProvider{
+		{
+			Provider: providers.Provider{
+				Name: "broken", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: server.URL,
+			},
+			Err: providerErr,
+		},
+	}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ProviderName != "broken" || got[0].Err != providerErr {
+		t.Fatalf("got %+v, want the original provider error", got)
+	}
+	if got[0].Models == nil || len(got[0].Models) != 0 {
+		t.Fatalf("got models %#v, want an empty list", got[0].Models)
+	}
+}
+
 func TestListProviderModelsReturnsEmptyWithoutAvailableProviders(t *testing.T) {
 	got, err := Discover(context.Background(), nil, http.DefaultClient)
 	if err != nil {

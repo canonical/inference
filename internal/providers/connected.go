@@ -11,11 +11,6 @@ import (
 	"github.com/joho/godotenv"
 )
 
-type connectedEntry struct {
-	provider  ListedProvider
-	directory string
-}
-
 func ConnectedSnapProviders(root string) ([]ListedProvider, error) {
 	if root == "" {
 		return []ListedProvider{}, nil
@@ -29,62 +24,61 @@ func ConnectedSnapProviders(root string) ([]ListedProvider, error) {
 		return nil, fmt.Errorf("reading connected provider directory %q: %w", root, err)
 	}
 
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-	entriesByName := make(map[string]connectedEntry, len(entries))
+	providersByName := make(map[string]ListedProvider, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-
-		directoryName := entry.Name()
-		path := filepath.Join(root, directoryName, "provider.env")
-		values, err := godotenv.Read(path)
-		if errors.Is(err, os.ErrNotExist) {
+		provider, found := readConnectedProvider(root, entry.Name())
+		if !found {
 			continue
 		}
-
-		name := values["SNAP_NAME"]
-		if err == nil && name == "" {
-			err = errors.New("SNAP_NAME is empty")
+		if _, exists := providersByName[provider.Name]; exists {
+			provider.BaseURL = ""
+			provider.Err = fmt.Errorf("duplicate provider name %q", provider.Name)
 		}
-		if err != nil {
-			addConnectedEntry(entriesByName, directoryName, directoryName, "", fmt.Errorf("reading connected provider %q: %w", directoryName, err))
-			continue
-		}
-
-		baseURL := values["OPENAI_BASE_URL"]
-		if err := verifyBaseURL(baseURL); err != nil {
-			addConnectedEntry(entriesByName, directoryName, name, "", fmt.Errorf("reading connected provider %q: %w", directoryName, err))
-			continue
-		}
-		addConnectedEntry(entriesByName, directoryName, name, baseURL, nil)
+		providersByName[provider.Name] = provider
 	}
 
-	providers := make([]ListedProvider, 0, len(entriesByName))
-	for _, entry := range entriesByName {
-		providers = append(providers, entry.provider)
+	providers := make([]ListedProvider, 0, len(providersByName))
+	for _, provider := range providersByName {
+		providers = append(providers, provider)
 	}
 	sort.Slice(providers, func(i, j int) bool { return providers[i].Name < providers[j].Name })
 	return providers, nil
 }
 
-func addConnectedEntry(entriesByName map[string]connectedEntry, directory, name, baseURL string, err error) {
-	provider := ListedProvider{
-		Provider: Provider{
-			Name:       name,
-			Backend:    BackendSnap,
-			State:      StateUnknown,
-			Connection: ConnectionConnected,
-			BaseURL:    baseURL,
-		},
-		Err: err,
+// A provider that cannot be read is named after its directory so it can still be reported.
+func readConnectedProvider(root, directoryName string) (ListedProvider, bool) {
+	values, err := godotenv.Read(filepath.Join(root, directoryName, "provider.env"))
+	if errors.Is(err, os.ErrNotExist) {
+		return ListedProvider{}, false
 	}
-	if existing, exists := entriesByName[name]; exists {
+
+	name := values["SNAP_NAME"]
+	baseURL := values["OPENAI_BASE_URL"]
+	if err == nil && name == "" {
+		err = errors.New("SNAP_NAME is empty")
+	}
+	if err == nil {
+		err = verifyBaseURL(baseURL)
+	}
+	if name == "" {
+		name = directoryName
+	}
+
+	provider := ListedProvider{Provider: Provider{
+		Name:       name,
+		Backend:    BackendSnap,
+		State:      StateUnknown,
+		Connection: ConnectionConnected,
+		BaseURL:    baseURL,
+	}}
+	if err != nil {
 		provider.BaseURL = ""
-		provider.Err = fmt.Errorf("duplicate provider name %q in directories %q and %q", name, existing.directory, directory)
-		directory = existing.directory
+		provider.Err = fmt.Errorf("reading connected provider %q: %w", directoryName, err)
 	}
-	entriesByName[name] = connectedEntry{provider: provider, directory: directory}
+	return provider, true
 }
 
 func verifyBaseURL(value string) error {

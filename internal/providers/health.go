@@ -29,8 +29,9 @@ func CheckHealth(ctx context.Context, providers []ListedProvider) map[string]Hea
 		health HealthStatus
 	}
 
-	enabled := make([]Provider, 0, len(providers))
 	health := make(map[string]HealthStatus, len(providers))
+	results := make(chan result, len(providers))
+	var checks sync.WaitGroup
 	for _, provider := range providers {
 		if provider.Err != nil {
 			health[provider.Name] = HealthError
@@ -39,30 +40,21 @@ func CheckHealth(ctx context.Context, providers []ListedProvider) map[string]Hea
 		if provider.State != StateEnabled || provider.BaseURL == "" {
 			continue
 		}
-		enabled = append(enabled, provider.Provider)
-	}
-	if len(enabled) == 0 && len(health) == 0 {
-		return nil
-	}
-
-	results := make(chan result, len(enabled))
-	var checks sync.WaitGroup
-	checks.Add(len(enabled))
-	// Check providers in parallel so one unresponsive provider does not delay the others.
-	for _, provider := range enabled {
-		go func() {
-			defer checks.Done()
+		checks.Go(func() {
 			results <- result{
 				name:   provider.Name,
 				health: checkHealth(ctx, provider.BaseURL),
 			}
-		}()
+		})
 	}
 	checks.Wait()
 	close(results)
 
 	for result := range results {
 		health[result.name] = result.health
+	}
+	if len(health) == 0 {
+		return nil
 	}
 	return health
 }

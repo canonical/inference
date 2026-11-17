@@ -86,7 +86,7 @@ func TestCheckHealth(t *testing.T) {
 		{Provider: Provider{Name: "disabled", State: StateDisabled, BaseURL: healthy.URL + "/v1"}},
 		{Provider: Provider{Name: "not-connected", State: StateEnabled, Connection: ConnectionNotConnected}},
 		{
-			Provider: Provider{Name: "broken-config", State: StateUnknown, Connection: ConnectionConnected},
+			Provider: Provider{Name: "broken-config", State: StateEnabled, Connection: ConnectionConnected, BaseURL: healthy.URL + "/v1"},
 			Err:      errors.New("OPENAI_BASE_URL is empty"),
 		},
 	})

@@ -91,61 +91,42 @@ func TestStatusUsesSnapInstanceName(t *testing.T) {
 	}
 }
 
-func TestStatusReportsEnabledProviderWithoutBaseURL(t *testing.T) {
-	root := t.TempDir()
-	providerDir := filepath.Join(root, "socket-only")
-	if err := os.MkdirAll(providerDir, 0o755); err != nil {
-		t.Fatal(err)
+func TestStatusReportsMisconfiguredProvidersAsError(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider string
+		env      string
+	}{
+		{name: "missing base URL", provider: "socket-only", env: "SNAP_NAME=socket-only\nUNIX_SOCKET=x.sock\n"},
+		{name: "invalid base URL", provider: "bad-url", env: "SNAP_NAME=bad-url\nOPENAI_BASE_URL=ftp://example.com\n"},
+		{name: "missing snap name", provider: "no-name", env: "OPENAI_BASE_URL=http://localhost:8081/v1\n"},
+		{name: "unreadable env file", provider: "unreadable", env: "SNAP_NAME='unterminated\n"},
 	}
-	if err := os.WriteFile(
-		filepath.Join(providerDir, "provider.env"),
-		[]byte("SNAP_NAME=socket-only\nUNIX_SOCKET=x.sock\n"),
-		0o644,
-	); err != nil {
-		t.Fatal(err)
-	}
-	client, _ := snapd.NewFakeServer(t, map[string]string{"socket-only": snapd.SnapStatusActive})
-	cmd := statusCommand{Context: &common.Context{
-		SnapdClient:        client,
-		SnapCatalog:        &snapcatalog.Reader{},
-		ShareProvidersPath: root,
-	}}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			providerDir := filepath.Join(root, tt.provider)
+			if err := os.MkdirAll(providerDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(providerDir, "provider.env"), []byte(tt.env), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			client, _ := snapd.NewFakeServer(t, map[string]string{tt.provider: snapd.SnapStatusActive})
+			cmd := statusCommand{Context: &common.Context{
+				SnapdClient:        client,
+				SnapCatalog:        &snapcatalog.Reader{},
+				ShareProvidersPath: root,
+			}}
 
-	got, err := cmd.providerHealth(context.Background())
-	if err != nil {
-		t.Fatalf("providerHealth: %v", err)
-	}
-	if got["socket-only"] != "error" {
-		t.Fatalf("health = %q, want %q", got["socket-only"], "error")
-	}
-}
-
-func TestStatusReportsEnabledProviderWithInvalidBaseURL(t *testing.T) {
-	root := t.TempDir()
-	providerDir := filepath.Join(root, "bad-url")
-	if err := os.MkdirAll(providerDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(
-		filepath.Join(providerDir, "provider.env"),
-		[]byte("SNAP_NAME=bad-url\nOPENAI_BASE_URL=ftp://example.com\n"),
-		0o644,
-	); err != nil {
-		t.Fatal(err)
-	}
-	client, _ := snapd.NewFakeServer(t, map[string]string{"bad-url": snapd.SnapStatusActive})
-	cmd := statusCommand{Context: &common.Context{
-		SnapdClient:        client,
-		SnapCatalog:        &snapcatalog.Reader{},
-		ShareProvidersPath: root,
-	}}
-
-	got, err := cmd.providerHealth(context.Background())
-	if err != nil {
-		t.Fatalf("providerHealth: %v", err)
-	}
-	if got["bad-url"] != "error" {
-		t.Fatalf("health = %q, want %q", got["bad-url"], "error")
+			got, err := cmd.providerHealth(context.Background())
+			if err != nil {
+				t.Fatalf("providerHealth: %v", err)
+			}
+			if got[tt.provider] != "error" {
+				t.Fatalf("health = %q, want %q", got[tt.provider], "error")
+			}
+		})
 	}
 }
 

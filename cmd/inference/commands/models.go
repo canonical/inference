@@ -80,7 +80,6 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 			if err != nil {
 				return err
 			}
-			break
 		}
 	}
 
