@@ -68,7 +68,6 @@ func Discover(
 ) ([]ProviderModels, error) {
 	availableProviders := make([]providers.Provider, 0, len(allProviders))
 	providerNames := make(map[string]struct{}, len(allProviders))
-	resultsWithoutURL := make([]ProviderModels, 0)
 	for _, provider := range allProviders {
 		if provider.Backend == providers.BackendSnap && provider.State != providers.StateEnabled {
 			continue
@@ -84,16 +83,6 @@ func Discover(
 			return nil, fmt.Errorf("duplicate provider name %q", provider.Name)
 		}
 		providerNames[provider.Name] = struct{}{}
-		if provider.BaseURL == "" {
-			if provider.Backend == providers.BackendSnap {
-				resultsWithoutURL = append(resultsWithoutURL, ProviderModels{
-					ProviderName: provider.Name,
-					Models:       []Model{},
-					Err:          errors.New("OPENAI_BASE_URL is empty"),
-				})
-			}
-			continue
-		}
 		availableProviders = append(availableProviders, provider)
 	}
 
@@ -106,7 +95,7 @@ func Discover(
 	for _, provider := range availableProviders {
 		requests.Go(func() {
 			models := make([]Model, 0)
-			upstreamModels, err := fetchModels(ctx, client, provider.BaseURL)
+			upstreamModels, err := fetchProviderModels(ctx, client, provider)
 			if err == nil {
 				models = normalizeModels(provider, upstreamModels)
 				sort.Slice(models, func(i, j int) bool {
@@ -124,7 +113,7 @@ func Discover(
 	requests.Wait()
 	close(results)
 
-	pm := resultsWithoutURL
+	pm := make([]ProviderModels, 0, len(availableProviders))
 	for result := range results {
 		pm = append(pm, result)
 	}
@@ -132,6 +121,13 @@ func Discover(
 		return pm[i].ProviderName < pm[j].ProviderName
 	})
 	return pm, nil
+}
+
+func fetchProviderModels(ctx context.Context, client *http.Client, provider providers.Provider) ([]upstreamModel, error) {
+	if provider.BaseURL == "" {
+		return nil, errors.New("OPENAI_BASE_URL is empty")
+	}
+	return fetchModels(ctx, client, provider.BaseURL)
 }
 
 func normalizeModels(provider providers.Provider, upstreamModels []upstreamModel) []Model {
