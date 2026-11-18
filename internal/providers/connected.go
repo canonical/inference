@@ -47,14 +47,20 @@ func ConnectedSnapProviders(root string) ([]Provider, error) {
 			}
 			providersByName[kept.Name] = kept
 			envPaths[kept.Name] = keptPath
-			provider = demoteDuplicate(provider, envPath, keptPath)
+			provider = demoteDuplicate(provider, envPath, keptPath, func(name string) bool {
+				_, taken := providersByName[name]
+				return taken
+			})
 		}
 		providersByName[provider.Name] = provider
 		envPaths[provider.Name] = envPath
 	}
 	for _, provider := range unverified {
 		if _, exists := providersByName[provider.Name]; exists {
-			provider.Name = duplicateDisplayName(provider.Name)
+			provider.Name = duplicateDisplayName(provider.Name, func(name string) bool {
+				_, taken := providersByName[name]
+				return taken
+			})
 		}
 		providersByName[provider.Name] = provider
 	}
@@ -104,7 +110,7 @@ func readConnectedProvider(root, directoryName string) (Provider, string, bool) 
 	return provider, envPath, true
 }
 
-func demoteDuplicate(provider Provider, envPath, keptPath string) Provider {
+func demoteDuplicate(provider Provider, envPath, keptPath string, taken func(string) bool) Provider {
 	if provider.Err == nil {
 		provider.Err = fmt.Errorf(
 			"%s: duplicate provider name %q, already defined in %s",
@@ -112,13 +118,17 @@ func demoteDuplicate(provider Provider, envPath, keptPath string) Provider {
 		)
 	}
 	provider.BaseURL = ""
-	provider.Name = duplicateDisplayName(provider.Name)
+	provider.Name = duplicateDisplayName(provider.Name, taken)
 	provider.nameUnverified = true
 	return provider
 }
 
-func duplicateDisplayName(name string) string {
-	return name + " (duplicate)"
+func duplicateDisplayName(name string, taken func(string) bool) string {
+	candidate := name + " (duplicate)"
+	for i := 2; taken(candidate); i++ {
+		candidate = fmt.Sprintf("%s (duplicate %d)", name, i)
+	}
+	return candidate
 }
 
 func verifyBaseURL(value string) error {

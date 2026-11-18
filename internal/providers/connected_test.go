@@ -365,3 +365,58 @@ func TestConnectedSnapProvidersPrefersValidProviderOnDuplicateSnapName(t *testin
 		t.Fatalf("got %+v, want the misconfigured provider to keep its own error", got[1])
 	}
 }
+
+func TestConnectedSnapProvidersKeepsEveryEntryWhenSnapNameIsDuplicatedThreeTimes(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"a", "b", "c"} {
+		writeProviderEnv(t, root, dir, "SNAP_NAME=same\nOPENAI_BASE_URL=http://localhost:8080/v1\n")
+	}
+
+	got, err := ConnectedSnapProviders(root)
+	if err != nil {
+		t.Fatalf("ConnectedSnapProviders: %v", err)
+	}
+	wantNames := []string{"same", "same (duplicate 2)", "same (duplicate)"}
+	if len(got) != len(wantNames) {
+		t.Fatalf("got %+v, want %d providers", got, len(wantNames))
+	}
+	for i, name := range wantNames {
+		if got[i].Name != name {
+			t.Fatalf("provider %d is named %q, want %q", i, got[i].Name, name)
+		}
+	}
+	for _, provider := range got[1:] {
+		if provider.Err == nil || !strings.Contains(provider.Err.Error(), `duplicate provider name "same"`) {
+			t.Fatalf("got %+v, want a duplicate error", provider)
+		}
+	}
+	if !strings.Contains(got[2].Err.Error(), filepath.Join(root, "b", "provider.env")) ||
+		!strings.Contains(got[1].Err.Error(), filepath.Join(root, "c", "provider.env")) {
+		t.Fatalf("got errors %v and %v, want each to name its own file", got[1].Err, got[2].Err)
+	}
+}
+
+func TestConnectedSnapProvidersFallbackNameDoesNotOverwriteDuplicate(t *testing.T) {
+	root := t.TempDir()
+	writeProviderEnv(t, root, "a", "SNAP_NAME=same\nOPENAI_BASE_URL=http://localhost:8080/v1\n")
+	writeProviderEnv(t, root, "b", "SNAP_NAME=same\nOPENAI_BASE_URL=http://localhost:8081/v1\n")
+	writeProviderEnv(t, root, "same (duplicate)", "OPENAI_BASE_URL=http://localhost:8082/v1\n")
+
+	got, err := ConnectedSnapProviders(root)
+	if err != nil {
+		t.Fatalf("ConnectedSnapProviders: %v", err)
+	}
+	var names []string
+	for _, provider := range got {
+		names = append(names, provider.Name)
+	}
+	want := []string{"same", "same (duplicate)", "same (duplicate) (duplicate)"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("got names %q, want %q", names, want)
+	}
+	for _, provider := range got[1:] {
+		if provider.Err == nil {
+			t.Fatalf("got %+v, want an error", provider)
+		}
+	}
+}

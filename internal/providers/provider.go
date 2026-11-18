@@ -160,7 +160,10 @@ func list(
 		key := provider.Identity()
 		existing, ok := merged[key]
 		if ok && provider.nameUnverified {
-			provider.Name = duplicateDisplayName(provider.Name)
+			provider.Name = duplicateDisplayName(provider.Name, func(name string) bool {
+				_, taken := merged[ProviderIdentity{Backend: provider.Backend, Name: name}]
+				return taken
+			})
 			key = provider.Identity()
 			existing, ok = merged[key]
 		}
