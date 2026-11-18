@@ -76,16 +76,16 @@ func TestCheckHealth(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	got := CheckHealth(ctx, []Provider{
-		Provider{Name: "healthy", State: StateEnabled, BaseURL: healthy.URL + "/v1"},
-		Provider{Name: "healthy-models-field", State: StateEnabled, BaseURL: healthyModelsField.URL + "/v1"},
-		Provider{Name: "empty", State: StateEnabled, BaseURL: empty.URL + "/v3"},
-		Provider{Name: "malformed", State: StateEnabled, BaseURL: malformed.URL + "/v1"},
-		Provider{Name: "error", State: StateEnabled, BaseURL: failing.URL + "/v1"},
-		Provider{Name: "unresponsive", State: StateEnabled, BaseURL: unresponsive.URL + "/v1"},
-		Provider{Name: "offline", State: StateEnabled, BaseURL: offlineURL},
-		Provider{Name: "disabled", State: StateDisabled, BaseURL: healthy.URL + "/v1"},
-		Provider{Name: "not-connected", State: StateEnabled, Connection: ConnectionNotConnected},
-		Provider{Name: "broken-config", State: StateEnabled, Connection: ConnectionConnected, BaseURL: healthy.URL + "/v1", Err: errors.New("OPENAI_BASE_URL is empty")},
+		{Name: "healthy", State: StateEnabled, BaseURL: healthy.URL + "/v1"},
+		{Name: "healthy-models-field", State: StateEnabled, BaseURL: healthyModelsField.URL + "/v1"},
+		{Name: "empty", State: StateEnabled, BaseURL: empty.URL + "/v3"},
+		{Name: "malformed", State: StateEnabled, BaseURL: malformed.URL + "/v1"},
+		{Name: "error", State: StateEnabled, BaseURL: failing.URL + "/v1"},
+		{Name: "unresponsive", State: StateEnabled, BaseURL: unresponsive.URL + "/v1"},
+		{Name: "offline", State: StateEnabled, BaseURL: offlineURL},
+		{Name: "disabled", State: StateDisabled, BaseURL: healthy.URL + "/v1"},
+		{Name: "not-connected", State: StateEnabled, Connection: ConnectionNotConnected},
+		{Name: "broken-config", State: StateEnabled, Connection: ConnectionConnected, BaseURL: healthy.URL + "/v1", Err: errors.New("OPENAI_BASE_URL is empty")},
 	})
 
 	want := map[string]HealthStatus{
