@@ -150,8 +150,16 @@ func TestConnectedSnapProvidersReportsDuplicateSnapName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConnectedSnapProviders: %v", err)
 	}
-	want := Provider{Name: "same", Backend: BackendSnap, State: StateUnknown, Connection: ConnectionConnected}
-	assertSingleProviderError(t, got, want, `duplicate provider name "same"`)
+	if len(got) != 2 {
+		t.Fatalf("got %+v, want two providers", got)
+	}
+	if got[0].Name != "same" || got[0].Err != nil || got[0].BaseURL != "http://localhost:8080/v1" {
+		t.Fatalf("got %+v, want the first provider untouched", got[0])
+	}
+	if got[1].Name != "same (invalid)" || got[1].BaseURL != "" ||
+		got[1].Err == nil || !strings.Contains(got[1].Err.Error(), `duplicate provider name "same"`) {
+		t.Fatalf("got %+v, want the duplicate reported separately", got[1])
+	}
 }
 
 func TestConnectedSnapProvidersKeepsValidProvidersNextToInvalidOnes(t *testing.T) {
