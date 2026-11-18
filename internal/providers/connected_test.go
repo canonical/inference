@@ -344,3 +344,23 @@ func TestListKeepsCatalogProviderOnFallbackNameCollision(t *testing.T) {
 		t.Fatalf("got %+v, want the invalid entry reported separately", got[1])
 	}
 }
+
+func TestConnectedSnapProvidersPrefersValidProviderOnDuplicateSnapName(t *testing.T) {
+	root := t.TempDir()
+	writeProviderEnv(t, root, "a", "SNAP_NAME=same\nUNIX_SOCKET=x.sock\n")
+	writeProviderEnv(t, root, "b", "SNAP_NAME=same\nOPENAI_BASE_URL=http://localhost:8081/v1\n")
+
+	got, err := ConnectedSnapProviders(root)
+	if err != nil {
+		t.Fatalf("ConnectedSnapProviders: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %+v, want two providers", got)
+	}
+	if got[0].Name != "same" || got[0].Err != nil || got[0].BaseURL != "http://localhost:8081/v1" {
+		t.Fatalf("got %+v, want the valid provider to keep the name", got[0])
+	}
+	if got[1].Name != "same (invalid)" || got[1].Err == nil || !strings.Contains(got[1].Err.Error(), "OPENAI_BASE_URL is empty") {
+		t.Fatalf("got %+v, want the misconfigured provider to keep its own error", got[1])
+	}
+}
