@@ -50,7 +50,7 @@ type service struct {
 	httpClient *http.Client
 }
 
-func New(providerService providers.Service, httpClient *http.Client) Service {
+func NewService(providerService providers.Service, httpClient *http.Client) Service {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}

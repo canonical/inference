@@ -51,8 +51,8 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	providerService := providers.New(cmd.SnapCatalog, cmd.SnapdClient, cmd.ShareProvidersPath)
-	modelService := models.New(providerService, http.DefaultClient)
+	providerService := providers.NewService(cmd.SnapCatalog, cmd.SnapdClient, cmd.ShareProvidersPath)
+	modelService := models.NewService(providerService, http.DefaultClient)
 	providerModels, err := modelService.List(cobraCmd.Context())
 	if err != nil {
 		return err

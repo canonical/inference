@@ -79,7 +79,7 @@ func NewModelsHandler(
 		baseLogger = slog.Default()
 	}
 	return &ModelsHandler{
-		models:     models.New(providerService, client),
+		models:     models.NewService(providerService, client),
 		client:     client,
 		baseLogger: baseLogger,
 	}

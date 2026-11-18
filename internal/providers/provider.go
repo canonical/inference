@@ -92,7 +92,7 @@ type service struct {
 	shareProvidersPath string
 }
 
-func New(catalog *snapcatalog.Reader, snapdClient *snapd.Client, shareProvidersPath string) Service {
+func NewService(catalog *snapcatalog.Reader, snapdClient *snapd.Client, shareProvidersPath string) Service {
 	return &service{
 		catalog:            catalog,
 		snapdClient:        snapdClient,

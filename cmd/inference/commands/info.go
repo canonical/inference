@@ -64,7 +64,7 @@ func (cmd *infoCommand) run(cobraCmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	providerService := providers.New(cmd.SnapCatalog, cmd.SnapdClient, cmd.ShareProvidersPath)
+	providerService := providers.NewService(cmd.SnapCatalog, cmd.SnapdClient, cmd.ShareProvidersPath)
 	provider, err := providerService.Find(cobraCmd.Context(), args[0])
 	if err != nil {
 		return common.FriendlySnapdError(err)

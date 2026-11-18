@@ -22,12 +22,12 @@ func (p staticProviders) List(context.Context) ([]providers.Provider, error) {
 }
 
 func newService(list []providers.Provider, client *http.Client) Service {
-	return New(staticProviders{list: list}, client)
+	return NewService(staticProviders{list: list}, client)
 }
 
 func TestListReturnsProviderListingError(t *testing.T) {
 	listErr := errors.New("snapd unavailable")
-	service := New(staticProviders{err: listErr}, http.DefaultClient)
+	service := NewService(staticProviders{err: listErr}, http.DefaultClient)
 
 	_, err := service.List(context.Background())
 	if !errors.Is(err, listErr) {
