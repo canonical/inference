@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/canonical/inference/cmd/inference/common"
@@ -59,28 +60,24 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	models, err := cmd.filterAvailableModels(providerModels)
+	available, err := cmd.filterAvailableModels(providerModels)
 	if err != nil {
 		return err
 	}
 
 	if cmd.format == "json" {
-		if err := cmd.printModelsJSON(models); err != nil {
+		if err := cmd.printModelsJSON(available); err != nil {
 			return err
 		}
 	} else {
-		if err := cmd.printModelsTable(models); err != nil {
+		if err := cmd.printModelsTable(available); err != nil {
 			return err
 		}
 	}
 
-	for _, providerModel := range providerModels {
-		if providerModel.Err != nil {
-			_, err := fmt.Fprintf(cmd.Stderr, "\nHint: Cannot retrieve models from some providers. Run \"inference status\" for details.\n")
-			if err != nil {
-				return err
-			}
-		}
+	if slices.ContainsFunc(providerModels, func(pm models.ProviderModels) bool { return pm.Err != nil }) {
+		_, err := fmt.Fprintf(cmd.Stderr, "\nHint: Cannot retrieve models from some providers. Run \"inference status\" for details.\n")
+		return err
 	}
 
 	return nil
