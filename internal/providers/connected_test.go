@@ -156,9 +156,10 @@ func TestConnectedSnapProvidersReportsDuplicateSnapName(t *testing.T) {
 	if got[0].Name != "same" || got[0].Err != nil || got[0].BaseURL != "http://localhost:8080/v1" {
 		t.Fatalf("got %+v, want the first provider untouched", got[0])
 	}
-	if got[1].Name != "same (duplicate)" || got[1].BaseURL != "" ||
-		got[1].Err == nil || !strings.Contains(got[1].Err.Error(), `duplicate provider name "same"`) {
-		t.Fatalf("got %+v, want the duplicate reported separately", got[1])
+	wantErr := filepath.Join(root, "b", "provider.env") + `: duplicate provider name "same", already defined in ` +
+		filepath.Join(root, "a", "provider.env")
+	if got[1].Name != "same (duplicate)" || got[1].BaseURL != "" || got[1].Err == nil || got[1].Err.Error() != wantErr {
+		t.Fatalf("got %+v, want the duplicate reported separately with error %q", got[1], wantErr)
 	}
 }
 

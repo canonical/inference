@@ -25,12 +25,13 @@ func ConnectedSnapProviders(root string) ([]Provider, error) {
 	}
 
 	providersByName := make(map[string]Provider, len(entries))
+	envPaths := make(map[string]string, len(entries))
 	var unverified []Provider
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		provider, found := readConnectedProvider(root, entry.Name())
+		provider, envPath, found := readConnectedProvider(root, entry.Name())
 		if !found {
 			continue
 		}
@@ -38,14 +39,18 @@ func ConnectedSnapProviders(root string) ([]Provider, error) {
 			unverified = append(unverified, provider)
 			continue
 		}
-		if existing, exists := providersByName[provider.Name]; exists {
-			if existing.Err != nil && provider.Err == nil {
-				providersByName[provider.Name] = provider
-				provider = existing
+		if kept, exists := providersByName[provider.Name]; exists {
+			keptPath := envPaths[kept.Name]
+			if kept.Err != nil && provider.Err == nil {
+				kept, provider = provider, kept
+				keptPath, envPath = envPath, keptPath
 			}
-			provider = demoteDuplicate(provider)
+			providersByName[kept.Name] = kept
+			envPaths[kept.Name] = keptPath
+			provider = demoteDuplicate(provider, envPath, keptPath)
 		}
 		providersByName[provider.Name] = provider
+		envPaths[provider.Name] = envPath
 	}
 	for _, provider := range unverified {
 		if _, exists := providersByName[provider.Name]; exists {
@@ -63,11 +68,11 @@ func ConnectedSnapProviders(root string) ([]Provider, error) {
 }
 
 // A provider that cannot be read is named after its directory so it can still be reported.
-func readConnectedProvider(root, directoryName string) (Provider, bool) {
+func readConnectedProvider(root, directoryName string) (Provider, string, bool) {
 	envPath := filepath.Join(root, directoryName, "provider.env")
 	values, err := godotenv.Read(envPath)
 	if errors.Is(err, os.ErrNotExist) {
-		return Provider{}, false
+		return Provider{}, "", false
 	}
 
 	name := values["SNAP_NAME"]
@@ -96,12 +101,15 @@ func readConnectedProvider(root, directoryName string) (Provider, bool) {
 		provider.BaseURL = ""
 		provider.Err = fmt.Errorf("%s: %w", envPath, err)
 	}
-	return provider, true
+	return provider, envPath, true
 }
 
-func demoteDuplicate(provider Provider) Provider {
+func demoteDuplicate(provider Provider, envPath, keptPath string) Provider {
 	if provider.Err == nil {
-		provider.Err = fmt.Errorf("duplicate provider name %q", provider.Name)
+		provider.Err = fmt.Errorf(
+			"%s: duplicate provider name %q, already defined in %s",
+			envPath, provider.Name, keptPath,
+		)
 	}
 	provider.BaseURL = ""
 	provider.Name = duplicateDisplayName(provider.Name)
