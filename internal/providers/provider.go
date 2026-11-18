@@ -35,6 +35,7 @@ const (
 	ConnectionConnected     ConnectionState = "connected"
 	ConnectionNotApplicable ConnectionState = "not applicable"
 )
+
 //revive:enable:exported
 
 // Engine represents an inference provider's runtime and model details
@@ -79,18 +80,32 @@ type listOptions struct {
 	Name          string
 }
 
-func Find(
-	ctx context.Context,
-	catalog *snapcatalog.Reader,
-	snapdClient *snapd.Client,
-	shareProvidersPath string,
-	name string,
-) (Provider, error) {
+type Service interface {
+	List(ctx context.Context) ([]Provider, error)
+	ListInstalled(ctx context.Context) ([]Provider, error)
+	Find(ctx context.Context, name string) (Provider, error)
+}
+
+type service struct {
+	catalog            *snapcatalog.Reader
+	snapdClient        *snapd.Client
+	shareProvidersPath string
+}
+
+func New(catalog *snapcatalog.Reader, snapdClient *snapd.Client, shareProvidersPath string) Service {
+	return &service{
+		catalog:            catalog,
+		snapdClient:        snapdClient,
+		shareProvidersPath: shareProvidersPath,
+	}
+}
+
+func (s *service) Find(ctx context.Context, name string) (Provider, error) {
 	if name == "" {
 		return Provider{}, fmt.Errorf("provider name can't be empty")
 	}
 
-	matches, err := list(ctx, catalog, snapdClient, shareProvidersPath, listOptions{Name: name})
+	matches, err := s.list(ctx, listOptions{Name: name})
 	if err != nil {
 		return Provider{}, err
 	}
@@ -105,40 +120,23 @@ func Find(
 	}
 }
 
-func ListInstalled(
-	ctx context.Context,
-	catalog *snapcatalog.Reader,
-	snapdClient *snapd.Client,
-	shareProvidersPath string,
-) ([]Provider, error) {
-	return list(ctx, catalog, snapdClient, shareProvidersPath, listOptions{InstalledOnly: true})
+func (s *service) ListInstalled(ctx context.Context) ([]Provider, error) {
+	return s.list(ctx, listOptions{InstalledOnly: true})
 }
 
-func ListAll(
-	ctx context.Context,
-	catalog *snapcatalog.Reader,
-	snapdClient *snapd.Client,
-	shareProvidersPath string,
-) ([]Provider, error) {
-	return list(ctx, catalog, snapdClient, shareProvidersPath, listOptions{})
+func (s *service) List(ctx context.Context) ([]Provider, error) {
+	return s.list(ctx, listOptions{})
 }
 
-func list(
-	ctx context.Context,
-	catalog *snapcatalog.Reader,
-	snapdClient *snapd.Client,
-	shareProvidersPath string,
-	options listOptions,
-) ([]Provider, error) {
-
-	catalogProviders, err := CatalogSnapProviders(catalog)
+func (s *service) list(ctx context.Context, options listOptions) ([]Provider, error) {
+	catalogProviders, err := CatalogSnapProviders(s.catalog)
 	if errors.Is(err, snapcatalog.ErrNotConfigured) || errors.Is(err, os.ErrNotExist) {
 		catalogProviders = []Provider{}
 	} else if err != nil {
 		return nil, err
 	}
 
-	connectedProviders, err := ConnectedSnapProviders(shareProvidersPath)
+	connectedProviders, err := ConnectedSnapProviders(s.shareProvidersPath)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +172,7 @@ func list(
 			continue
 		}
 		if provider.Backend == BackendSnap {
-			state, err := snapProviderLifecycleState(ctx, snapdClient, provider.Name)
+			state, err := snapProviderLifecycleState(ctx, s.snapdClient, provider.Name)
 			if err != nil {
 				return nil, err
 			}

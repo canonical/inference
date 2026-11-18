@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/models"
+	"github.com/canonical/inference/internal/providers"
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
@@ -49,12 +51,9 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	providerModels, err := models.List(
-		cobraCmd.Context(),
-		cmd.SnapCatalog,
-		cmd.SnapdClient,
-		cmd.ShareProvidersPath,
-	)
+	providerService := providers.New(cmd.SnapCatalog, cmd.SnapdClient, cmd.ShareProvidersPath)
+	modelService := models.New(providerService, http.DefaultClient)
+	providerModels, err := modelService.List(cobraCmd.Context())
 	if err != nil {
 		return err
 	}

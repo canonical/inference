@@ -67,11 +67,9 @@ func main() {
 	go refreshCatalogPeriodically(ctx, catalogRefreshInterval, logger)
 
 	snapdClient := snapd.NewClient()
-	listProviders := func(ctx context.Context) ([]providers.Provider, error) {
-		return providers.ListAll(ctx, catalog, snapdClient, providerRoot)
-	}
+	providerService := providers.New(catalog, snapdClient, providerRoot)
 
-	handler := openaiproxy.NewModelsHandler(listProviders, newUpstreamClient(), logger)
+	handler := openaiproxy.NewModelsHandler(providerService, newUpstreamClient(), logger)
 	if err := handler.Refresh(ctx); err != nil {
 		logger.Warn("initializing provider models", "error", err)
 	}
