@@ -59,7 +59,7 @@ func TestList(t *testing.T) {
 			t.Fatalf("got %d providers, want %d: %+v", len(got), len(want), got)
 		}
 		for i := range want {
-			if !reflect.DeepEqual(got[i].Provider, want[i]) || got[i].Err != nil {
+			if !reflect.DeepEqual(got[i], want[i]) || got[i].Err != nil {
 				t.Fatalf("provider %d: got %+v, want %+v", i, got[i], want[i])
 			}
 		}
@@ -78,7 +78,7 @@ func TestList(t *testing.T) {
 			t.Fatalf("got %d providers, want %d: %+v", len(got), len(want), got)
 		}
 		for i := range want {
-			if !reflect.DeepEqual(got[i].Provider, want[i]) || got[i].Err != nil {
+			if !reflect.DeepEqual(got[i], want[i]) || got[i].Err != nil {
 				t.Fatalf("provider %d: got %+v, want %+v", i, got[i], want[i])
 			}
 		}

@@ -19,7 +19,7 @@ import (
 )
 
 func TestModelsHandlerServesDefaultResponse(t *testing.T) {
-	handler := NewModelsHandler(func(context.Context) ([]providers.ListedProvider, error) {
+	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
 		t.Fatal("default response request should not list providers")
 		return nil, nil
 	}, nil, discardLogger())
@@ -111,8 +111,8 @@ func TestModelsHandlerRetrievesModelFromSnapshot(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler := NewModelsHandler(func(context.Context) ([]providers.ListedProvider, error) {
-		return listed([]providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}), nil
+	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
+		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
 	}, upstream.Client(), discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
@@ -151,11 +151,11 @@ func TestModelsHandlerRejectsUnavailableUnqualifiedAndUnknownModelRetrieval(t *t
 	second := modelServer(t, "shared")
 	defer second.Close()
 
-	handler := NewModelsHandler(func(context.Context) ([]providers.ListedProvider, error) {
-		return listed([]providers.Provider{
+	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
+		return []providers.Provider{
 			{Name: "first", BaseURL: first.URL + "/v1"},
 			{Name: "second", BaseURL: second.URL + "/v1"},
-		}), nil
+		}, nil
 	}, first.Client(), discardLogger())
 
 	response := httptest.NewRecorder()
@@ -252,11 +252,11 @@ func TestModelsHandlerSkipsMisconfiguredProviders(t *testing.T) {
 }
 
 func TestModelsHandlerRejectsDuplicateProviderNames(t *testing.T) {
-	handler := NewModelsHandler(func(context.Context) ([]providers.ListedProvider, error) {
-		return listed([]providers.Provider{
+	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
+		return []providers.Provider{
 			{Name: "duplicate", BaseURL: "http://first.example/v1"},
 			{Name: "duplicate", BaseURL: "http://second.example/v1"},
-		}), nil
+		}, nil
 	}, http.DefaultClient, discardLogger())
 
 	err := handler.Refresh(context.Background())
@@ -319,11 +319,11 @@ func TestModelsHandlerPreservesSnapshotWhenRefreshFails(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler := NewModelsHandler(func(context.Context) ([]providers.ListedProvider, error) {
+	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
 		if fail.Load() {
 			return nil, errors.New("provider inventory unavailable")
 		}
-		return listed([]providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}), nil
+		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
 	}, upstream.Client(), discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
@@ -407,20 +407,12 @@ func writeProvider(t *testing.T, root, directory, name, baseURL string) {
 	}
 }
 
-func connectedProviderLister(root string) func(context.Context) ([]providers.ListedProvider, error) {
-	return func(context.Context) ([]providers.ListedProvider, error) {
+func connectedProviderLister(root string) func(context.Context) ([]providers.Provider, error) {
+	return func(context.Context) ([]providers.Provider, error) {
 		list, err := providers.ConnectedSnapProviders(root)
 		for i := range list {
 			list[i].State = providers.StateEnabled
 		}
 		return list, err
 	}
-}
-
-func listed(list []providers.Provider) []providers.ListedProvider {
-	result := make([]providers.ListedProvider, 0, len(list))
-	for _, provider := range list {
-		result = append(result, providers.ListedProvider{Provider: provider})
-	}
-	return result
 }

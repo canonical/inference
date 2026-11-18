@@ -45,7 +45,7 @@ func TestConnectedSnapProviders(t *testing.T) {
 		Connection: ConnectionConnected,
 		BaseURL:    "https://user:password@example.com/v1/?region=eu#backend",
 	}
-	if len(got) != 1 || !reflect.DeepEqual(got[0], ListedProvider{Provider: want}) {
+	if len(got) != 1 || !reflect.DeepEqual(got[0], want) {
 		t.Fatalf("got %+v, want [%+v]", got, want)
 	}
 }
@@ -79,13 +79,18 @@ func TestConnectedSnapProvidersReportsInvalidBaseURL(t *testing.T) {
 	assertSingleProviderError(t, got, want, "scheme must be http or https")
 }
 
-func assertSingleProviderError(t *testing.T, got []ListedProvider, want Provider, wantError string) {
+func assertSingleProviderError(t *testing.T, got []Provider, want Provider, wantError string) {
 	t.Helper()
-	if len(got) != 1 || !reflect.DeepEqual(got[0].Provider, want) {
-		t.Fatalf("got %+v, want provider %+v", got, want)
+	if len(got) != 1 {
+		t.Fatalf("got %+v, want one provider", got)
 	}
-	if got[0].Err == nil || !strings.Contains(got[0].Err.Error(), wantError) {
-		t.Fatalf("got error %v, want one containing %q", got[0].Err, wantError)
+	gotErr := got[0].Err
+	got[0].Err = nil
+	if !reflect.DeepEqual(got[0], want) {
+		t.Fatalf("got %+v, want provider %+v", got[0], want)
+	}
+	if gotErr == nil || !strings.Contains(gotErr.Error(), wantError) {
+		t.Fatalf("got error %v, want one containing %q", gotErr, wantError)
 	}
 }
 
@@ -206,7 +211,7 @@ func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
 		t.Fatalf("got %+v, want %+v", result, want)
 	}
 	for i := range want {
-		if !reflect.DeepEqual(result[i].Provider, want[i]) || result[i].Err != nil {
+		if !reflect.DeepEqual(result[i], want[i]) || result[i].Err != nil {
 			t.Fatalf("provider %d: got %+v, want %+v", i, result[i], want[i])
 		}
 	}

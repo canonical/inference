@@ -11,20 +11,20 @@ import (
 	"github.com/joho/godotenv"
 )
 
-func ConnectedSnapProviders(root string) ([]ListedProvider, error) {
+func ConnectedSnapProviders(root string) ([]Provider, error) {
 	if root == "" {
-		return []ListedProvider{}, nil
+		return []Provider{}, nil
 	}
 
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
-		return []ListedProvider{}, nil
+		return []Provider{}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("reading connected provider directory %q: %w", root, err)
 	}
 
-	providersByName := make(map[string]ListedProvider, len(entries))
+	providersByName := make(map[string]Provider, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -40,7 +40,7 @@ func ConnectedSnapProviders(root string) ([]ListedProvider, error) {
 		providersByName[provider.Name] = provider
 	}
 
-	providers := make([]ListedProvider, 0, len(providersByName))
+	providers := make([]Provider, 0, len(providersByName))
 	for _, provider := range providersByName {
 		providers = append(providers, provider)
 	}
@@ -49,10 +49,10 @@ func ConnectedSnapProviders(root string) ([]ListedProvider, error) {
 }
 
 // A provider that cannot be read is named after its directory so it can still be reported.
-func readConnectedProvider(root, directoryName string) (ListedProvider, bool) {
+func readConnectedProvider(root, directoryName string) (Provider, bool) {
 	values, err := godotenv.Read(filepath.Join(root, directoryName, "provider.env"))
 	if errors.Is(err, os.ErrNotExist) {
-		return ListedProvider{}, false
+		return Provider{}, false
 	}
 
 	name := values["SNAP_NAME"]
@@ -67,13 +67,13 @@ func readConnectedProvider(root, directoryName string) (ListedProvider, bool) {
 		name = directoryName
 	}
 
-	provider := ListedProvider{Provider: Provider{
+	provider := Provider{
 		Name:       name,
 		Backend:    BackendSnap,
 		State:      StateUnknown,
 		Connection: ConnectionConnected,
 		BaseURL:    baseURL,
-	}}
+	}
 	if err != nil {
 		provider.BaseURL = ""
 		provider.Err = fmt.Errorf("reading connected provider %q: %w", directoryName, err)

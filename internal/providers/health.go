@@ -23,7 +23,7 @@ const (
 	HealthError         HealthStatus = "error"
 )
 
-func CheckHealth(ctx context.Context, providers []ListedProvider) map[string]HealthStatus {
+func CheckHealth(ctx context.Context, providers []Provider) map[string]HealthStatus {
 	type result struct {
 		name   string
 		health HealthStatus

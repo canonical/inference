@@ -50,7 +50,7 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	listedProviders, err := providers.ListInstalled(
+	installed, err := providers.ListInstalled(
 		cobraCmd.Context(),
 		cmd.SnapCatalog,
 		cmd.SnapdClient,
@@ -58,11 +58,6 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	)
 	if err != nil {
 		return common.FriendlySnapdError(err)
-	}
-
-	installed := make([]providers.Provider, 0, len(listedProviders))
-	for _, listed := range listedProviders {
-		installed = append(installed, listed.Provider)
 	}
 
 	var output string

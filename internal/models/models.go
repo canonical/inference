@@ -63,13 +63,13 @@ func List(
 
 func Discover(
 	ctx context.Context,
-	allProviders []providers.ListedProvider,
+	allProviders []providers.Provider,
 	client *http.Client,
 ) ([]ProviderModels, error) {
-	availableProviders := make([]providers.ListedProvider, 0, len(allProviders))
+	availableProviders := make([]providers.Provider, 0, len(allProviders))
 	providerNames := make(map[string]struct{}, len(allProviders))
 	for _, provider := range allProviders {
-		if provider.Err == nil && !isQueryable(provider.Provider) {
+		if provider.Err == nil && !isQueryable(provider) {
 			continue
 		}
 		if provider.Name == "" {
@@ -102,7 +102,7 @@ func Discover(
 			upstreamModels, err := fetchModels(ctx, client, provider.BaseURL)
 			result.Err = err
 			if err == nil {
-				result.Models = normalizeModels(provider.Provider, upstreamModels)
+				result.Models = normalizeModels(provider, upstreamModels)
 				sort.Slice(result.Models, func(i, j int) bool {
 					return result.Models[i].NativeID < result.Models[j].NativeID
 				})

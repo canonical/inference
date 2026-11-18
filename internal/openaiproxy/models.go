@@ -25,7 +25,7 @@ const (
 )
 
 type ModelsHandler struct {
-	listProviders func(context.Context) ([]providers.ListedProvider, error)
+	listProviders func(context.Context) ([]providers.Provider, error)
 	client        *http.Client
 	baseLogger    *slog.Logger
 	refreshMu     sync.Mutex
@@ -68,7 +68,7 @@ type modelRoute struct {
 type routingSnapshot []modelRoute
 
 func NewModelsHandler(
-	listProviders func(context.Context) ([]providers.ListedProvider, error),
+	listProviders func(context.Context) ([]providers.Provider, error),
 	client *http.Client,
 	baseLogger *slog.Logger,
 ) *ModelsHandler {

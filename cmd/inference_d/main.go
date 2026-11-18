@@ -67,7 +67,7 @@ func main() {
 	go refreshCatalogPeriodically(ctx, catalogRefreshInterval, logger)
 
 	snapdClient := snapd.NewClient()
-	listProviders := func(ctx context.Context) ([]providers.ListedProvider, error) {
+	listProviders := func(ctx context.Context) ([]providers.Provider, error) {
 		return providers.ListAll(ctx, catalog, snapdClient, providerRoot)
 	}
 
