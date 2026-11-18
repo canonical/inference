@@ -102,9 +102,6 @@ func Find(
 	case 0:
 		return Provider{}, fmt.Errorf("unknown provider %q", name)
 	case 1:
-		if matches[0].Err != nil {
-			return Provider{}, fmt.Errorf("provider %q: %w", name, matches[0].Err)
-		}
 		return matches[0], nil
 	default:
 		return Provider{}, fmt.Errorf("ambiguous provider %q: matches multiple provider backends", name)
