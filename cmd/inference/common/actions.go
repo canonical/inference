@@ -33,8 +33,9 @@ func FriendlySnapdError(err error) error {
 	}
 }
 
+var pollInterval = 100 * time.Millisecond
+
 const (
-	pollInterval = 100 * time.Millisecond
 	abortTimeout = 10 * time.Second
 	// maxTransientPollRetries allows snapd to restart without hiding a
 	// persistently unavailable daemon.

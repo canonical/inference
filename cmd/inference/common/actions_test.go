@@ -49,6 +49,11 @@ func writeAsyncAccepted(w http.ResponseWriter, changeID string) {
 	_, _ = fmt.Fprintf(w, `{"type":"async","status":"Accepted","status-code":202,"change":%q}`, changeID)
 }
 
+func TestMain(m *testing.M) {
+	pollInterval = time.Millisecond
+	os.Exit(m.Run())
+}
+
 func TestProgressPrinter_NonTerminalPrintsEachStartedTaskOnce(t *testing.T) {
 	var buf bytes.Buffer
 	progress := newProgressPrinter(&buf)
