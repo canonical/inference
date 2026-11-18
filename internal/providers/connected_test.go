@@ -156,7 +156,7 @@ func TestConnectedSnapProvidersReportsDuplicateSnapName(t *testing.T) {
 	if got[0].Name != "same" || got[0].Err != nil || got[0].BaseURL != "http://localhost:8080/v1" {
 		t.Fatalf("got %+v, want the first provider untouched", got[0])
 	}
-	if got[1].Name != "same (invalid)" || got[1].BaseURL != "" ||
+	if got[1].Name != "same (duplicate)" || got[1].BaseURL != "" ||
 		got[1].Err == nil || !strings.Contains(got[1].Err.Error(), `duplicate provider name "same"`) {
 		t.Fatalf("got %+v, want the duplicate reported separately", got[1])
 	}
@@ -315,7 +315,7 @@ func TestConnectedSnapProvidersKeepsVerifiedProviderOnFallbackNameCollision(t *t
 	if got[0].Name != "healthy" || got[0].Err != nil || got[0].BaseURL != "http://localhost:8080/v1" {
 		t.Fatalf("got %+v, want the verified provider untouched", got[0])
 	}
-	if got[1].Name != "healthy (invalid)" || got[1].Err == nil {
+	if got[1].Name != "healthy (duplicate)" || got[1].Err == nil {
 		t.Fatalf("got %+v, want the invalid entry reported separately", got[1])
 	}
 }
@@ -340,7 +340,7 @@ func TestListKeepsCatalogProviderOnFallbackNameCollision(t *testing.T) {
 	if got[0].Name != "catalog-snap" || got[0].Err != nil || got[0].State != StateEnabled {
 		t.Fatalf("got %+v, want the catalog provider untouched", got[0])
 	}
-	if got[1].Name != "catalog-snap (invalid)" || got[1].Err == nil {
+	if got[1].Name != "catalog-snap (duplicate)" || got[1].Err == nil {
 		t.Fatalf("got %+v, want the invalid entry reported separately", got[1])
 	}
 }
@@ -360,7 +360,7 @@ func TestConnectedSnapProvidersPrefersValidProviderOnDuplicateSnapName(t *testin
 	if got[0].Name != "same" || got[0].Err != nil || got[0].BaseURL != "http://localhost:8081/v1" {
 		t.Fatalf("got %+v, want the valid provider to keep the name", got[0])
 	}
-	if got[1].Name != "same (invalid)" || got[1].Err == nil || !strings.Contains(got[1].Err.Error(), "OPENAI_BASE_URL is empty") {
+	if got[1].Name != "same (duplicate)" || got[1].Err == nil || !strings.Contains(got[1].Err.Error(), "OPENAI_BASE_URL is empty") {
 		t.Fatalf("got %+v, want the misconfigured provider to keep its own error", got[1])
 	}
 }

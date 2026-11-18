@@ -160,7 +160,7 @@ func list(
 		key := provider.Identity()
 		existing, ok := merged[key]
 		if ok && provider.nameUnverified {
-			provider.Name = invalidDisplayName(provider.Name)
+			provider.Name = duplicateDisplayName(provider.Name)
 			key = provider.Identity()
 			existing, ok = merged[key]
 		}

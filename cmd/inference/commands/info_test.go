@@ -501,7 +501,7 @@ func TestInfoCompletionSuggestsProvidersWithDuplicateSnapNames(t *testing.T) {
 	if err := execute(rootCmd, "__complete", "info", "gemma"); err != nil {
 		t.Fatalf("completion: %v", err)
 	}
-	for _, want := range []string{"gemma4\n", "gemma4 (invalid)\n"} {
+	for _, want := range []string{"gemma4\n", "gemma4 (duplicate)\n"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Errorf("completion output %q does not suggest %q", stdout.String(), want)
 		}
