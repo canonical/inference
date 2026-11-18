@@ -11,6 +11,7 @@ import (
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
 	"github.com/mattn/go-runewidth"
+	"github.com/spf13/cobra"
 )
 
 func TestInfoRendering(t *testing.T) {
@@ -473,5 +474,36 @@ func TestInfo_ProviderWithConfigurationErrorIsRenderedWithWarning(t *testing.T) 
 	if !strings.Contains(stderr.String(), "Warning:") || !strings.Contains(stderr.String(), envPath) ||
 		!strings.Contains(stderr.String(), "OPENAI_BASE_URL is empty") {
 		t.Errorf("stderr = %q, want a warning naming %q and the cause", stderr.String(), envPath)
+	}
+}
+
+func TestInfoCompletionSuggestsProvidersWithDuplicateSnapNames(t *testing.T) {
+	root := t.TempDir()
+	for dir, env := range map[string]string{
+		"provider":   "SNAP_NAME=gemma4\nUNIX_SOCKET=x.sock\n",
+		"provider-2": "SNAP_NAME=gemma4\nOPENAI_BASE_URL=http://localhost:8081/v1\n",
+	} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, dir, "provider.env"), []byte(env), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, stdout, _ := newTestContext()
+	ctx.SnapCatalog = &snapcatalog.Reader{}
+	ctx.SnapdClient, _ = snapd.NewFakeServer(t, map[string]string{"gemma4": snapd.SnapStatusActive})
+	ctx.ShareProvidersPath = root
+
+	rootCmd := &cobra.Command{Use: "inference"}
+	rootCmd.SetOut(ctx.Stdout)
+	rootCmd.AddCommand(Info(ctx))
+	if err := execute(rootCmd, "__complete", "info", "gemma"); err != nil {
+		t.Fatalf("completion: %v", err)
+	}
+	for _, want := range []string{"gemma4\n", "gemma4 (invalid)\n"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("completion output %q does not suggest %q", stdout.String(), want)
+		}
 	}
 }
