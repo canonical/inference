@@ -63,7 +63,8 @@ func readConnectedProvider(root, directoryName string) (Provider, bool) {
 	if err == nil {
 		err = verifyBaseURL(baseURL)
 	}
-	if name == "" {
+	nameUnverified := name == ""
+	if nameUnverified {
 		name = directoryName
 	}
 
@@ -73,6 +74,8 @@ func readConnectedProvider(root, directoryName string) (Provider, bool) {
 		State:      StateUnknown,
 		Connection: ConnectionConnected,
 		BaseURL:    baseURL,
+
+		nameUnverified: nameUnverified,
 	}
 	if err != nil {
 		provider.BaseURL = ""

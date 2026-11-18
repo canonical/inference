@@ -54,6 +54,8 @@ type Provider struct {
 	BaseURL    string
 	Engines    []Engine
 	Err        error
+
+	nameUnverified bool
 }
 
 type ProviderIdentity struct {
@@ -179,7 +181,7 @@ func list(
 		if options.Name != "" && provider.Name != options.Name {
 			continue
 		}
-		if provider.Backend == BackendSnap && provider.Err == nil {
+		if provider.Backend == BackendSnap && !provider.nameUnverified {
 			state, err := snapProviderLifecycleState(ctx, snapdClient, provider.Name)
 			if err != nil {
 				return nil, err
@@ -187,7 +189,7 @@ func list(
 			provider.State = state
 		}
 
-		if options.InstalledOnly && provider.Err == nil && !provider.Installed() {
+		if options.InstalledOnly && !provider.nameUnverified && !provider.Installed() {
 			continue
 		}
 		result = append(result, provider)

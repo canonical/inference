@@ -114,13 +114,13 @@ func TestConnectedSnapProvidersReportsInvalidEntries(t *testing.T) {
 		{
 			name: "missing snap name",
 			envs: map[string]string{"custom": "OPENAI_BASE_URL=http://localhost:8081/v1\n"},
-			want: Provider{Name: "custom", Backend: BackendSnap, State: StateUnknown, Connection: ConnectionConnected},
+			want: Provider{Name: "custom", Backend: BackendSnap, State: StateUnknown, Connection: ConnectionConnected, nameUnverified: true},
 			err:  "SNAP_NAME is empty",
 		},
 		{
 			name: "unreadable env file",
 			envs: map[string]string{"custom": "SNAP_NAME='unterminated\n"},
-			want: Provider{Name: "custom", Backend: BackendSnap, State: StateUnknown, Connection: ConnectionConnected},
+			want: Provider{Name: "custom", Backend: BackendSnap, State: StateUnknown, Connection: ConnectionConnected, nameUnverified: true},
 			err:  `reading connected provider "custom"`,
 		},
 	}
@@ -234,7 +234,7 @@ func TestListReportsConnectedProviderWithoutBaseURL(t *testing.T) {
 	want := Provider{
 		Name:       "socket-only",
 		Backend:    BackendSnap,
-		State:      StateUnknown,
+		State:      StateEnabled,
 		Connection: ConnectionConnected,
 	}
 	assertSingleProviderError(t, got, want, "OPENAI_BASE_URL is empty")
