@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/canonical/inference/cmd/inference/common"
@@ -119,12 +120,17 @@ func TestStatusReportsMisconfiguredProvidersAsError(t *testing.T) {
 				ShareProvidersPath: root,
 			}}
 
-			got, err := cmd.providerHealth(context.Background())
+			health, warnings, err := cmd.providerStatus(context.Background())
 			if err != nil {
-				t.Fatalf("providerHealth: %v", err)
+				t.Fatalf("providerStatus: %v", err)
 			}
-			if got[tt.provider] != "error" {
-				t.Fatalf("health = %q, want %q", got[tt.provider], "error")
+			if health[tt.provider] != "error" {
+				t.Fatalf("health = %q, want %q", health[tt.provider], "error")
+			}
+			wantPath := filepath.Join(providerDir, "provider.env")
+			if len(warnings) != 1 || !strings.Contains(warnings[0], wantPath) ||
+				!strings.Contains(warnings[0], tt.provider) {
+				t.Fatalf("warnings = %q, want one naming provider %q and file %q", warnings, tt.provider, wantPath)
 			}
 		})
 	}

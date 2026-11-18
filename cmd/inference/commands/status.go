@@ -81,7 +81,7 @@ func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error)
 		return statusOutput{}, common.FriendlySnapdError(err)
 	}
 
-	health, err := cmd.providerHealth(ctx)
+	health, warnings, err := cmd.providerStatus(ctx)
 	if err != nil {
 		return statusOutput{}, err
 	}
@@ -95,11 +95,12 @@ func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error)
 				BaseURL: cmd.proxyOpenAIBaseURL(),
 			},
 		},
-		Health: health,
+		Health:   health,
+		Warnings: warnings,
 	}, nil
 }
 
-func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string, error) {
+func (cmd *statusCommand) providerStatus(ctx context.Context) (map[string]string, []string, error) {
 	list, err := providers.ListInstalled(
 		ctx,
 		cmd.SnapCatalog,
@@ -107,18 +108,31 @@ func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string
 		cmd.ShareProvidersPath,
 	)
 	if err != nil {
-		return nil, common.FriendlySnapdError(err)
+		return nil, nil, common.FriendlySnapdError(err)
 	}
+	return providerHealth(ctx, list), providerWarnings(list), nil
+}
 
+func providerHealth(ctx context.Context, list []providers.Provider) map[string]string {
 	health := providers.CheckHealth(ctx, list)
 	if health == nil {
-		return nil, nil
+		return nil
 	}
 	output := make(map[string]string, len(health))
 	for name, status := range health {
 		output[name] = string(status)
 	}
-	return output, nil
+	return output
+}
+
+func providerWarnings(list []providers.Provider) []string {
+	var warnings []string
+	for _, provider := range list {
+		if provider.Err != nil {
+			warnings = append(warnings, fmt.Sprintf("provider %q: %v", provider.Name, provider.Err))
+		}
+	}
+	return warnings
 }
 
 func (cmd *statusCommand) proxyOpenAIBaseURL() string {

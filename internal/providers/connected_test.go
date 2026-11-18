@@ -121,7 +121,7 @@ func TestConnectedSnapProvidersReportsInvalidEntries(t *testing.T) {
 			name: "unreadable env file",
 			envs: map[string]string{"custom": "SNAP_NAME='unterminated\n"},
 			want: Provider{Name: "custom", Backend: BackendSnap, State: StateUnknown, Connection: ConnectionConnected, nameUnverified: true},
-			err:  `reading connected provider "custom"`,
+			err:  "unterminated quoted value",
 		},
 	}
 

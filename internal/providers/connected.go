@@ -61,7 +61,8 @@ func ConnectedSnapProviders(root string) ([]Provider, error) {
 
 // A provider that cannot be read is named after its directory so it can still be reported.
 func readConnectedProvider(root, directoryName string) (Provider, bool) {
-	values, err := godotenv.Read(filepath.Join(root, directoryName, "provider.env"))
+	envPath := filepath.Join(root, directoryName, "provider.env")
+	values, err := godotenv.Read(envPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return Provider{}, false
 	}
@@ -90,7 +91,7 @@ func readConnectedProvider(root, directoryName string) (Provider, bool) {
 	}
 	if err != nil {
 		provider.BaseURL = ""
-		provider.Err = fmt.Errorf("reading connected provider %q: %w", directoryName, err)
+		provider.Err = fmt.Errorf("%s: %w", envPath, err)
 	}
 	return provider, true
 }
@@ -105,6 +106,10 @@ func verifyBaseURL(value string) error {
 	}
 	baseURL, err := url.Parse(value)
 	if err != nil {
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			err = urlErr.Err
+		}
 		return fmt.Errorf("parsing OPENAI_BASE_URL: %w", err)
 	}
 	if baseURL.Scheme != "http" && baseURL.Scheme != "https" {
