@@ -291,3 +291,48 @@ func TestListFailsWhenConnectedSourceFails(t *testing.T) {
 		t.Fatal("got nil error, want connected source error")
 	}
 }
+
+func TestConnectedSnapProvidersKeepsVerifiedProviderOnFallbackNameCollision(t *testing.T) {
+	root := t.TempDir()
+	writeProviderEnv(t, root, "healthy-mount", "SNAP_NAME=healthy\nOPENAI_BASE_URL=http://localhost:8080/v1\n")
+	writeProviderEnv(t, root, "healthy", "OPENAI_BASE_URL=http://localhost:8081/v1\n")
+
+	got, err := ConnectedSnapProviders(root)
+	if err != nil {
+		t.Fatalf("ConnectedSnapProviders: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %+v, want two providers", got)
+	}
+	if got[0].Name != "healthy" || got[0].Err != nil || got[0].BaseURL != "http://localhost:8080/v1" {
+		t.Fatalf("got %+v, want the verified provider untouched", got[0])
+	}
+	if got[1].Name != "healthy (invalid)" || got[1].Err == nil {
+		t.Fatalf("got %+v, want the invalid entry reported separately", got[1])
+	}
+}
+
+func TestListKeepsCatalogProviderOnFallbackNameCollision(t *testing.T) {
+	root := t.TempDir()
+	writeProviderEnv(t, root, "catalog-snap", "OPENAI_BASE_URL=http://localhost:8081/v1\n")
+	client, _ := snapd.NewFakeServer(t, map[string]string{"catalog-snap": snapd.SnapStatusActive})
+
+	got, err := ListInstalled(
+		context.Background(),
+		snapcatalog.WriteFakeCatalog(t, `[{"snap":"catalog-snap","model_name":"Catalog","repo_url":"https://example.com/c"}]`),
+		client,
+		root,
+	)
+	if err != nil {
+		t.Fatalf("ListInstalled: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %+v, want two providers", got)
+	}
+	if got[0].Name != "catalog-snap" || got[0].Err != nil || got[0].State != StateEnabled {
+		t.Fatalf("got %+v, want the catalog provider untouched", got[0])
+	}
+	if got[1].Name != "catalog-snap (invalid)" || got[1].Err == nil {
+		t.Fatalf("got %+v, want the invalid entry reported separately", got[1])
+	}
+}

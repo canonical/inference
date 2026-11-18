@@ -25,6 +25,7 @@ func ConnectedSnapProviders(root string) ([]Provider, error) {
 	}
 
 	providersByName := make(map[string]Provider, len(entries))
+	var unverified []Provider
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -33,9 +34,19 @@ func ConnectedSnapProviders(root string) ([]Provider, error) {
 		if !found {
 			continue
 		}
+		if provider.nameUnverified {
+			unverified = append(unverified, provider)
+			continue
+		}
 		if _, exists := providersByName[provider.Name]; exists {
 			provider.BaseURL = ""
 			provider.Err = fmt.Errorf("duplicate provider name %q", provider.Name)
+		}
+		providersByName[provider.Name] = provider
+	}
+	for _, provider := range unverified {
+		if _, exists := providersByName[provider.Name]; exists {
+			provider.Name = unverifiedDisplayName(provider.Name)
 		}
 		providersByName[provider.Name] = provider
 	}
@@ -82,6 +93,10 @@ func readConnectedProvider(root, directoryName string) (Provider, bool) {
 		provider.Err = fmt.Errorf("reading connected provider %q: %w", directoryName, err)
 	}
 	return provider, true
+}
+
+func unverifiedDisplayName(directoryName string) string {
+	return directoryName + " (invalid)"
 }
 
 func verifyBaseURL(value string) error {

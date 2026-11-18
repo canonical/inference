@@ -162,7 +162,13 @@ func list(
 	}
 	for _, provider := range connectedProviders {
 		key := provider.Identity()
-		if existing, ok := merged[key]; ok {
+		existing, ok := merged[key]
+		if ok && provider.nameUnverified {
+			provider.Name = unverifiedDisplayName(provider.Name)
+			key = provider.Identity()
+			existing, ok = merged[key]
+		}
+		if ok {
 			existing.Connection = provider.Connection
 			existing.BaseURL = provider.BaseURL
 			existing.Err = provider.Err
