@@ -33,10 +33,7 @@ func ConnectedSnapProviders(root string) ([]Provider, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		provider, envPath, err := readConnectedProvider(root, entry.Name())
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
+		provider, envPath := readConnectedProvider(root, entry.Name())
 		if provider.nameUnverified {
 			unverified = append(unverified, provider)
 			continue
@@ -91,15 +88,11 @@ func (r *connectedRegistry) addUnverified(provider Provider) {
 	r.byName[provider.Name] = provider
 }
 
-// The returned error is only os.ErrNotExist, when the directory has no provider.env.
-// Problems with the file content are reported in Provider.Err. A provider that cannot be read
-// is named after its directory so it can still be reported.
-func readConnectedProvider(root, directoryName string) (Provider, string, error) {
+// Problems with the directory or the file content are reported in Provider.Err. A provider that
+// cannot be read, or has no provider.env, is named after its directory so it can still be reported.
+func readConnectedProvider(root, directoryName string) (Provider, string) {
 	envPath := filepath.Join(root, directoryName, "provider.env")
 	values, err := godotenv.Read(envPath)
-	if errors.Is(err, os.ErrNotExist) {
-		return Provider{}, "", err
-	}
 
 	name := values["SNAP_NAME"]
 	baseURL := values["OPENAI_BASE_URL"]
@@ -125,9 +118,13 @@ func readConnectedProvider(root, directoryName string) (Provider, string, error)
 	}
 	if err != nil {
 		provider.BaseURL = ""
-		provider.Err = fmt.Errorf("%s: %w", envPath, err)
+		if errors.Is(err, os.ErrNotExist) {
+			provider.Err = fmt.Errorf("%s does not have a provider.env file", filepath.Dir(envPath))
+		} else {
+			provider.Err = fmt.Errorf("%s: %w", envPath, err)
+		}
 	}
-	return provider, envPath, nil
+	return provider, envPath
 }
 
 func demoteDuplicate(provider Provider, envPath, keptPath string, taken func(string) bool) Provider {

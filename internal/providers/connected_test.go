@@ -30,9 +30,6 @@ func TestConnectedSnapProviders(t *testing.T) {
 		OPENAI_BASE_URL="https://user:password@example.com/v1/?region=eu#backend"
 		SNAP_NAME=custom
 	`)
-	if err := os.Mkdir(filepath.Join(root, "without-env"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 
 	got, err := ConnectedSnapProviders(root)
 	if err != nil {
@@ -48,6 +45,20 @@ func TestConnectedSnapProviders(t *testing.T) {
 	if len(got) != 1 || !reflect.DeepEqual(got[0], want) {
 		t.Fatalf("got %+v, want [%+v]", got, want)
 	}
+}
+
+func TestConnectedSnapProvidersReportsDirectoryWithoutProviderEnv(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "without-env"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ConnectedSnapProviders(root)
+	if err != nil {
+		t.Fatalf("ConnectedSnapProviders: %v", err)
+	}
+	want := Provider{Name: "without-env", Backend: BackendSnap, State: StateUnknown, Connection: ConnectionConnected, nameUnverified: true}
+	assertSingleProviderError(t, got, want, filepath.Join(root, "without-env")+" does not have a provider.env file")
 }
 
 func TestConnectedSnapProvidersReportsMissingBaseURL(t *testing.T) {
