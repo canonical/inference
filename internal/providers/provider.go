@@ -159,13 +159,15 @@ func list(
 	for _, provider := range connectedProviders {
 		key := provider.Identity()
 		existing, ok := merged[key]
+		// The name of this entry was only guessed from its directory, so it must not be merged into
+		// a catalog provider that happens to share it. Keep it as a separate entry under a free name.
 		if ok && provider.nameUnverified {
 			provider.Name = duplicateDisplayName(provider.Name, func(name string) bool {
 				_, taken := merged[ProviderIdentity{Backend: provider.Backend, Name: name}]
 				return taken
 			})
 			key = provider.Identity()
-			existing, ok = merged[key]
+			ok = false
 		}
 		if ok {
 			existing.Connection = provider.Connection
