@@ -24,8 +24,10 @@ func ConnectedSnapProviders(root string) ([]Provider, error) {
 		return nil, fmt.Errorf("reading connected provider directory %q: %w", root, err)
 	}
 
-	providersByName := make(map[string]Provider, len(entries))
-	envPaths := make(map[string]string, len(entries))
+	registry := connectedRegistry{
+		byName:   make(map[string]Provider, len(entries)),
+		envPaths: make(map[string]string, len(entries)),
+	}
 	var unverified []Provider
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -39,38 +41,54 @@ func ConnectedSnapProviders(root string) ([]Provider, error) {
 			unverified = append(unverified, provider)
 			continue
 		}
-		if kept, exists := providersByName[provider.Name]; exists {
-			keptPath := envPaths[kept.Name]
-			if kept.Err != nil && provider.Err == nil {
-				kept, provider = provider, kept
-				keptPath, envPath = envPath, keptPath
-			}
-			providersByName[kept.Name] = kept
-			envPaths[kept.Name] = keptPath
-			provider = demoteDuplicate(provider, envPath, keptPath, func(name string) bool {
-				_, taken := providersByName[name]
-				return taken
-			})
-		}
-		providersByName[provider.Name] = provider
-		envPaths[provider.Name] = envPath
+		registry.addVerified(provider, envPath)
 	}
 	for _, provider := range unverified {
-		if _, exists := providersByName[provider.Name]; exists {
-			provider.Name = duplicateDisplayName(provider.Name, func(name string) bool {
-				_, taken := providersByName[name]
-				return taken
-			})
-		}
-		providersByName[provider.Name] = provider
+		registry.addUnverified(provider)
 	}
 
-	providers := make([]Provider, 0, len(providersByName))
-	for _, provider := range providersByName {
+	providers := make([]Provider, 0, len(registry.byName))
+	for _, provider := range registry.byName {
 		providers = append(providers, provider)
 	}
 	sort.Slice(providers, func(i, j int) bool { return providers[i].Name < providers[j].Name })
 	return providers, nil
+}
+
+type connectedRegistry struct {
+	byName   map[string]Provider
+	envPaths map[string]string
+}
+
+func (r *connectedRegistry) isTaken(name string) bool {
+	_, taken := r.byName[name]
+	return taken
+}
+
+// When two providers claim the same SNAP_NAME, a working provider keeps the name over a broken one,
+// so that a misconfigured entry cannot take down a healthy provider. Otherwise the first one wins.
+// The other entry stays visible under a different name, so that its error is still reported.
+func (r *connectedRegistry) addVerified(provider Provider, envPath string) {
+	if kept, exists := r.byName[provider.Name]; exists {
+		keptPath := r.envPaths[kept.Name]
+		if kept.Err != nil && provider.Err == nil {
+			kept, provider = provider, kept
+			keptPath, envPath = envPath, keptPath
+		}
+		r.byName[kept.Name] = kept
+		r.envPaths[kept.Name] = keptPath
+		provider = demoteDuplicate(provider, envPath, keptPath, r.isTaken)
+	}
+	r.byName[provider.Name] = provider
+	r.envPaths[provider.Name] = envPath
+}
+
+// Entries named after their directory are added last, so they never take a name from a verified provider.
+func (r *connectedRegistry) addUnverified(provider Provider) {
+	if r.isTaken(provider.Name) {
+		provider.Name = duplicateDisplayName(provider.Name, r.isTaken)
+	}
+	r.byName[provider.Name] = provider
 }
 
 // A provider that cannot be read is named after its directory so it can still be reported.
