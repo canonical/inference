@@ -2,11 +2,9 @@ package commands
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net"
-	"slices"
 	"strings"
 
 	"github.com/canonical/inference/cmd/inference/common"
@@ -53,44 +51,12 @@ func Info(ctx *common.Context) *cobra.Command {
 		Short:             "Show information about a provider",
 		Long:              "Show information about an inference provider, including its state, API details, and available engines with their models.",
 		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: cmd.completeProviderNames,
+		ValidArgsFunction: common.CompleteSnapNames,
 		SilenceUsage:      true,
 		RunE:              cmd.run,
 	}
 	cobraCmd.Flags().StringVar(&cmd.format, "format", "table", "output format [table|json]")
 	return cobraCmd
-}
-
-func (cmd *infoCommand) completeProviderNames(
-	cobraCmd *cobra.Command,
-	args []string,
-	toComplete string,
-) ([]string, cobra.ShellCompDirective) {
-	if len(args) > 0 {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-
-	ctx := cobraCmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	all, err := providers.ListAll(
-		ctx,
-		cmd.SnapCatalog,
-		cmd.SnapdClient,
-		cmd.ShareProvidersPath,
-	)
-	if err != nil {
-		return common.CompleteSnapNames(cobraCmd, args, toComplete)
-	}
-
-	names := make([]string, 0, len(all))
-	for _, provider := range all {
-		if strings.HasPrefix(provider.Name, toComplete) && !slices.Contains(names, provider.Name) {
-			names = append(names, provider.Name)
-		}
-	}
-	return names, cobra.ShellCompDirectiveNoFileComp
 }
 
 func (cmd *infoCommand) run(cobraCmd *cobra.Command, args []string) error {
