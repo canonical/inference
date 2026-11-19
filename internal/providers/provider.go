@@ -11,7 +11,6 @@ import (
 	"github.com/canonical/inference/internal/snapd"
 )
 
-//revive:disable:exported Backend type and values are self-explanatory.
 type ProviderBackend string
 
 const (
@@ -35,8 +34,6 @@ const (
 	ConnectionConnected     ConnectionState = "connected"
 	ConnectionNotApplicable ConnectionState = "not applicable"
 )
-
-//revive:enable:exported
 
 // Engine represents an inference provider's runtime and model details
 type Engine struct {
