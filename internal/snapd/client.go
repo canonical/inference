@@ -14,7 +14,6 @@ import (
 	"time"
 )
 
-//revive:disable:exported Exported sentinel errors are self-explanatory.
 var (
 	ErrAccessDenied        = errors.New("snapd socket denied access")
 	ErrSocketUnreachable   = errors.New("cannot reach snapd socket")
@@ -24,8 +23,6 @@ var (
 	ErrInterfacesUnchanged = errors.New("interface connection is unchanged")
 	ErrTransient           = errors.New("temporary snapd communication failure")
 )
-
-//revive:enable:exported
 
 const (
 	snapAlreadyInstalledKind = "snap-already-installed"
