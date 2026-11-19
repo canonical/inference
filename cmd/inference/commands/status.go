@@ -101,12 +101,8 @@ func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error)
 }
 
 func (cmd *statusCommand) providerStatus(ctx context.Context) (map[string]string, []string, error) {
-	list, err := providers.ListInstalled(
-		ctx,
-		cmd.SnapCatalog,
-		cmd.SnapdClient,
-		cmd.ShareProvidersPath,
-	)
+	providerService := providers.NewService(cmd.SnapCatalog, cmd.SnapdClient, cmd.ShareProvidersPath)
+	list, err := providerService.ListInstalled(ctx)
 	if err != nil {
 		return nil, nil, common.FriendlySnapdError(err)
 	}

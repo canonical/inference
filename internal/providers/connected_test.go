@@ -201,7 +201,7 @@ func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
 		"custom":    snapd.SnapStatusInstalled,
 	})
 
-	result, err := ListAll(context.Background(), catalog, client, root)
+	result, err := NewService(catalog, client, root).List(context.Background())
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -242,12 +242,11 @@ func TestListReportsConnectedProviderWithoutBaseURL(t *testing.T) {
 	writeProviderEnv(t, root, "socket-mount", "SNAP_NAME=socket-only\nUNIX_SOCKET=x.sock\n")
 	client, _ := snapd.NewFakeServer(t, map[string]string{"socket-only": snapd.SnapStatusActive})
 
-	got, err := ListInstalled(
-		context.Background(),
+	got, err := NewService(
 		snapcatalog.WriteFakeCatalog(t, `[]`),
 		client,
 		root,
-	)
+	).ListInstalled(context.Background())
 	if err != nil {
 		t.Fatalf("ListInstalled: %v", err)
 	}
@@ -266,12 +265,7 @@ func TestListFailsWhenSnapStatusCannotBeRead(t *testing.T) {
 	writeProviderEnv(t, root, "custom-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=custom\n")
 	client := &snapd.Client{Socket: filepath.Join(t.TempDir(), "missing.socket")}
 
-	_, err := ListInstalled(
-		context.Background(),
-		catalog,
-		client,
-		root,
-	)
+	_, err := NewService(catalog, client, root).ListInstalled(context.Background())
 	if err == nil {
 		t.Fatal("got nil error, want snapd error")
 	}
@@ -282,12 +276,7 @@ func TestListFailsWhenCatalogFails(t *testing.T) {
 	writeProviderEnv(t, root, "custom-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=custom\n")
 	client, _ := snapd.NewFakeServer(t, map[string]string{"custom": snapd.SnapStatusActive})
 
-	_, err := ListAll(
-		context.Background(),
-		snapcatalog.WriteFakeCatalog(t, "not json"),
-		client,
-		root,
-	)
+	_, err := NewService(snapcatalog.WriteFakeCatalog(t, "not json"), client, root).List(context.Background())
 	if err == nil {
 		t.Fatal("got nil error, want catalog error")
 	}
@@ -301,12 +290,7 @@ func TestListFailsWhenConnectedSourceFails(t *testing.T) {
 
 	catalog := snapcatalog.WriteFakeCatalog(t, `[]`)
 	client, _ := snapd.NewFakeServer(t, nil)
-	_, err := ListAll(
-		context.Background(),
-		catalog,
-		client,
-		root,
-	)
+	_, err := NewService(catalog, client, root).List(context.Background())
 	if err == nil {
 		t.Fatal("got nil error, want connected source error")
 	}
@@ -337,12 +321,11 @@ func TestListKeepsCatalogProviderOnFallbackNameCollision(t *testing.T) {
 	writeProviderEnv(t, root, "catalog-snap", "OPENAI_BASE_URL=http://localhost:8081/v1\n")
 	client, _ := snapd.NewFakeServer(t, map[string]string{"catalog-snap": snapd.SnapStatusActive})
 
-	got, err := ListInstalled(
-		context.Background(),
+	got, err := NewService(
 		snapcatalog.WriteFakeCatalog(t, `[{"snap":"catalog-snap","model_name":"Catalog","repo_url":"https://example.com/c"}]`),
 		client,
 		root,
-	)
+	).ListInstalled(context.Background())
 	if err != nil {
 		t.Fatalf("ListInstalled: %v", err)
 	}

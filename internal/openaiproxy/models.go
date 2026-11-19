@@ -25,12 +25,12 @@ const (
 )
 
 type ModelsHandler struct {
-	listProviders func(context.Context) ([]providers.Provider, error)
-	client        *http.Client
-	baseLogger    *slog.Logger
-	refreshMu     sync.Mutex
-	snapshot      atomic.Pointer[routingSnapshot]
-	requestID     atomic.Uint64
+	models     models.Service
+	client     *http.Client
+	baseLogger *slog.Logger
+	refreshMu  sync.Mutex
+	snapshot   atomic.Pointer[routingSnapshot]
+	requestID  atomic.Uint64
 }
 
 type modelsResponse struct {
@@ -68,7 +68,7 @@ type modelRoute struct {
 type routingSnapshot []modelRoute
 
 func NewModelsHandler(
-	listProviders func(context.Context) ([]providers.Provider, error),
+	providerService providers.Service,
 	client *http.Client,
 	baseLogger *slog.Logger,
 ) *ModelsHandler {
@@ -78,7 +78,11 @@ func NewModelsHandler(
 	if baseLogger == nil {
 		baseLogger = slog.Default()
 	}
-	return &ModelsHandler{listProviders: listProviders, client: client, baseLogger: baseLogger}
+	return &ModelsHandler{
+		models:     models.NewService(providerService, client),
+		client:     client,
+		baseLogger: baseLogger,
+	}
 }
 
 func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -206,11 +210,7 @@ func (h *ModelsHandler) refresh(ctx context.Context, logger *slog.Logger) (*rout
 
 func (h *ModelsHandler) refreshLocked(ctx context.Context, logger *slog.Logger) (*routingSnapshot, error) {
 	started := time.Now()
-	allProviders, err := h.listProviders(ctx)
-	if err != nil {
-		return nil, err
-	}
-	providerModels, err := models.Discover(ctx, allProviders, h.client)
+	providerModels, err := h.models.List(ctx)
 	if err != nil {
 		return nil, err
 	}

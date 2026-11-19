@@ -11,7 +11,31 @@ import (
 	"github.com/canonical/inference/internal/providers"
 )
 
-func TestDiscoverReportsModelsAndErrorsPerProvider(t *testing.T) {
+type staticProviders struct {
+	providers.Service
+	list []providers.Provider
+	err  error
+}
+
+func (p staticProviders) List(context.Context) ([]providers.Provider, error) {
+	return p.list, p.err
+}
+
+func newService(list []providers.Provider, client *http.Client) Service {
+	return NewService(staticProviders{list: list}, client)
+}
+
+func TestListReturnsProviderListingError(t *testing.T) {
+	listErr := errors.New("snapd unavailable")
+	service := NewService(staticProviders{err: listErr}, http.DefaultClient)
+
+	_, err := service.List(context.Background())
+	if !errors.Is(err, listErr) {
+		t.Fatalf("got error %v, want %v", err, listErr)
+	}
+}
+
+func TestListReportsModelsAndErrorsPerProvider(t *testing.T) {
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
 			t.Errorf("path = %q, want /v1/models", r.URL.Path)
@@ -40,7 +64,7 @@ func TestDiscoverReportsModelsAndErrorsPerProvider(t *testing.T) {
 		Name: "socket-only", Backend: providers.BackendSnap, State: providers.StateUnknown, Connection: providers.ConnectionConnected,
 		Err: errors.New("OPENAI_BASE_URL is empty"),
 	})
-	got, err := Discover(context.Background(), listedProviders, first.Client())
+	got, err := newService(listedProviders, first.Client()).List(context.Background())
 	if err != nil {
 		t.Fatal("expected no error, got", err)
 	}
@@ -95,12 +119,12 @@ func TestDiscoverReportsModelsAndErrorsPerProvider(t *testing.T) {
 	}
 }
 
-func TestDiscoverReportsInvalidBaseURLsPerProvider(t *testing.T) {
+func TestListReportsInvalidBaseURLsPerProvider(t *testing.T) {
 	list := []providers.Provider{
 		{Name: "bad-scheme", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: "ftp://user:secret@example.com/v1"},
 		{Name: "unparsable", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: "http://user:secret@exa mple.com/v1"},
 	}
-	got, err := Discover(context.Background(), list, http.DefaultClient)
+	got, err := newService(list, http.DefaultClient).List(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +140,7 @@ func TestDiscoverReportsInvalidBaseURLsPerProvider(t *testing.T) {
 	}
 }
 
-func TestDiscoverPreservesProviderErrorsWithoutRequests(t *testing.T) {
+func TestListPreservesProviderErrorsWithoutRequests(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("unexpected request for a provider with a configuration error")
 		http.Error(w, "unexpected request", http.StatusInternalServerError)
@@ -124,12 +148,12 @@ func TestDiscoverPreservesProviderErrorsWithoutRequests(t *testing.T) {
 	defer server.Close()
 
 	providerErr := errors.New("invalid configuration")
-	got, err := Discover(context.Background(), []providers.Provider{
+	got, err := newService([]providers.Provider{
 		{
 			Name: "broken", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: server.URL,
 			Err: providerErr,
 		},
-	}, server.Client())
+	}, server.Client()).List(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,8 +165,8 @@ func TestDiscoverPreservesProviderErrorsWithoutRequests(t *testing.T) {
 	}
 }
 
-func TestListProviderModelsReturnsEmptyWithoutAvailableProviders(t *testing.T) {
-	got, err := Discover(context.Background(), nil, http.DefaultClient)
+func TestListReturnsEmptyWithoutAvailableProviders(t *testing.T) {
+	got, err := newService(nil, http.DefaultClient).List(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,15 +175,15 @@ func TestListProviderModelsReturnsEmptyWithoutAvailableProviders(t *testing.T) {
 	}
 }
 
-func TestDiscoverReturnsProviderErrorForBrokenProvider(t *testing.T) {
+func TestListReturnsProviderErrorForBrokenProvider(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "broken", http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
-	got, err := Discover(context.Background(), []providers.Provider{
+	got, err := newService([]providers.Provider{
 		{Name: "broken", Backend: providers.BackendProxy, BaseURL: server.URL + "/v1"},
-	}, server.Client())
+	}, server.Client()).List(context.Background())
 
 	if err != nil {
 		t.Fatalf("got unexpected error %v", err)

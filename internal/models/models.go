@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/canonical/inference/internal/providers"
-	"github.com/canonical/inference/internal/snapcatalog"
-	"github.com/canonical/inference/internal/snapd"
 )
 
 const (
@@ -43,29 +41,28 @@ type upstreamModel struct {
 	Created int64  `json:"created"`
 }
 
-func List(
-	ctx context.Context,
-	catalog *snapcatalog.Reader,
-	snapdClient *snapd.Client,
-	shareProvidersPath string,
-) ([]ProviderModels, error) {
-	allProviders, err := providers.ListAll(
-		ctx,
-		catalog,
-		snapdClient,
-		shareProvidersPath,
-	)
+type Service interface {
+	List(ctx context.Context) ([]ProviderModels, error)
+}
+
+type service struct {
+	providers  providers.Service
+	httpClient *http.Client
+}
+
+func NewService(providerService providers.Service, httpClient *http.Client) Service {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	return &service{providers: providerService, httpClient: httpClient}
+}
+
+func (s *service) List(ctx context.Context) ([]ProviderModels, error) {
+	allProviders, err := s.providers.List(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return Discover(ctx, allProviders, http.DefaultClient)
-}
 
-func Discover(
-	ctx context.Context,
-	allProviders []providers.Provider,
-	client *http.Client,
-) ([]ProviderModels, error) {
 	availableProviders := make([]providers.Provider, 0, len(allProviders))
 	providerNames := make(map[string]struct{}, len(allProviders))
 	for _, provider := range allProviders {
@@ -82,8 +79,8 @@ func Discover(
 		availableProviders = append(availableProviders, provider)
 	}
 
-	if client == nil {
-		client = http.DefaultClient
+	if len(availableProviders) == 0 {
+		return []ProviderModels{}, nil
 	}
 
 	results := make(chan ProviderModels, len(availableProviders))
@@ -95,7 +92,7 @@ func Discover(
 		}
 		requests.Go(func() {
 			result := ProviderModels{ProviderName: provider.Name, Models: []Model{}}
-			upstreamModels, err := fetchModels(ctx, client, provider.BaseURL)
+			upstreamModels, err := fetchModels(ctx, s.httpClient, provider.BaseURL)
 			result.Err = err
 			if err == nil {
 				result.Models = normalizeModels(provider, upstreamModels)
