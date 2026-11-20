@@ -1,9 +1,11 @@
 package commands
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -120,7 +122,7 @@ func TestStatusReportsMisconfiguredProvidersAsError(t *testing.T) {
 				ShareProvidersPath: root,
 			}}
 
-			health, warnings, err := cmd.providerStatus(context.Background())
+			health, problems, err := cmd.providerStatus(context.Background())
 			if err != nil {
 				t.Fatalf("providerStatus: %v", err)
 			}
@@ -128,11 +130,67 @@ func TestStatusReportsMisconfiguredProvidersAsError(t *testing.T) {
 				t.Fatalf("health = %q, want %q", health[tt.provider], "error")
 			}
 			wantPath := filepath.Join(providerDir, "provider.env")
-			if len(warnings) != 1 || !strings.Contains(warnings[0], wantPath) ||
-				!strings.Contains(warnings[0], tt.provider) {
-				t.Fatalf("warnings = %q, want one naming provider %q and file %q", warnings, tt.provider, wantPath)
+			if len(problems) != 1 || !strings.Contains(problems[0].Error(), wantPath) ||
+				!strings.Contains(problems[0].Error(), tt.provider) {
+				t.Fatalf("problems = %q, want one naming provider %q and file %q", problems, tt.provider, wantPath)
 			}
 		})
+	}
+}
+
+func TestStatusPrintsProviderProblemsToStderrOnlyInVerboseMode(t *testing.T) {
+	root := t.TempDir()
+	providerDir := filepath.Join(root, "no-name")
+	if err := os.MkdirAll(providerDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	envPath := filepath.Join(providerDir, "provider.env")
+	if err := os.WriteFile(envPath, []byte("OPENAI_BASE_URL=http://localhost:8081/v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wantProblem := fmt.Sprintf("Error: provider %q: %s: SNAP_NAME is empty\n", "no-name", envPath)
+
+	for _, format := range []string{"yaml", "json"} {
+		for _, verbose := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s verbose=%t", format, verbose), func(t *testing.T) {
+				t.Setenv("SNAP", "")
+				t.Setenv("SNAP_INSTANCE_NAME", "")
+				ctx, stdout, stderr := newTestContext()
+				ctx.SnapdClient = statusSnapdClient(t, common.InferenceSnapName, true)
+				ctx.SnapCatalog = &snapcatalog.Reader{}
+				ctx.ShareProvidersPath = root
+				var combined bytes.Buffer
+				ctx.Stdout = io.MultiWriter(stdout, &combined)
+				ctx.Stderr = io.MultiWriter(stderr, &combined)
+
+				args := []string{"--format=" + format}
+				if verbose {
+					args = append(args, "--verbose")
+				}
+				if err := execute(Status(ctx), args...); err != nil {
+					t.Fatal(err)
+				}
+
+				if strings.Contains(stdout.String(), "warnings") || strings.Contains(stdout.String(), "SNAP_NAME is empty") {
+					t.Errorf("stdout = %q, want no provider problem details", stdout.String())
+				}
+				if !strings.Contains(stdout.String(), "no-name") || !strings.Contains(stdout.String(), "error") {
+					t.Errorf("stdout = %q, want the provider reported as error", stdout.String())
+				}
+				if !verbose {
+					if stderr.Len() != 0 {
+						t.Errorf("stderr = %q, want empty without --verbose", stderr.String())
+					}
+					return
+				}
+				if stderr.String() != wantProblem {
+					t.Errorf("stderr = %q, want %q", stderr.String(), wantProblem)
+				}
+				if !strings.HasPrefix(combined.String(), wantProblem) {
+					t.Errorf("output = %q, want the problem printed before the status", combined.String())
+				}
+			})
+		}
 	}
 }
 
