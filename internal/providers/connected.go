@@ -74,7 +74,7 @@ func (r *connectedRegistry) addVerified(provider Provider, envPath string) {
 		}
 		r.byName[kept.Name] = kept
 		r.envPaths[kept.Name] = keptPath
-		provider = demoteDuplicate(provider, envPath, keptPath, r.isTaken)
+		provider = r.demoteDuplicate(provider, envPath, keptPath)
 	}
 	r.byName[provider.Name] = provider
 	r.envPaths[provider.Name] = envPath
@@ -128,7 +128,7 @@ func readConnectedProvider(root, directoryName string) (Provider, string) {
 	return provider, envPath
 }
 
-func demoteDuplicate(provider Provider, envPath, keptPath string, taken func(string) bool) Provider {
+func (r *connectedRegistry) demoteDuplicate(provider Provider, envPath, keptPath string) Provider {
 	if provider.Err == nil {
 		provider.Err = fmt.Errorf(
 			"%s: duplicate provider name %q, already defined in %s",
@@ -136,7 +136,7 @@ func demoteDuplicate(provider Provider, envPath, keptPath string, taken func(str
 		)
 	}
 	provider.BaseURL = ""
-	provider.Name = duplicateDisplayName(provider.Name, taken)
+	provider.Name = duplicateDisplayName(provider.Name, r.isTaken)
 	provider.nameUnverified = true
 	return provider
 }
