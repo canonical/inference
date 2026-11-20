@@ -214,22 +214,37 @@ func TestModelsHandlerSkipsUnavailableProvider(t *testing.T) {
 	}
 }
 
-func TestModelsHandlerSkipsProviderWithoutBaseURL(t *testing.T) {
+func TestModelsHandlerSkipsMisconfiguredProviders(t *testing.T) {
 	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"data":[{"id":"ready"}]}`))
 	}))
 	defer healthy.Close()
 
-	lister := &fakeProviders{list: []providers.Provider{
-		{Name: "catalog-only"},
-		{Name: "healthy", BaseURL: healthy.URL + "/v1"},
-	}}
-	handler := NewModelsHandler(lister, healthy.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	root := t.TempDir()
+	writeProvider(t, root, "socket-only", "socket-only", "")
+	writeProvider(t, root, "bad-scheme", "bad-scheme", "ftp://example.com/v1")
+	writeProvider(t, root, "no-name", "", "http://localhost:1/v1")
+	writeProvider(t, root, "healthy", "healthy", healthy.URL+"/v1")
+	var logs bytes.Buffer
+	handler := NewModelsHandler(connectedProviders{root: root}, healthy.Client(), slog.New(slog.NewTextHandler(&logs, nil)))
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":"healthy/ready"`) {
 		t.Fatalf("got status %d body %s", response.Code, response.Body.String())
+	}
+	for _, want := range []string{
+		`msg="discovering provider models"`,
+		"provider=socket-only",
+		"OPENAI_BASE_URL is empty",
+		"provider=bad-scheme",
+		"OPENAI_BASE_URL scheme must be http or https",
+		"provider=no-name",
+		"SNAP_NAME is empty",
+	} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("missing %q:\n%s", want, logs.String())
+		}
 	}
 }
 

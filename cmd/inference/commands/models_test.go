@@ -3,12 +3,15 @@ package commands
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/models"
 	"github.com/canonical/inference/internal/snapcatalog"
+	"github.com/canonical/inference/internal/snapd"
 )
 
 //
@@ -255,5 +258,35 @@ func TestFilterAvailableModels_AllProvidersFail(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("got %+v, want no models", got)
+	}
+}
+
+func TestModelsCommandPrintsHintOnceForMultipleFailingProviders(t *testing.T) {
+	root := t.TempDir()
+	names := []string{"first", "second"}
+	fakeSnaps := map[string]string{}
+	for _, name := range names {
+		providerDir := filepath.Join(root, name)
+		if err := os.MkdirAll(providerDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		env := "SNAP_NAME=" + name + "\nUNIX_SOCKET=x.sock\n"
+		if err := os.WriteFile(filepath.Join(providerDir, "provider.env"), []byte(env), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		fakeSnaps[name] = snapd.SnapStatusActive
+	}
+	client, _ := snapd.NewFakeServer(t, fakeSnaps)
+
+	ctx, _, stderr := newTestContext()
+	ctx.SnapdClient = client
+	ctx.SnapCatalog = &snapcatalog.Reader{}
+	ctx.ShareProvidersPath = root
+	if err := execute(Models(ctx)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := strings.Count(stderr.String(), "Hint: Cannot retrieve models"); got != 1 {
+		t.Fatalf("hint printed %d times, want once; stderr = %q", got, stderr.String())
 	}
 }

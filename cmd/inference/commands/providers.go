@@ -51,20 +51,20 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	}
 
 	providerService := providers.NewService(cmd.SnapCatalog, cmd.SnapdClient, cmd.ShareProvidersPath)
-	list, err := providerService.ListInstalled(cobraCmd.Context())
+	installed, err := providerService.ListInstalled(cobraCmd.Context())
 	if err != nil {
 		return common.FriendlySnapdError(err)
 	}
 
 	var output string
 	if cmd.format == "json" {
-		output, err = cmd.outputJSON(list)
+		output, err = cmd.outputJSON(installed)
 		if err != nil {
 			return err
 		}
 	} else {
-		if len(list) > 0 { // table should only be rendered if there are providers
-			output, err = cmd.outputTable(list)
+		if len(installed) > 0 { // table should only be rendered if there are providers
+			output, err = cmd.outputTable(installed)
 			if err != nil {
 				return err
 			}

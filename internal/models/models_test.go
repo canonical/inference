@@ -57,9 +57,14 @@ func TestListReportsModelsAndErrorsPerProvider(t *testing.T) {
 		{Name: "broken", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: second.URL + "/v1"},
 		{Name: "openai", Backend: providers.BackendProxy, BaseURL: third.URL + "/v1"},
 		{Name: "unavailable", Backend: providers.BackendSnap},
+		{Name: "not-connected", Backend: providers.BackendSnap, State: providers.StateEnabled, Connection: providers.ConnectionNotConnected},
 		{Name: "disabled", Backend: providers.BackendSnap, State: providers.StateDisabled, BaseURL: second.URL + "/v1"},
 	}
-	got, err := newService(list, first.Client()).List(context.Background())
+	listedProviders := append(list, providers.Provider{
+		Name: "socket-only", Backend: providers.BackendSnap, State: providers.StateUnknown, Connection: providers.ConnectionConnected,
+		Err: errors.New("OPENAI_BASE_URL is empty"),
+	})
+	got, err := newService(listedProviders, first.Client()).List(context.Background())
 	if err != nil {
 		t.Fatal("expected no error, got", err)
 	}
@@ -84,6 +89,11 @@ func TestListReportsModelsAndErrorsPerProvider(t *testing.T) {
 			},
 			Err: nil,
 		},
+		{
+			ProviderName: "socket-only",
+			Models:       []Model{},
+			Err:          errors.New("OPENAI_BASE_URL is empty"),
+		},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %+v, want %+v", got, want)
@@ -106,6 +116,52 @@ func TestListReportsModelsAndErrorsPerProvider(t *testing.T) {
 				t.Errorf("model %d.%d = %+v, want %+v", i, j, got[i].Models[j], want[i].Models[j])
 			}
 		}
+	}
+}
+
+func TestListReportsInvalidBaseURLsPerProvider(t *testing.T) {
+	list := []providers.Provider{
+		{Name: "bad-scheme", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: "ftp://user:secret@example.com/v1"},
+		{Name: "unparsable", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: "http://user:secret@exa mple.com/v1"},
+	}
+	got, err := newService(list, http.DefaultClient).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(list) {
+		t.Fatalf("got %+v, want %d providers", got, len(list))
+	}
+	for _, providerModels := range got {
+		if providerModels.Err == nil {
+			t.Errorf("provider %q: expected error", providerModels.ProviderName)
+		} else if strings.Contains(providerModels.Err.Error(), "secret") {
+			t.Errorf("provider %q: error leaks credentials: %v", providerModels.ProviderName, providerModels.Err)
+		}
+	}
+}
+
+func TestListPreservesProviderErrorsWithoutRequests(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("unexpected request for a provider with a configuration error")
+		http.Error(w, "unexpected request", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	providerErr := errors.New("invalid configuration")
+	got, err := newService([]providers.Provider{
+		{
+			Name: "broken", Backend: providers.BackendSnap, State: providers.StateEnabled, BaseURL: server.URL,
+			Err: providerErr,
+		},
+	}, server.Client()).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ProviderName != "broken" || got[0].Err != providerErr {
+		t.Fatalf("got %+v, want the original provider error", got)
+	}
+	if got[0].Models == nil || len(got[0].Models) != 0 {
+		t.Fatalf("got models %#v, want an empty list", got[0].Models)
 	}
 }
 

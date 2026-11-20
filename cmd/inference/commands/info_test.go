@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -443,5 +445,33 @@ func TestInfo_ProxyOpenAIBaseURL(t *testing.T) {
 	want := "http://localhost:8400/v1"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestInfo_ProviderWithConfigurationErrorIsRenderedWithWarning(t *testing.T) {
+	root := t.TempDir()
+	providerDir := filepath.Join(root, "socket-only")
+	if err := os.MkdirAll(providerDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	envPath := filepath.Join(providerDir, "provider.env")
+	if err := os.WriteFile(envPath, []byte("SNAP_NAME=socket-only\nUNIX_SOCKET=x.sock\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, stdout, stderr := newTestContext()
+	ctx.SnapCatalog = &snapcatalog.Reader{}
+	ctx.SnapdClient, _ = snapd.NewFakeServer(t, map[string]string{"socket-only": snapd.SnapStatusActive})
+	ctx.ShareProvidersPath = root
+
+	if err := execute(Info(ctx), "socket-only", "--format=json"); err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if !strings.Contains(stdout.String(), `"name": "socket-only"`) || !strings.Contains(stdout.String(), `"state": "enabled"`) {
+		t.Errorf("stdout = %q, want the provider details", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "Warning:") || !strings.Contains(stderr.String(), envPath) ||
+		!strings.Contains(stderr.String(), "OPENAI_BASE_URL is empty") {
+		t.Errorf("stderr = %q, want a warning naming %q and the cause", stderr.String(), envPath)
 	}
 }

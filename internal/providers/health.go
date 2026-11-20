@@ -29,36 +29,32 @@ func CheckHealth(ctx context.Context, providers []Provider) map[string]HealthSta
 		health HealthStatus
 	}
 
-	// Only check enabled providers that have a base URL configured.
-	enabled := make([]Provider, 0, len(providers))
-	for _, provider := range providers {
-		if provider.State == StateEnabled && provider.BaseURL != "" {
-			enabled = append(enabled, provider)
-		}
-	}
-	if len(enabled) == 0 {
-		return nil
-	}
-
-	results := make(chan result, len(enabled))
+	health := make(map[string]HealthStatus, len(providers))
+	results := make(chan result, len(providers))
 	var checks sync.WaitGroup
-	checks.Add(len(enabled))
-	// Check providers in parallel so one unresponsive provider does not delay the others.
-	for _, provider := range enabled {
-		go func() {
-			defer checks.Done()
+	for _, provider := range providers {
+		if provider.Err != nil {
+			health[provider.Name] = HealthError
+			continue
+		}
+		if provider.State != StateEnabled || provider.BaseURL == "" {
+			continue
+		}
+		checks.Go(func() {
 			results <- result{
 				name:   provider.Name,
 				health: checkHealth(ctx, provider.BaseURL),
 			}
-		}()
+		})
 	}
 	checks.Wait()
 	close(results)
 
-	health := make(map[string]HealthStatus, len(enabled))
 	for result := range results {
 		health[result.name] = result.health
+	}
+	if len(health) == 0 {
+		return nil
 	}
 	return health
 }

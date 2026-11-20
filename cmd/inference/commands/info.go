@@ -75,7 +75,12 @@ func (cmd *infoCommand) run(cobraCmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	_, err = fmt.Fprint(cmd.Stdout, info)
+	if _, err = fmt.Fprint(cmd.Stdout, info); err != nil {
+		return err
+	}
+	if provider.Err != nil {
+		_, err = fmt.Fprintf(cmd.Stderr, "\nWarning: provider %q has a configuration error: %v\n", provider.Name, provider.Err)
+	}
 	return err
 }
 

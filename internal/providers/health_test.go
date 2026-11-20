@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"net"
 	"net/http"
@@ -83,7 +84,8 @@ func TestCheckHealth(t *testing.T) {
 		{Name: "unresponsive", State: StateEnabled, BaseURL: unresponsive.URL + "/v1"},
 		{Name: "offline", State: StateEnabled, BaseURL: offlineURL},
 		{Name: "disabled", State: StateDisabled, BaseURL: healthy.URL + "/v1"},
-		{Name: "no-url", State: StateEnabled},
+		{Name: "not-connected", State: StateEnabled, Connection: ConnectionNotConnected},
+		{Name: "broken-config", State: StateEnabled, Connection: ConnectionConnected, BaseURL: healthy.URL + "/v1", Err: errors.New("OPENAI_BASE_URL is empty")},
 	})
 
 	want := map[string]HealthStatus{
@@ -94,11 +96,41 @@ func TestCheckHealth(t *testing.T) {
 		"error":                HealthError,
 		"unresponsive":         HealthNotResponsive,
 		"offline":              HealthOffline,
+		"broken-config":        HealthError,
 	}
 	if !maps.Equal(got, want) {
 		t.Fatalf("got %#v, want %#v", got, want)
 	}
 	if modelRequests.Load() != 1 {
 		t.Fatalf("got %d model requests, want 1", modelRequests.Load())
+	}
+}
+
+func TestCheckHealthWithoutQueryableProviders(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider Provider
+		want     map[string]HealthStatus
+	}{
+		{
+			name: "provider error",
+			provider: Provider{
+				Name: "provider", Backend: BackendSnap, Connection: ConnectionConnected,
+				Err: errors.New("invalid configuration"),
+			},
+			want: map[string]HealthStatus{"provider": HealthError},
+		},
+		{
+			name:     "not connected",
+			provider: Provider{Name: "provider", Backend: BackendSnap, State: StateEnabled, Connection: ConnectionNotConnected},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := CheckHealth(context.Background(), []Provider{test.provider})
+			if !maps.Equal(got, test.want) || (got == nil) != (test.want == nil) {
+				t.Fatalf("got %#v, want %#v", got, test.want)
+			}
+		})
 	}
 }

@@ -66,14 +66,11 @@ func (s *service) List(ctx context.Context) ([]ProviderModels, error) {
 	availableProviders := make([]providers.Provider, 0, len(allProviders))
 	providerNames := make(map[string]struct{}, len(allProviders))
 	for _, provider := range allProviders {
-		if provider.BaseURL == "" {
-			continue
-		}
-		if provider.Backend == providers.BackendSnap && provider.State != providers.StateEnabled {
+		if provider.Err == nil && !isQueryable(provider) {
 			continue
 		}
 		if provider.Name == "" {
-			return nil, errors.New("provider with an API base URL has an empty name")
+			return nil, errors.New("provider has an empty name")
 		}
 		if _, exists := providerNames[provider.Name]; exists {
 			return nil, fmt.Errorf("duplicate provider name %q", provider.Name)
@@ -89,27 +86,28 @@ func (s *service) List(ctx context.Context) ([]ProviderModels, error) {
 	results := make(chan ProviderModels, len(availableProviders))
 	var requests sync.WaitGroup
 	for _, provider := range availableProviders {
+		if provider.Err != nil {
+			results <- ProviderModels{ProviderName: provider.Name, Models: []Model{}, Err: provider.Err}
+			continue
+		}
 		requests.Go(func() {
-			models := make([]Model, 0)
+			result := ProviderModels{ProviderName: provider.Name, Models: []Model{}}
 			upstreamModels, err := fetchModels(ctx, s.httpClient, provider.BaseURL)
+			result.Err = err
 			if err == nil {
-				models = normalizeModels(provider, upstreamModels)
-				sort.Slice(models, func(i, j int) bool {
-					return models[i].NativeID < models[j].NativeID
+				result.Models = normalizeModels(provider, upstreamModels)
+				sort.Slice(result.Models, func(i, j int) bool {
+					return result.Models[i].NativeID < result.Models[j].NativeID
 				})
 			}
 
-			results <- ProviderModels{
-				ProviderName: provider.Name,
-				Models:       models,
-				Err:          err,
-			}
+			results <- result
 		})
 	}
 	requests.Wait()
 	close(results)
 
-	pm := make([]ProviderModels, 0)
+	pm := make([]ProviderModels, 0, len(availableProviders))
 	for result := range results {
 		pm = append(pm, result)
 	}
@@ -117,6 +115,13 @@ func (s *service) List(ctx context.Context) ([]ProviderModels, error) {
 		return pm[i].ProviderName < pm[j].ProviderName
 	})
 	return pm, nil
+}
+
+func isQueryable(provider providers.Provider) bool {
+	if provider.Backend == providers.BackendSnap && provider.State != providers.StateEnabled {
+		return false
+	}
+	return provider.BaseURL != ""
 }
 
 func normalizeModels(provider providers.Provider, upstreamModels []upstreamModel) []Model {
@@ -187,7 +192,7 @@ func fetchModels(ctx context.Context, client *http.Client, baseURL string) ([]up
 func modelsURL(baseURL string) (string, error) {
 	endpoint, err := url.Parse(baseURL)
 	if err != nil {
-		return "", fmt.Errorf("parsing provider URL: %w", err)
+		return "", fmt.Errorf("parsing provider URL: %w", redactURLError(err))
 	}
 	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + "/models"
 	endpoint.RawPath = ""

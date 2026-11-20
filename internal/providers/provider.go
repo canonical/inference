@@ -50,6 +50,9 @@ type Provider struct {
 	Connection ConnectionState
 	BaseURL    string
 	Engines    []Engine
+	Err        error
+
+	nameUnverified bool
 }
 
 type ProviderIdentity struct {
@@ -150,9 +153,21 @@ func (s *service) list(ctx context.Context, options listOptions) ([]Provider, er
 	}
 	for _, provider := range connectedProviders {
 		key := provider.Identity()
-		if existing, ok := merged[key]; ok {
+		existing, ok := merged[key]
+		// The name of this entry was only guessed from its directory, so it must not be merged into
+		// a catalog provider that happens to share it. Keep it as a separate entry under a free name.
+		if ok && provider.nameUnverified {
+			provider.Name = duplicateDisplayName(provider.Name, func(name string) bool {
+				_, taken := merged[ProviderIdentity{Backend: provider.Backend, Name: name}]
+				return taken
+			})
+			key = provider.Identity()
+			ok = false
+		}
+		if ok {
 			existing.Connection = provider.Connection
 			existing.BaseURL = provider.BaseURL
+			existing.Err = provider.Err
 			merged[key] = existing
 			continue
 		}
@@ -168,7 +183,7 @@ func (s *service) list(ctx context.Context, options listOptions) ([]Provider, er
 		if options.Name != "" && provider.Name != options.Name {
 			continue
 		}
-		if provider.Backend == BackendSnap {
+		if provider.Backend == BackendSnap && !provider.nameUnverified {
 			state, err := snapProviderLifecycleState(ctx, s.snapdClient, provider.Name)
 			if err != nil {
 				return nil, err
@@ -176,7 +191,7 @@ func (s *service) list(ctx context.Context, options listOptions) ([]Provider, er
 			provider.State = state
 		}
 
-		if options.InstalledOnly && !provider.Installed() {
+		if options.InstalledOnly && !provider.nameUnverified && !provider.Installed() {
 			continue
 		}
 		result = append(result, provider)
