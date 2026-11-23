@@ -403,7 +403,11 @@ func TestProxyFlushesStreamingResponse(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer response.Body.Close()
+			defer func() {
+				if err := response.Body.Close(); err != nil {
+					t.Errorf("closing response body: %v", err)
+				}
+			}()
 			assertCORS(t, response.Header, test.allowOrigin)
 			if got := response.Header.Get("X-Accel-Buffering"); got != "no" {
 				t.Fatalf("X-Accel-Buffering = %q, want no", got)

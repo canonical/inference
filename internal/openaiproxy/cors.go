@@ -10,12 +10,16 @@ import (
 
 func (h *ModelsHandler) handleCORS(w http.ResponseWriter, r *http.Request, logger *slog.Logger) bool {
 	removeCORSHeaders(w.Header())
-	// Prevent caches from reusing responses across different origins.
-	w.Header().Add("Vary", "Origin")
+	// Prevent caches from reusing responses across different browser access policies.
+	w.Header().Add("Vary", "Origin, Sec-Fetch-Site")
 
 	origins := r.Header.Values("Origin")
-	// Allow direct requests from non-browser clients such as curl.
 	if len(origins) == 0 {
+		if !h.allowAllOrigins && r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+			logger.Warn("rejecting request", "reason", "cross-site request without an origin")
+			writeError(w, http.StatusForbidden, "Cross-site requests without an origin are not allowed.", "invalid_request_error")
+			return true
+		}
 		return false
 	}
 	if len(origins) > 1 {
@@ -33,12 +37,16 @@ func (h *ModelsHandler) handleCORS(w http.ResponseWriter, r *http.Request, logge
 	}
 
 	if isCORSPreflight(r) {
+		w.Header().Add("Vary", "Access-Control-Request-Headers")
 		if !isAllowedCORSPreflight(r) {
-			logger.Warn("rejecting request", "reason", "preflight method or headers are not allowed")
-			writeError(w, http.StatusForbidden, "The requested CORS method or headers are not allowed.", "invalid_request_error")
+			logger.Warn("rejecting request", "reason", "preflight method is not allowed")
+			writeError(w, http.StatusForbidden, "The requested CORS method is not allowed.", "invalid_request_error")
 			return true
 		}
 		setCORSHeaders(w.Header(), allowedOrigin)
+		if headers := r.Header.Values("Access-Control-Request-Headers"); len(headers) > 0 {
+			w.Header().Set("Access-Control-Allow-Headers", strings.Join(headers, ", "))
+		}
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -71,19 +79,7 @@ func isLoopbackOrigin(origin string) bool {
 
 func isAllowedCORSPreflight(r *http.Request) bool {
 	methods := r.Header.Values("Access-Control-Request-Method")
-	if len(methods) != 1 || (methods[0] != http.MethodGet && methods[0] != http.MethodPost) {
-		return false
-	}
-	for _, value := range r.Header.Values("Access-Control-Request-Headers") {
-		for _, name := range strings.Split(value, ",") {
-			switch strings.ToLower(strings.TrimSpace(name)) {
-			case "authorization", "content-type":
-			default:
-				return false
-			}
-		}
-	}
-	return true
+	return len(methods) == 1 && (methods[0] == http.MethodGet || methods[0] == http.MethodPost)
 }
 
 func setCORSHeaders(header http.Header, origin string) {

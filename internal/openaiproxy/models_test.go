@@ -336,26 +336,143 @@ func TestModelsHandlerRejectsOtherMethodsAndPaths(t *testing.T) {
 }
 
 func TestModelsHandlerCORSPreflight(t *testing.T) {
-	handler := NewModelsHandler(connectedProviders{root: t.TempDir()}, http.DefaultClient, discardLogger(), false)
-	for _, method := range []string{http.MethodGet, http.MethodPost} {
-		for _, headers := range []string{"", "Authorization, Content-Type", "content-type, AUTHORIZATION"} {
-			t.Run(method+"/"+headers, func(t *testing.T) {
-				request := httptest.NewRequest(http.MethodOptions, "/v1/chat/completions", nil)
-				request.Header.Set("Origin", "http://localhost:3000")
-				request.Header.Set("Access-Control-Request-Method", method)
-				if headers != "" {
-					request.Header.Set("Access-Control-Request-Headers", headers)
-				}
-				response := httptest.NewRecorder()
+	for _, policy := range []struct {
+		name            string
+		origin          string
+		allowAllOrigins bool
+		allowed         bool
+	}{
+		{name: "loopback", origin: "http://localhost:3000", allowed: true},
+		{name: "external rejected", origin: "https://client.example"},
+		{name: "allow all", origin: "https://client.example", allowAllOrigins: true, allowed: true},
+	} {
+		t.Run(policy.name, func(t *testing.T) {
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				for _, test := range []struct {
+					name    string
+					headers []string
+				}{
+					{name: "no headers"},
+					{name: "empty header list", headers: []string{""}},
+					{name: "authorization", headers: []string{"Authorization"}},
+					{name: "standard", headers: []string{"Authorization, Content-Type"}},
+					{name: "mixed case", headers: []string{"content-type, AUTHORIZATION"}},
+					{name: "OpenAI SDK", headers: []string{"authorization, content-type, x-stainless-lang, x-stainless-package-version, x-stainless-os, x-stainless-arch, x-stainless-runtime, x-stainless-runtime-version, x-stainless-retry-count, x-stainless-timeout, x-stainless-helper-method, openai-organization, openai-project"}},
+					{name: "custom headers", headers: []string{"X-Custom, OpenAI-Beta"}},
+					{name: "multiple header lines", headers: []string{"Authorization, Content-Type", "X-Stainless-Lang, X-Custom"}},
+					{name: "token punctuation", headers: []string{"X-!#$%&'*+-.^_`|~0123456789"}},
+				} {
+					t.Run(method+"/"+test.name, func(t *testing.T) {
+						lister := &fakeProviders{}
+						handler := NewModelsHandler(lister, http.DefaultClient, discardLogger(), policy.allowAllOrigins)
+						request := httptest.NewRequest(http.MethodOptions, "/v1/chat/completions", nil)
+						request.Header.Set("Origin", policy.origin)
+						request.Header.Set("Access-Control-Request-Method", method)
+						request.Header["Access-Control-Request-Headers"] = test.headers
+						response := httptest.NewRecorder()
 
-				handler.ServeHTTP(response, request)
+						handler.ServeHTTP(response, request)
 
-				if response.Code != http.StatusNoContent {
-					t.Fatalf("preflight returned status %d body %s", response.Code, response.Body.String())
+						if lister.calls.Load() != 0 {
+							t.Fatal("preflight refreshed provider inventory")
+						}
+						if !policy.allowed {
+							if response.Code != http.StatusForbidden {
+								t.Fatalf("status = %d, want 403: %s", response.Code, response.Body.String())
+							}
+							assertNoCORS(t, response.Header())
+							return
+						}
+						if response.Code != http.StatusNoContent {
+							t.Fatalf("preflight returned status %d body %s", response.Code, response.Body.String())
+						}
+						allowedOrigin := policy.origin
+						if policy.allowAllOrigins {
+							allowedOrigin = "*"
+						}
+						assertCORS(t, response.Header(), allowedOrigin)
+						wantHeaders := "Authorization, Content-Type"
+						if len(test.headers) > 0 {
+							wantHeaders = strings.Join(test.headers, ", ")
+						}
+						if got := response.Header().Get("Access-Control-Allow-Headers"); got != wantHeaders {
+							t.Errorf("Access-Control-Allow-Headers = %q, want %q", got, wantHeaders)
+						}
+						if got := strings.Join(response.Header().Values("Vary"), ", "); got != "Origin, Sec-Fetch-Site, Access-Control-Request-Headers" {
+							t.Errorf("Vary = %q, want Origin, Sec-Fetch-Site, Access-Control-Request-Headers", got)
+						}
+					})
 				}
-				assertCORS(t, response.Header(), "http://localhost:3000")
-			})
-		}
+			}
+		})
+	}
+}
+
+func TestModelsHandlerOriginlessRequests(t *testing.T) {
+	var upstreamCalls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamCalls.Add(1)
+		_, _ = w.Write([]byte(`{"data":[{"id":"native-model"}]}`))
+	}))
+	defer upstream.Close()
+
+	for _, test := range []struct {
+		name            string
+		fetchSite       string
+		origin          string
+		allowAllOrigins bool
+		allowed         bool
+	}{
+		{name: "curl", allowed: true},
+		{name: "same origin", fetchSite: "same-origin", allowed: true},
+		{name: "same site", fetchSite: "same-site", allowed: true},
+		{name: "direct navigation", fetchSite: "none", allowed: true},
+		{name: "cross site", fetchSite: "cross-site"},
+		{name: "loopback origin with cross-site metadata", fetchSite: "cross-site", origin: "http://localhost:3000", allowed: true},
+		{name: "allow all curl", allowAllOrigins: true, allowed: true},
+		{name: "allow all cross site", fetchSite: "cross-site", allowAllOrigins: true, allowed: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			upstreamCalls.Store(0)
+			lister := &fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}}
+			var logs strings.Builder
+			handler := NewModelsHandler(lister, upstream.Client(), slog.New(slog.NewTextHandler(&logs, nil)), test.allowAllOrigins)
+			request := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+			if test.fetchSite != "" {
+				request.Header.Set("Sec-Fetch-Site", test.fetchSite)
+			}
+			if test.origin != "" {
+				request.Header.Set("Origin", test.origin)
+			}
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if test.origin == "" {
+				assertNoCORS(t, response.Header())
+			} else {
+				assertCORS(t, response.Header(), test.origin)
+			}
+			if test.allowed {
+				if response.Code != http.StatusOK || lister.calls.Load() != 1 || upstreamCalls.Load() != 1 {
+					t.Fatalf("status = %d, inventory calls = %d, upstream calls = %d; want 200, 1, 1", response.Code, lister.calls.Load(), upstreamCalls.Load())
+				}
+				return
+			}
+			if response.Code != http.StatusForbidden || lister.calls.Load() != 0 || upstreamCalls.Load() != 0 {
+				t.Fatalf("status = %d, inventory calls = %d, upstream calls = %d; want 403, 0, 0", response.Code, lister.calls.Load(), upstreamCalls.Load())
+			}
+			var body errorResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Error.Message != "Cross-site requests without an origin are not allowed." || body.Error.Type != "invalid_request_error" {
+				t.Errorf("unexpected error: %+v", body.Error)
+			}
+			if !strings.Contains(logs.String(), `reason="cross-site request without an origin"`) {
+				t.Errorf("missing rejection reason in logs: %s", logs.String())
+			}
+		})
 	}
 }
 
@@ -364,7 +481,6 @@ func assertCORS(t *testing.T, header http.Header, origin string) {
 	for name, want := range map[string]string{
 		"Access-Control-Allow-Origin":  origin,
 		"Access-Control-Allow-Methods": "GET, POST",
-		"Access-Control-Allow-Headers": "Authorization, Content-Type",
 	} {
 		if got := header.Values(name); len(got) != 1 || got[0] != want {
 			t.Errorf("%s = %q, want one %q value", name, got, want)
@@ -376,8 +492,8 @@ func assertCORS(t *testing.T, header http.Header, origin string) {
 	if got := header.Get("Access-Control-Allow-Credentials"); got != "" {
 		t.Errorf("Access-Control-Allow-Credentials = %q, want empty", got)
 	}
-	if got := header.Get("Vary"); got != "Origin" {
-		t.Errorf("Vary = %q, want Origin", got)
+	if got := header.Get("Vary"); got != "Origin, Sec-Fetch-Site" {
+		t.Errorf("Vary = %q, want Origin, Sec-Fetch-Site", got)
 	}
 }
 
@@ -437,7 +553,7 @@ func TestModelsHandlerOriginPolicy(t *testing.T) {
 	} {
 		t.Run(test.origin, func(t *testing.T) {
 			var upstreamCalls atomic.Int32
-			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				upstreamCalls.Add(1)
 				w.Header().Set("Access-Control-Allow-Origin", "*")
 				w.Header().Set("Access-Control-Expose-Headers", "*")
@@ -501,14 +617,10 @@ func TestModelsHandlerRejectsInvalidCORSRequests(t *testing.T) {
 				name    string
 				origins []string
 				methods []string
-				headers []string
 			}{
 				{name: "duplicate origins", origins: []string{"http://localhost", "http://localhost"}, methods: []string{http.MethodGet}},
 				{name: "disallowed method", origins: []string{"http://localhost"}, methods: []string{http.MethodDelete}},
 				{name: "duplicate methods", origins: []string{"http://localhost"}, methods: []string{http.MethodGet, http.MethodPost}},
-				{name: "disallowed header", origins: []string{"http://localhost"}, methods: []string{http.MethodPost}, headers: []string{"Authorization, X-Custom"}},
-				{name: "additional header line", origins: []string{"http://localhost"}, methods: []string{http.MethodPost}, headers: []string{"Content-Type", "X-Custom"}},
-				{name: "empty header", origins: []string{"http://localhost"}, methods: []string{http.MethodPost}, headers: []string{""}},
 			} {
 				t.Run(test.name, func(t *testing.T) {
 					lister := &fakeProviders{}
@@ -517,7 +629,6 @@ func TestModelsHandlerRejectsInvalidCORSRequests(t *testing.T) {
 					request := httptest.NewRequest(http.MethodOptions, "/v1/models", nil)
 					request.Header["Origin"] = test.origins
 					request.Header["Access-Control-Request-Method"] = test.methods
-					request.Header["Access-Control-Request-Headers"] = test.headers
 					response := httptest.NewRecorder()
 					handler.ServeHTTP(response, request)
 					if response.Code != http.StatusForbidden {
@@ -554,7 +665,7 @@ func TestModelsHandlerAllowAllOrigins(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var upstreamCalls atomic.Int32
-			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				upstreamCalls.Add(1)
 				w.Header().Set("Access-Control-Allow-Origin", "https://provider.example")
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
@@ -703,8 +814,8 @@ func assertNoCORS(t *testing.T, header http.Header) {
 			t.Errorf("unexpected CORS header %s = %q", name, header.Values(name))
 		}
 	}
-	if got := header.Get("Vary"); got != "Origin" {
-		t.Errorf("Vary = %q, want Origin", got)
+	if got := header.Get("Vary"); got != "Origin, Sec-Fetch-Site" {
+		t.Errorf("Vary = %q, want Origin, Sec-Fetch-Site", got)
 	}
 }
 
