@@ -272,7 +272,7 @@ func serverOptionsFromEnvironment() (serverOptions, error) {
 
 	timestamps := os.Getenv(enableTimestampsEnvVar) == "true"
 
-	var corsAllowAll bool
+	corsAllowAll := false
 	switch os.Getenv(httpCORSAllowAllEnvVar) {
 	case "", "false":
 	case "true":

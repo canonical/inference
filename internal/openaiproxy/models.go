@@ -395,8 +395,8 @@ func (h *ModelsHandler) handleCORS(w http.ResponseWriter, r *http.Request, logge
 	if h.allowAllOrigins {
 		allowedOrigin = "*"
 	} else if !isLoopbackOrigin(allowedOrigin) {
-		logger.Warn("rejecting request", "reason", "origin is not an HTTP/HTTPS loopback origin")
-		writeError(w, http.StatusForbidden, "The request origin must be an HTTP/HTTPS loopback origin.", "invalid_request_error")
+		logger.Warn("rejecting request", "reason", "origin is not loopback")
+		writeError(w, http.StatusForbidden, "The request origin must be loopback.", "invalid_request_error")
 		return true
 	}
 
@@ -424,10 +424,6 @@ func isCORSPreflight(r *http.Request) bool {
 func isLoopbackOrigin(origin string) bool {
 	parsed, err := url.Parse(origin)
 	if err != nil {
-		return false
-	}
-	// WebSocket origins use the page's scheme, not ws or wss.
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return false
 	}
 	host := parsed.Hostname()

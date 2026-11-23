@@ -453,8 +453,16 @@ func TestModelsHandlerOriginPolicy(t *testing.T) {
 		{origin: "http://[::2%25lo]"},
 		{origin: "null"},
 		{origin: "localhost"},
-		{origin: "//localhost"},
-		{origin: "ftp://localhost"},
+		{origin: "//localhost", allow: true},
+		{origin: "ftp://localhost", allow: true},
+		{origin: "ws://127.0.0.1:3000", allow: true},
+		{origin: "wss://[::1]:3000", allow: true},
+		{origin: "custom://localhost", allow: true},
+		{origin: "//client.example"},
+		{origin: "ftp://client.example"},
+		{origin: "ws://192.168.1.1"},
+		{origin: "wss://[::2]"},
+		{origin: "custom://client.example"},
 		{origin: "http://user@localhost", allow: true},
 		{origin: "http://localhost/", allow: true},
 		{origin: "http://localhost/path", allow: true},
@@ -683,8 +691,8 @@ func TestModelsHandlerOriginErrorMessages(t *testing.T) {
 		{
 			name:    "empty origin",
 			origins: []string{""},
-			message: "The request origin must be an HTTP/HTTPS loopback origin.",
-			reason:  "origin is not an HTTP/HTTPS loopback origin",
+			message: "The request origin must be loopback.",
+			reason:  "origin is not loopback",
 		},
 		{
 			name:    "multiple origins",
@@ -695,8 +703,8 @@ func TestModelsHandlerOriginErrorMessages(t *testing.T) {
 		{
 			name:    "non-loopback origin",
 			origins: []string{"https://client.example"},
-			message: "The request origin must be an HTTP/HTTPS loopback origin.",
-			reason:  "origin is not an HTTP/HTTPS loopback origin",
+			message: "The request origin must be loopback.",
+			reason:  "origin is not loopback",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
