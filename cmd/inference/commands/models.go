@@ -75,7 +75,7 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	}
 
 	if slices.ContainsFunc(providerModels, func(pm models.ProviderModels) bool { return pm.Err != nil }) {
-		_, err := fmt.Fprintf(cmd.Stderr, "\nHint: Cannot retrieve models from some providers. Run \"inference status\" for details.\n")
+		_, err := fmt.Fprintf(cmd.Stderr, "\nHint: Cannot retrieve models from some providers. Run \"inference status --verbose\" for details.\n")
 		return err
 	}
 
