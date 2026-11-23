@@ -36,6 +36,9 @@ type ModelsHandler struct {
 }
 
 type HandlerOptions struct {
+	ProviderService providers.Service
+	Client          *http.Client
+	Logger          *slog.Logger
 	AllowAllOrigins bool
 }
 
@@ -73,20 +76,17 @@ type modelRoute struct {
 
 type routingSnapshot []modelRoute
 
-func NewModelsHandler(
-	providerService providers.Service,
-	client *http.Client,
-	baseLogger *slog.Logger,
-	options HandlerOptions,
-) *ModelsHandler {
+func NewModelsHandler(options HandlerOptions) *ModelsHandler {
+	client := options.Client
 	if client == nil {
 		client = http.DefaultClient
 	}
+	baseLogger := options.Logger
 	if baseLogger == nil {
 		baseLogger = slog.Default()
 	}
 	return &ModelsHandler{
-		models:          models.NewService(providerService, client),
+		models:          models.NewService(options.ProviderService, client),
 		client:          client,
 		baseLogger:      baseLogger,
 		allowAllOrigins: options.AllowAllOrigins,

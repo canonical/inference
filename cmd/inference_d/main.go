@@ -73,7 +73,10 @@ func main() {
 	if options.corsAllowAll {
 		logger.Warn("allowing all request origins", "environment", httpCORSAllowAllEnvVar)
 	}
-	handler := openaiproxy.NewModelsHandler(providerService, newUpstreamClient(), logger, openaiproxy.HandlerOptions{
+	handler := openaiproxy.NewModelsHandler(openaiproxy.HandlerOptions{
+		ProviderService: providerService,
+		Client:          newUpstreamClient(),
+		Logger:          logger,
 		AllowAllOrigins: options.corsAllowAll,
 	})
 	if err := handler.Refresh(ctx); err != nil {

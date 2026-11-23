@@ -20,7 +20,10 @@ import (
 
 func TestModelsHandlerServesDefaultResponse(t *testing.T) {
 	lister := &fakeProviders{}
-	handler := NewModelsHandler(lister, nil, discardLogger(), HandlerOptions{})
+	handler := NewModelsHandler(HandlerOptions{
+		ProviderService: lister,
+		Logger:          discardLogger(),
+	})
 
 	for _, path := range []string{"/", "/v1", "/v1/"} {
 		t.Run(path, func(t *testing.T) {
@@ -70,7 +73,11 @@ func TestModelsHandlerRefreshesAndAggregatesProviders(t *testing.T) {
 	root := t.TempDir()
 	writeProvider(t, root, "z-provider", "zeta", first.URL+"/v1")
 	writeProvider(t, root, "a-provider", "alpha", second.URL+"/v1/")
-	handler := NewModelsHandler(connectedProviders{root: root}, first.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)), HandlerOptions{})
+	handler := NewModelsHandler(HandlerOptions{
+		ProviderService: connectedProviders{root: root},
+		Client:          first.Client(),
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 
 	for request := int64(1); request <= 2; request++ {
 		response := httptest.NewRecorder()
@@ -112,7 +119,11 @@ func TestModelsHandlerRetrievesModelFromSnapshot(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler := NewModelsHandler(&fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}}, upstream.Client(), discardLogger(), HandlerOptions{})
+	handler := NewModelsHandler(HandlerOptions{
+		ProviderService: &fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}},
+		Client:          upstream.Client(),
+		Logger:          discardLogger(),
+	})
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -150,10 +161,14 @@ func TestModelsHandlerRejectsUnavailableUnqualifiedAndUnknownModelRetrieval(t *t
 	second := modelServer(t, "shared")
 	defer second.Close()
 
-	handler := NewModelsHandler(&fakeProviders{list: []providers.Provider{
-		{Name: "first", BaseURL: first.URL + "/v1"},
-		{Name: "second", BaseURL: second.URL + "/v1"},
-	}}, first.Client(), discardLogger(), HandlerOptions{})
+	handler := NewModelsHandler(HandlerOptions{
+		ProviderService: &fakeProviders{list: []providers.Provider{
+			{Name: "first", BaseURL: first.URL + "/v1"},
+			{Name: "second", BaseURL: second.URL + "/v1"},
+		}},
+		Client: first.Client(),
+		Logger: discardLogger(),
+	})
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models/anything", nil))
@@ -197,7 +212,11 @@ func TestModelsHandlerSkipsUnavailableProvider(t *testing.T) {
 	writeProvider(t, root, "healthy", "healthy", healthy.URL+"/v1")
 	writeProvider(t, root, "broken", "broken", "http://127.0.0.1:1/v1")
 	var logs bytes.Buffer
-	handler := NewModelsHandler(connectedProviders{root: root}, healthy.Client(), slog.New(slog.NewTextHandler(&logs, nil)), HandlerOptions{})
+	handler := NewModelsHandler(HandlerOptions{
+		ProviderService: connectedProviders{root: root},
+		Client:          healthy.Client(),
+		Logger:          slog.New(slog.NewTextHandler(&logs, nil)),
+	})
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -224,7 +243,11 @@ func TestModelsHandlerSkipsProviderWithoutBaseURL(t *testing.T) {
 		{Name: "catalog-only"},
 		{Name: "healthy", BaseURL: healthy.URL + "/v1"},
 	}}
-	handler := NewModelsHandler(lister, healthy.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)), HandlerOptions{})
+	handler := NewModelsHandler(HandlerOptions{
+		ProviderService: lister,
+		Client:          healthy.Client(),
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -234,10 +257,14 @@ func TestModelsHandlerSkipsProviderWithoutBaseURL(t *testing.T) {
 }
 
 func TestModelsHandlerRejectsDuplicateProviderNames(t *testing.T) {
-	handler := NewModelsHandler(&fakeProviders{list: []providers.Provider{
-		{Name: "duplicate", BaseURL: "http://first.example/v1"},
-		{Name: "duplicate", BaseURL: "http://second.example/v1"},
-	}}, http.DefaultClient, discardLogger(), HandlerOptions{})
+	handler := NewModelsHandler(HandlerOptions{
+		ProviderService: &fakeProviders{list: []providers.Provider{
+			{Name: "duplicate", BaseURL: "http://first.example/v1"},
+			{Name: "duplicate", BaseURL: "http://second.example/v1"},
+		}},
+		Client: http.DefaultClient,
+		Logger: discardLogger(),
+	})
 
 	err := handler.Refresh(context.Background())
 	if err == nil || !strings.Contains(err.Error(), `duplicate provider name "duplicate"`) {
@@ -252,7 +279,11 @@ func TestModelsHandlerRefreshesProviderFiles(t *testing.T) {
 	defer upstream.Close()
 
 	root := t.TempDir()
-	handler := NewModelsHandler(connectedProviders{root: root}, upstream.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)), HandlerOptions{})
+	handler := NewModelsHandler(HandlerOptions{
+		ProviderService: connectedProviders{root: root},
+		Client:          upstream.Client(),
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -269,7 +300,11 @@ func TestModelsHandlerRefreshesProviderFiles(t *testing.T) {
 }
 
 func TestModelsHandlerReturnsEmptyListWithoutAvailableProviders(t *testing.T) {
-	handler := NewModelsHandler(connectedProviders{root: t.TempDir()}, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)), HandlerOptions{})
+	handler := NewModelsHandler(HandlerOptions{
+		ProviderService: connectedProviders{root: t.TempDir()},
+		Client:          http.DefaultClient,
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -299,7 +334,11 @@ func TestModelsHandlerPreservesSnapshotWhenRefreshFails(t *testing.T) {
 	defer upstream.Close()
 
 	lister := &fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}}
-	handler := NewModelsHandler(lister, upstream.Client(), discardLogger(), HandlerOptions{})
+	handler := NewModelsHandler(HandlerOptions{
+		ProviderService: lister,
+		Client:          upstream.Client(),
+		Logger:          discardLogger(),
+	})
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +359,11 @@ func TestModelsHandlerPreservesSnapshotWhenRefreshFails(t *testing.T) {
 }
 
 func TestModelsHandlerRejectsOtherMethodsAndPaths(t *testing.T) {
-	handler := NewModelsHandler(connectedProviders{root: t.TempDir()}, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)), HandlerOptions{})
+	handler := NewModelsHandler(HandlerOptions{
+		ProviderService: connectedProviders{root: t.TempDir()},
+		Client:          http.DefaultClient,
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/models", nil))
@@ -336,7 +379,11 @@ func TestModelsHandlerRejectsOtherMethodsAndPaths(t *testing.T) {
 }
 
 func TestModelsHandlerCORSPreflight(t *testing.T) {
-	handler := NewModelsHandler(connectedProviders{root: t.TempDir()}, http.DefaultClient, discardLogger(), HandlerOptions{})
+	handler := NewModelsHandler(HandlerOptions{
+		ProviderService: connectedProviders{root: t.TempDir()},
+		Client:          http.DefaultClient,
+		Logger:          discardLogger(),
+	})
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
 		for _, headers := range []string{"", "Authorization, Content-Type", "content-type, AUTHORIZATION"} {
 			t.Run(method+"/"+headers, func(t *testing.T) {
@@ -437,7 +484,11 @@ func TestModelsHandlerOriginPolicy(t *testing.T) {
 				_, _ = w.Write([]byte(`{"data":[{"id":"native-model"}]}`))
 			}))
 			defer upstream.Close()
-			handler := NewModelsHandler(&fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}}, upstream.Client(), discardLogger(), HandlerOptions{})
+			handler := NewModelsHandler(HandlerOptions{
+				ProviderService: &fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}},
+				Client:          upstream.Client(),
+				Logger:          discardLogger(),
+			})
 
 			if err := handler.Refresh(context.Background()); err != nil {
 				t.Fatal(err)
@@ -504,7 +555,11 @@ func TestModelsHandlerRejectsInvalidCORSRequests(t *testing.T) {
 			} {
 				t.Run(test.name, func(t *testing.T) {
 					lister := &fakeProviders{}
-					handler := NewModelsHandler(lister, http.DefaultClient, discardLogger(), options)
+					handlerOptions := options
+					handlerOptions.ProviderService = lister
+					handlerOptions.Client = http.DefaultClient
+					handlerOptions.Logger = discardLogger()
+					handler := NewModelsHandler(handlerOptions)
 
 					request := httptest.NewRequest(http.MethodOptions, "/v1/models", nil)
 					request.Header["Origin"] = test.origins
@@ -554,7 +609,12 @@ func TestModelsHandlerAllowAllOrigins(t *testing.T) {
 				_, _ = w.Write([]byte(`{"data":[{"id":"native-model"}]}`))
 			}))
 			defer upstream.Close()
-			handler := NewModelsHandler(&fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}}, upstream.Client(), discardLogger(), HandlerOptions{AllowAllOrigins: true})
+			handler := NewModelsHandler(HandlerOptions{
+				ProviderService: &fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}},
+				Client:          upstream.Client(),
+				Logger:          discardLogger(),
+				AllowAllOrigins: true,
+			})
 			if err := handler.Refresh(context.Background()); err != nil {
 				t.Fatal(err)
 			}
@@ -641,7 +701,10 @@ func TestModelsHandlerOriginErrorMessages(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var logs strings.Builder
-			handler := NewModelsHandler(nil, http.DefaultClient, slog.New(slog.NewTextHandler(&logs, nil)), HandlerOptions{})
+			handler := NewModelsHandler(HandlerOptions{
+				Client: http.DefaultClient,
+				Logger: slog.New(slog.NewTextHandler(&logs, nil)),
+			})
 			request := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 			request.Header["Origin"] = test.origins
 			response := httptest.NewRecorder()
@@ -666,7 +729,11 @@ func TestModelsHandlerOriginErrorMessages(t *testing.T) {
 
 func TestModelsHandlerRejectsExternalWebSocketOrigin(t *testing.T) {
 	lister := &fakeProviders{}
-	handler := NewModelsHandler(lister, http.DefaultClient, discardLogger(), HandlerOptions{})
+	handler := NewModelsHandler(HandlerOptions{
+		ProviderService: lister,
+		Client:          http.DefaultClient,
+		Logger:          discardLogger(),
+	})
 
 	for _, method := range []string{http.MethodGet, http.MethodOptions} {
 		request := httptest.NewRequest(method, "/v1/realtime?model=provider/native-model", nil)
