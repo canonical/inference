@@ -34,13 +34,6 @@ type ModelsHandler struct {
 	requestID       atomic.Uint64
 }
 
-type HandlerOptions struct {
-	ProviderService providers.Service
-	Client          *http.Client
-	Logger          *slog.Logger
-	AllowAllOrigins bool
-}
-
 type modelsResponse struct {
 	Object string        `json:"object"`
 	Data   []modelOutput `json:"data"`
@@ -75,20 +68,18 @@ type modelRoute struct {
 
 type routingSnapshot []modelRoute
 
-func NewModelsHandler(options HandlerOptions) *ModelsHandler {
-	client := options.Client
+func NewModelsHandler(providerService providers.Service, client *http.Client, baseLogger *slog.Logger, allowAllOrigins bool) *ModelsHandler {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	baseLogger := options.Logger
 	if baseLogger == nil {
 		baseLogger = slog.Default()
 	}
 	return &ModelsHandler{
-		models:          models.NewService(options.ProviderService, client),
+		models:          models.NewService(providerService, client),
 		client:          client,
 		baseLogger:      baseLogger,
-		allowAllOrigins: options.AllowAllOrigins,
+		allowAllOrigins: allowAllOrigins,
 	}
 }
 
