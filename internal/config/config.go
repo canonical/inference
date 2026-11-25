@@ -77,6 +77,16 @@ func configFilePath() string {
 	return os.ExpandEnv(defaultConfigFilePath)
 }
 
+func validateProviderName(name string) error {
+	if name == "" {
+		return errors.New("provider name cannot be empty")
+	}
+	if name == "." || strings.Contains(name, "..") || strings.ContainsAny(name, "/\\\x00") {
+		return fmt.Errorf("invalid provider name %q", name)
+	}
+	return nil
+}
+
 func getProviderKeyFilePath(configPath, providerName string) string {
 	configPath = os.ExpandEnv(configPath)
 	return filepath.Join(filepath.Dir(configPath), ".keys", providerName)
@@ -164,8 +174,8 @@ func replaceFile(path string, data []byte) (err error) {
 }
 
 func (c *Config) addProvider(name string, provider Provider) error {
-	if name == "" {
-		return fmt.Errorf("provider name cannot be empty")
+	if err := validateProviderName(name); err != nil {
+		return err
 	}
 
 	if c.Providers == nil {
