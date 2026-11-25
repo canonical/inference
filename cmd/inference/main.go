@@ -22,6 +22,7 @@ const (
 
 	basicsGroupID    = "basics"
 	providersGroupID = "providers"
+	debugGroupID     = "debug"
 )
 
 func init() {
@@ -100,6 +101,9 @@ func root(ctx *common.Context) *cobra.Command {
 		commands.Info(ctx),
 		commands.Install(ctx),
 		commands.Remove(ctx),
+	)
+	addCommandGroup(cmd, debugGroupID, "Troubleshooting:",
+		commands.Debug(ctx),
 	)
 	return cmd
 }
