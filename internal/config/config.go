@@ -93,7 +93,7 @@ func getProviderKeyFilePath(configPath, providerName string) string {
 }
 
 func (c *ConfigReader) GetProviders() (map[string]Provider, error) {
-	cfg, err := read(c.Path)
+	cfg, err := readConfig(c.Path)
 	if err != nil {
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
@@ -110,7 +110,7 @@ func (c *ConfigReader) ProviderExists(name string) (bool, error) {
 }
 
 // Read config content or default values if the file is absent.
-func read(path string) (*Config, error) {
+func readConfig(path string) (*Config, error) {
 	path = os.ExpandEnv(path)
 
 	// config file does not exist
@@ -130,7 +130,7 @@ func read(path string) (*Config, error) {
 	return &config, nil
 }
 
-func write(path string, config *Config) error {
+func writeConfig(path string, config *Config) error {
 	path = os.ExpandEnv(path)
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
@@ -215,7 +215,7 @@ func (c *ConfigReader) AddOpenAIProvider(name string, baseURL string, apiKey *st
 		AuthScheme: AuthorizationNone,
 	}
 
-	cfg, err := read(c.Path)
+	cfg, err := readConfig(c.Path)
 	if err != nil {
 		return fmt.Errorf("reading config: %w", err)
 	}
@@ -230,7 +230,7 @@ func (c *ConfigReader) AddOpenAIProvider(name string, baseURL string, apiKey *st
 		return fmt.Errorf("setting provider key: %w", err)
 	}
 
-	err = write(c.Path, cfg)
+	err = writeConfig(c.Path, cfg)
 	if err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
@@ -240,7 +240,7 @@ func (c *ConfigReader) AddOpenAIProvider(name string, baseURL string, apiKey *st
 
 // RemoveProvider deletes a provider's credential file before removing its settings.
 func (c *ConfigReader) RemoveProvider(name string) error {
-	cfg, err := read(c.Path)
+	cfg, err := readConfig(c.Path)
 	if err != nil {
 		return fmt.Errorf("reading config: %w", err)
 	}
@@ -268,7 +268,7 @@ func (c *ConfigReader) RemoveProvider(name string) error {
 	}
 
 	delete(cfg.Providers, name)
-	if err = write(c.Path, cfg); err != nil {
+	if err = writeConfig(c.Path, cfg); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
 	return nil
@@ -276,7 +276,7 @@ func (c *ConfigReader) RemoveProvider(name string) error {
 
 // GetProviderKey returns a pointer to the API key, or nil when the provider has no authorization.
 func (c *ConfigReader) GetProviderKey(providerName string) (*string, error) {
-	cfg, err := read(c.Path)
+	cfg, err := readConfig(c.Path)
 	if err != nil {
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
@@ -305,7 +305,7 @@ func (c *ConfigReader) GetProviderKey(providerName string) (*string, error) {
 
 // SetProviderKey persists credentials for a given provider, or removes them if the key is nil.
 func (c *ConfigReader) SetProviderKey(providerName string, key *string) error {
-	cfg, err := read(c.Path)
+	cfg, err := readConfig(c.Path)
 	if err != nil {
 		return fmt.Errorf("reading config: %w", err)
 	}
@@ -313,7 +313,7 @@ func (c *ConfigReader) SetProviderKey(providerName string, key *string) error {
 	if err := cfg.setProviderKey(providerName, key, c.Path); err != nil {
 		return err
 	}
-	return write(c.Path, cfg)
+	return writeConfig(c.Path, cfg)
 }
 
 func (c *Config) setProviderKey(providerName string, key *string, configPath string) error {

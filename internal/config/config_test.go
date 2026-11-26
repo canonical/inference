@@ -55,7 +55,7 @@ func TestConfigReaderGetProvidersReloadsFile(t *testing.T) {
 		want := map[string]Provider{
 			"remote": {Enabled: true, Backend: BackendProxy, BaseURL: baseURL},
 		}
-		if err := write(c.Path, &Config{Version: 1, Providers: want}); err != nil {
+		if err := writeConfig(c.Path, &Config{Version: 1, Providers: want}); err != nil {
 			t.Fatalf("write: %v", err)
 		}
 		got, err := c.GetProviders()
@@ -80,10 +80,10 @@ func TestWriteThenReadRoundTrips(t *testing.T) {
 		},
 	}
 
-	if err := write(path, want); err != nil {
+	if err := writeConfig(path, want); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	got, err := read(path)
+	got, err := readConfig(path)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -97,10 +97,10 @@ func TestWriteReplacesExistingFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := write(path, &Config{Version: 2}); err != nil {
+	if err := writeConfig(path, &Config{Version: 2}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	got, err := read(path)
+	got, err := readConfig(path)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestWriteCleansUpTemporaryFileOnRenameFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := write(path, &Config{Version: 1}); err == nil {
+	if err := writeConfig(path, &Config{Version: 1}); err == nil {
 		t.Fatal("expected error when replacing a directory")
 	}
 
@@ -195,7 +195,7 @@ func TestSetProviderKeyCanBeReadAfterConfigReload(t *testing.T) {
 	c := NewConfigReader()
 	cfg := newConfig()
 	cfg.Providers["openai"] = Provider{Backend: BackendProxy, AuthScheme: AuthorizationNone}
-	if err := write(c.Path, &cfg); err != nil {
+	if err := writeConfig(c.Path, &cfg); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	key := "test-api-key"
@@ -274,7 +274,7 @@ func TestGetProviderKey(t *testing.T) {
 	cfg.Providers["with-key"] = Provider{Backend: BackendProxy, AuthScheme: AuthorizationAPIKey}
 	cfg.Providers["without-key"] = Provider{Backend: BackendProxy, AuthScheme: AuthorizationNone}
 	cfg.Providers["missing-key"] = Provider{Backend: BackendProxy, AuthScheme: AuthorizationAPIKey}
-	if err := write(c.Path, &cfg); err != nil {
+	if err := writeConfig(c.Path, &cfg); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -309,7 +309,7 @@ func TestSetProviderKeyClearsKey(t *testing.T) {
 	c := NewConfigReader()
 	cfg := newConfig()
 	cfg.Providers["openai"] = Provider{Backend: BackendProxy, AuthScheme: AuthorizationNone}
-	if err := write(c.Path, &cfg); err != nil {
+	if err := writeConfig(c.Path, &cfg); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
