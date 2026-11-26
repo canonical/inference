@@ -131,12 +131,10 @@ func (c *Config) setProviderKey(providerName string, key *string, keyFilePath st
 	}
 
 	if key == nil {
-		if provider.AuthScheme != AuthorizationNone {
-			if err := os.Remove(keyFilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("deleting key file: %w", err)
-			}
-			provider.AuthScheme = AuthorizationNone
+		if err := os.Remove(keyFilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("deleting key file: %w", err)
 		}
+		provider.AuthScheme = AuthorizationNone
 		c.Providers[providerName] = provider
 		return nil
 	}

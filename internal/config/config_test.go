@@ -456,6 +456,27 @@ func TestSetProviderKeyWritesOwnerOnlyFile(t *testing.T) {
 	}
 }
 
+func TestAddOpenAIProviderWithoutKeyRemovesStaleKeyFile(t *testing.T) {
+	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	keyPath, err := getProviderKeyFilePath(c.Path, "openai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(keyPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.AddOpenAIProvider("openai", "https://example.com", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(keyPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected stale key file to be removed, stat error = %v", err)
+	}
+}
+
 func TestRemoveProvider(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
