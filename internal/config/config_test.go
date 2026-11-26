@@ -421,6 +421,41 @@ func TestSetProviderKeyUnknownProviderLeavesKeyFileUntouched(t *testing.T) {
 	}
 }
 
+func TestSetProviderKeyWritesOwnerOnlyFile(t *testing.T) {
+	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	if err := c.AddOpenAIProvider("openai", "https://example.com", nil); err != nil {
+		t.Fatal(err)
+	}
+	keyPath, err := getProviderKeyFilePath(c.Path, "openai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(keyPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.SetProviderKey("openai", new("new")); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("key file mode = %v, want 0600", info.Mode().Perm())
+	}
+	entries, err := os.ReadDir(filepath.Dir(keyPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected only the key file, got %v", entries)
+	}
+}
+
 func TestRemoveProvider(t *testing.T) {
 	for _, tt := range []struct {
 		name      string

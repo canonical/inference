@@ -34,7 +34,7 @@ func writeConfig(path string, config *Config) error {
 		return fmt.Errorf("encoding config: %w", err)
 	}
 	data = append(data, '\n')
-	if err := replaceFile(path, data); err != nil {
+	if err := replaceFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("writing config %s: %w", path, err)
 	}
 	return nil
@@ -72,7 +72,7 @@ func readConfigLocked(path string) (*Config, func(), error) {
 	return cfg, unlock, nil
 }
 
-func replaceFile(path string, data []byte) (err error) {
+func replaceFile(path string, data []byte, mode os.FileMode) (err error) {
 	file, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
 	if err != nil {
 		return err
@@ -84,7 +84,7 @@ func replaceFile(path string, data []byte) (err error) {
 		}
 	}()
 
-	if err := file.Chmod(0o644); err != nil {
+	if err := file.Chmod(mode); err != nil {
 		_ = file.Close()
 		return err
 	}

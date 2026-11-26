@@ -144,7 +144,7 @@ func (c *Config) setProviderKey(providerName string, key *string, keyFilePath st
 	if err := os.MkdirAll(filepath.Dir(keyFilePath), 0o700); err != nil {
 		return fmt.Errorf("creating key file directory: %w", err)
 	}
-	if err := os.WriteFile(keyFilePath, []byte(*key), 0o600); err != nil {
+	if err := replaceFile(keyFilePath, []byte(*key), 0o600); err != nil {
 		return fmt.Errorf("writing key file: %w", err)
 	}
 
