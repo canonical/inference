@@ -27,12 +27,12 @@ func (h *ModelsHandler) handleCORS(w http.ResponseWriter, r *http.Request, logge
 		writeError(w, http.StatusForbidden, "Multiple request origins are not allowed.", "invalid_request_error")
 		return true
 	}
-	allowedOrigin := origins[0]
+	requestOrigin := origins[0]
 	if h.allowAllOrigins {
-		allowedOrigin = "*"
-	} else if !isLoopbackOrigin(allowedOrigin) {
-		logger.Warn("rejecting request", "reason", "origin is not loopback")
-		writeError(w, http.StatusForbidden, "The request origin must be loopback.", "invalid_request_error")
+		requestOrigin = "*"
+	} else if !isLoopbackOrigin(requestOrigin) {
+		logger.Warn("rejecting request", "reason", "origin not allowed: "+requestOrigin)
+		writeError(w, http.StatusForbidden, "Origin is not allowed.", "invalid_request_error")
 		return true
 	}
 
@@ -43,14 +43,14 @@ func (h *ModelsHandler) handleCORS(w http.ResponseWriter, r *http.Request, logge
 			writeError(w, http.StatusForbidden, "The requested CORS method is not allowed.", "invalid_request_error")
 			return true
 		}
-		setCORSHeaders(w.Header(), allowedOrigin)
+		setCORSHeaders(w.Header(), requestOrigin)
 		if headers := r.Header.Values("Access-Control-Request-Headers"); len(headers) > 0 {
 			w.Header().Set("Access-Control-Allow-Headers", strings.Join(headers, ", "))
 		}
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
-	setCORSHeaders(w.Header(), allowedOrigin)
+	setCORSHeaders(w.Header(), requestOrigin)
 	return false
 }
 
