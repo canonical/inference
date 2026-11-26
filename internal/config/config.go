@@ -53,18 +53,17 @@ type ConfigReader struct {
 	Path string
 }
 
+// NewConfigReader returns a ConfigReader initialized with the default config file path.
 func NewConfigReader() *ConfigReader {
 	return &ConfigReader{Path: configFilePath()}
 }
 
-// NewConfig enables provider discovery with an empty provider registry.
 func newConfig() Config {
-	c := Config{
+	return Config{
 		Version:           1,
 		DiscoverProviders: true,
 		Providers:         make(map[string]Provider),
 	}
-	return c
 }
 
 func configFilePath() string {
