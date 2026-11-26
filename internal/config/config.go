@@ -2,13 +2,10 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 // ProviderAuthorizationScheme defines the type of authorization used by a provider.
@@ -88,11 +85,6 @@ func validateProviderName(name string) error {
 	return nil
 }
 
-func getProviderKeyFilePath(configPath, providerName string) string {
-	configPath = os.ExpandEnv(configPath)
-	return filepath.Join(filepath.Dir(configPath), ".keys", providerName)
-}
-
 func (c *ConfigReader) GetProviders() (map[string]Provider, error) {
 	cfg, err := readConfig(c.Path)
 	if err != nil {
@@ -108,126 +100,6 @@ func (c *ConfigReader) ProviderExists(name string) (bool, error) {
 	}
 	_, exists := providers[name]
 	return exists, nil
-}
-
-// Read config content or default values if the file is absent.
-func readConfig(path string) (*Config, error) {
-	path = os.ExpandEnv(path)
-
-	// config file does not exist
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		config := newConfig()
-		return &config, nil
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading config %s: %w", path, err)
-	}
-	var config Config
-	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("parsing config %s: %w", path, err)
-	}
-	return &config, nil
-}
-
-func writeConfig(path string, config *Config) error {
-	path = os.ExpandEnv(path)
-	data, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encoding config: %w", err)
-	}
-	data = append(data, '\n')
-	if err := replaceFile(path, data); err != nil {
-		return fmt.Errorf("writing config %s: %w", path, err)
-	}
-	return nil
-}
-
-func lockConfig(path string) (func(), error) {
-	path = os.ExpandEnv(path)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, err
-	}
-	file, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
-		_ = file.Close()
-		return nil, err
-	}
-	return func() {
-		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
-		_ = file.Close()
-	}, nil
-}
-
-type credentialSnapshot struct {
-	data   []byte
-	mode   os.FileMode
-	exists bool
-}
-
-func snapshotCredential(path string) (credentialSnapshot, error) {
-	info, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return credentialSnapshot{}, nil
-	}
-	if err != nil {
-		return credentialSnapshot{}, err
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return credentialSnapshot{}, err
-	}
-	return credentialSnapshot{data: data, mode: info.Mode().Perm(), exists: true}, nil
-}
-
-func (s credentialSnapshot) restore(path string) error {
-	if !s.exists {
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, s.data, s.mode); err != nil {
-		return err
-	}
-	return os.Chmod(path, s.mode)
-}
-
-func replaceFile(path string, data []byte) (err error) {
-	file, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	tempPath := file.Name()
-	defer func() {
-		if removeErr := os.Remove(tempPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			err = errors.Join(err, fmt.Errorf("removing temporary config file: %w", removeErr))
-		}
-	}()
-
-	if err := file.Chmod(0o644); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tempPath, path)
 }
 
 func (c *Config) addProvider(name string, provider Provider) error {
@@ -263,9 +135,9 @@ func (c *Config) AddInferenceSnapProvider(name string, baseURL string, snap stri
 
 // AddOpenAIProvider registers an enabled proxy and persists its optional API key.
 func (c *ConfigReader) AddOpenAIProvider(name string, baseURL string, apiKey *string) error {
-	unlock, err := lockConfig(c.Path)
+	cfg, unlock, err := readConfigLocked(c.Path)
 	if err != nil {
-		return fmt.Errorf("locking config: %w", err)
+		return err
 	}
 	defer unlock()
 
@@ -276,11 +148,6 @@ func (c *ConfigReader) AddOpenAIProvider(name string, baseURL string, apiKey *st
 		BaseURL:    baseURL,
 		Snap:       nil,
 		AuthScheme: AuthorizationNone,
-	}
-
-	cfg, err := readConfig(c.Path)
-	if err != nil {
-		return fmt.Errorf("reading config: %w", err)
 	}
 
 	err = cfg.addProvider(name, provider)
@@ -308,146 +175,38 @@ func (c *ConfigReader) AddOpenAIProvider(name string, baseURL string, apiKey *st
 
 // RemoveProvider deletes a provider's credential file before removing its settings.
 func (c *ConfigReader) RemoveProvider(name string) error {
-	unlock, err := lockConfig(c.Path)
+	cfg, unlock, err := readConfigLocked(c.Path)
 	if err != nil {
-		return fmt.Errorf("locking config: %w", err)
+		return err
 	}
 	defer unlock()
 
-	cfg, err := readConfig(c.Path)
-	if err != nil {
-		return fmt.Errorf("reading config: %w", err)
-	}
-
-	if cfg.Providers == nil {
+	provider, exists := cfg.Providers[name]
+	if !exists {
 		return fmt.Errorf("provider %s does not exist", name)
 	}
 
-	var provider Provider
-	var exists bool
-	if provider, exists = cfg.Providers[name]; !exists {
-		return fmt.Errorf("provider %s does not exist", name)
-	}
-
+	var keyFilePath string
+	var previousKey credentialSnapshot
 	switch provider.AuthScheme {
 	case AuthorizationNone:
-		// no action needed
 	case AuthorizationAPIKey:
-		keyFilePath := getProviderKeyFilePath(c.Path, name)
-		previousKey, err := snapshotCredential(keyFilePath)
+		keyFilePath = getProviderKeyFilePath(c.Path, name)
+		previousKey, err = removeCredential(keyFilePath)
 		if err != nil {
-			return fmt.Errorf("reading key file: %w", err)
+			return err
 		}
-		if err := os.Remove(keyFilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("deleting key file: %w", err)
-		}
-		delete(cfg.Providers, name)
-		if err := writeConfig(c.Path, cfg); err != nil {
-			return errors.Join(fmt.Errorf("writing config: %w", err), previousKey.restore(keyFilePath))
-		}
-		return nil
 	default:
 		return fmt.Errorf("unsupported authorization scheme: %v", provider.AuthScheme)
 	}
 
 	delete(cfg.Providers, name)
-	if err = writeConfig(c.Path, cfg); err != nil {
-		return fmt.Errorf("writing config: %w", err)
-	}
-	return nil
-}
-
-// GetProviderKey returns a pointer to the API key, or nil when the provider has no authorization.
-func (c *ConfigReader) GetProviderKey(providerName string) (*string, error) {
-	cfg, err := readConfig(c.Path)
-	if err != nil {
-		return nil, fmt.Errorf("reading config: %w", err)
-	}
-
-	provider, exists := cfg.Providers[providerName]
-	if !exists {
-		return nil, fmt.Errorf("provider %s does not exist", providerName)
-	}
-
-	switch provider.AuthScheme {
-	case AuthorizationNone:
-		return nil, nil
-	case AuthorizationAPIKey:
-		keyFilePath := getProviderKeyFilePath(c.Path, providerName)
-		data, err := os.ReadFile(keyFilePath)
-		if err != nil {
-			return nil, fmt.Errorf("reading key file: %w", err)
-		}
-		key := strings.TrimSpace(string(data))
-		return &key, nil
-
-	default:
-		return nil, fmt.Errorf("unsupported authorization scheme: %v", provider.AuthScheme)
-	}
-}
-
-// SetProviderKey persists credentials for a given provider, or removes them if the key is nil.
-func (c *ConfigReader) SetProviderKey(providerName string, key *string) error {
-	unlock, err := lockConfig(c.Path)
-	if err != nil {
-		return fmt.Errorf("locking config: %w", err)
-	}
-	defer unlock()
-
-	cfg, err := readConfig(c.Path)
-	if err != nil {
-		return fmt.Errorf("reading config: %w", err)
-	}
-
-	keyFilePath := getProviderKeyFilePath(c.Path, providerName)
-	previousKey, err := snapshotCredential(keyFilePath)
-	if err != nil {
-		return fmt.Errorf("reading key file: %w", err)
-	}
-	if err := cfg.setProviderKey(providerName, key, c.Path); err != nil {
-		return errors.Join(err, previousKey.restore(keyFilePath))
-	}
 	if err := writeConfig(c.Path, cfg); err != nil {
-		return errors.Join(err, previousKey.restore(keyFilePath))
-	}
-	return nil
-}
-
-func (c *Config) setProviderKey(providerName string, key *string, configPath string) error {
-	if c.Providers == nil {
-		return fmt.Errorf("provider %s does not exist", providerName)
-	}
-
-	provider, exists := c.Providers[providerName]
-	if !exists {
-		return fmt.Errorf("provider %s does not exist", providerName)
-	}
-
-	if key == nil {
-		// remove existing key (if any)
-		if provider.AuthScheme != AuthorizationNone {
-			// we are removing an existing key
-			keyFilePath := getProviderKeyFilePath(configPath, providerName)
-			if err := os.Remove(keyFilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("deleting key file: %w", err)
-			}
-			provider.AuthScheme = AuthorizationNone
+		writeErr := fmt.Errorf("writing config: %w", err)
+		if provider.AuthScheme == AuthorizationAPIKey {
+			return errors.Join(writeErr, previousKey.restore(keyFilePath))
 		}
-		c.Providers[providerName] = provider
-		return nil
+		return writeErr
 	}
-
-	keyFilePath := getProviderKeyFilePath(configPath, providerName)
-
-	if err := os.MkdirAll(filepath.Dir(keyFilePath), 0o700); err != nil {
-		return fmt.Errorf("creating key file directory: %w", err)
-	}
-
-	if err := os.WriteFile(keyFilePath, []byte(*key), 0o600); err != nil {
-		return fmt.Errorf("writing key file: %w", err)
-	}
-
-	provider.AuthScheme = AuthorizationAPIKey
-	c.Providers[providerName] = provider
 	return nil
 }

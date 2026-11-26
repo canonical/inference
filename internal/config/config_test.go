@@ -2,9 +2,11 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"syscall"
 	"testing"
 )
 
@@ -341,5 +343,70 @@ func TestSetProviderKeyClearsKey(t *testing.T) {
 	}
 	if _, err := os.Stat(keyFile); !os.IsNotExist(err) {
 		t.Fatalf("expected key file to be removed, stat error = %v", err)
+	}
+}
+
+func TestLockAndReadConfigReleasesLockOnReadError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := readConfigLocked(path); err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+
+	file, err := os.OpenFile(path+".lock", os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatalf("lock was not released after read error: %v", err)
+	}
+}
+
+func TestRemoveProvider(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		auth      ProviderAuthorizationScheme
+		keyExists bool
+		wantErr   bool
+	}{
+		{name: "without key", auth: AuthorizationNone},
+		{name: "with key", auth: AuthorizationAPIKey, keyExists: true},
+		{name: "missing key", auth: AuthorizationAPIKey},
+		{name: "unsupported authorization", auth: "unsupported", wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+			cfg := newConfig()
+			cfg.Providers["provider"] = Provider{AuthScheme: tt.auth}
+			if err := writeConfig(c.Path, &cfg); err != nil {
+				t.Fatal(err)
+			}
+			keyPath := getProviderKeyFilePath(c.Path, "provider")
+			if tt.keyExists {
+				if err := os.MkdirAll(filepath.Dir(keyPath), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(keyPath, []byte("key"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err := c.RemoveProvider("provider"); (err != nil) != tt.wantErr {
+				t.Fatalf("RemoveProvider error = %v, wantErr %t", err, tt.wantErr)
+			}
+			providers, err := c.GetProviders()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, exists := providers["provider"]; exists != tt.wantErr {
+				t.Fatalf("provider exists = %t, want %t", exists, tt.wantErr)
+			}
+			if _, err := os.Stat(keyPath); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("expected no key file, stat error = %v", err)
+			}
+		})
 	}
 }
