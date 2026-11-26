@@ -120,7 +120,12 @@ func (c *Config) addProvider(name string, provider Provider) error {
 }
 
 // AddInferenceSnapProvider registers an enabled snap, rejecting empty or duplicate names.
-func (c *Config) AddInferenceSnapProvider(name string, baseURL string, snap string, api *string) error {
+func (c *ConfigReader) AddInferenceSnapProvider(name string, baseURL string, snap string, api *string) error {
+	cfg, unlock, err := readConfigLocked(c.Path)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	provider := Provider{
 		Enabled:    true,
 		Backend:    BackendSnap,
@@ -130,7 +135,11 @@ func (c *Config) AddInferenceSnapProvider(name string, baseURL string, snap stri
 		AuthScheme: AuthorizationNone,
 	}
 
-	return c.addProvider(name, provider)
+	err = cfg.addProvider(name, provider)
+	if err != nil {
+		return fmt.Errorf("adding provider: %w", err)
+	}
+	return writeConfig(c.Path, cfg)
 }
 
 // AddOpenAIProvider registers an enabled proxy and persists its optional API key.

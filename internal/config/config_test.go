@@ -145,12 +145,12 @@ func TestAddProviderValidatesName(t *testing.T) {
 		{name: "provider\x00name", wantErr: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := newConfig()
-			err := cfg.AddInferenceSnapProvider(tt.name, "http://localhost", "snap", nil)
+			c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+			err := c.AddInferenceSnapProvider(tt.name, "http://localhost", "snap", nil)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("AddInferenceSnapProvider error = %v, wantErr %t", err, tt.wantErr)
 			}
-			c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+			c = &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
 			err = c.AddOpenAIProvider(tt.name, "https://example.com", new("key"))
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("AddOpenAIProvider error = %v, wantErr %t", err, tt.wantErr)
