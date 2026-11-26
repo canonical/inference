@@ -477,6 +477,33 @@ func TestAddOpenAIProviderWithoutKeyRemovesStaleKeyFile(t *testing.T) {
 	}
 }
 
+func TestRemoveProviderWritesConfigBeforeDeletingKey(t *testing.T) {
+	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	cfg := newConfig()
+	cfg.Providers["provider"] = Provider{AuthScheme: AuthorizationAPIKey}
+	if err := writeConfig(c.Path, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	keyPath, err := getProviderKeyFilePath(c.Path, "provider")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(keyPath, "child"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.RemoveProvider("provider"); err == nil {
+		t.Fatal("expected error when the key file cannot be deleted")
+	}
+	providers, err := c.GetProviders()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := providers["provider"]; exists {
+		t.Fatal("provider should be removed from the config even if key deletion fails")
+	}
+}
+
 func TestRemoveProvider(t *testing.T) {
 	for _, tt := range []struct {
 		name      string

@@ -53,17 +53,6 @@ func (s credentialSnapshot) restore(path string) error {
 	return os.Chmod(path, s.mode)
 }
 
-func removeCredential(path string) (credentialSnapshot, error) {
-	previousKey, err := snapshotCredential(path)
-	if err != nil {
-		return credentialSnapshot{}, fmt.Errorf("reading key file: %w", err)
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return credentialSnapshot{}, fmt.Errorf("deleting key file: %w", err)
-	}
-	return previousKey, nil
-}
-
 // GetProviderKey returns a pointer to the API key, or nil when the provider has no authorization.
 func (c *ConfigReader) GetProviderKey(providerName string) (*string, error) {
 	cfg, err := readConfig(c.Path)

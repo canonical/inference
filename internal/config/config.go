@@ -185,7 +185,7 @@ func (c *ConfigReader) AddOpenAIProvider(name string, baseURL string, apiKey *st
 	return nil
 }
 
-// RemoveProvider deletes a provider's credential file before removing its settings.
+// RemoveProvider removes a provider's settings, then deletes its credential file.
 func (c *ConfigReader) RemoveProvider(name string) error {
 	cfg, unlock, err := readConfigLocked(c.Path)
 	if err != nil {
@@ -198,30 +198,20 @@ func (c *ConfigReader) RemoveProvider(name string) error {
 		return fmt.Errorf("provider %s does not exist", name)
 	}
 
-	var keyFilePath string
-	var previousKey credentialSnapshot
-	switch provider.AuthScheme {
-	case AuthorizationNone:
-	case AuthorizationAPIKey:
-		keyFilePath, err = getProviderKeyFilePath(c.Path, name)
-		if err != nil {
-			return err
-		}
-		previousKey, err = removeCredential(keyFilePath)
-		if err != nil {
-			return err
-		}
-	default:
+	if provider.AuthScheme != AuthorizationNone && provider.AuthScheme != AuthorizationAPIKey {
 		return fmt.Errorf("unsupported authorization scheme: %v", provider.AuthScheme)
+	}
+	keyFilePath, err := getProviderKeyFilePath(c.Path, name)
+	if err != nil {
+		return err
 	}
 
 	delete(cfg.Providers, name)
 	if err := writeConfig(c.Path, cfg); err != nil {
-		writeErr := fmt.Errorf("writing config: %w", err)
-		if provider.AuthScheme == AuthorizationAPIKey {
-			return errors.Join(writeErr, previousKey.restore(keyFilePath))
-		}
-		return writeErr
+		return fmt.Errorf("writing config: %w", err)
+	}
+	if err := os.Remove(keyFilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("deleting key file: %w", err)
 	}
 	return nil
 }
