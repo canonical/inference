@@ -359,7 +359,11 @@ func TestLockAndReadConfigReleasesLockOnReadError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer file.Close()
+	t.Cleanup(func() {
+		if err := file.Close(); err != nil {
+			t.Errorf("closing lock file: %v", err)
+		}
+	})
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		t.Fatalf("lock was not released after read error: %v", err)
 	}
