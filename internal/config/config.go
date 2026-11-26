@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // ProviderAuthorizationScheme defines the type of authorization used by a provider.
@@ -143,6 +144,25 @@ func writeConfig(path string, config *Config) error {
 	return nil
 }
 
+func lockConfig(path string) (func(), error) {
+	path = os.ExpandEnv(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	return func() {
+		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		_ = file.Close()
+	}, nil
+}
+
 type credentialSnapshot struct {
 	data   []byte
 	mode   os.FileMode
@@ -243,6 +263,12 @@ func (c *Config) AddInferenceSnapProvider(name string, baseURL string, snap stri
 
 // AddOpenAIProvider registers an enabled proxy and persists its optional API key.
 func (c *ConfigReader) AddOpenAIProvider(name string, baseURL string, apiKey *string) error {
+	unlock, err := lockConfig(c.Path)
+	if err != nil {
+		return fmt.Errorf("locking config: %w", err)
+	}
+	defer unlock()
+
 	provider := Provider{
 		Enabled:    true,
 		API:        new("openai"),
@@ -282,6 +308,12 @@ func (c *ConfigReader) AddOpenAIProvider(name string, baseURL string, apiKey *st
 
 // RemoveProvider deletes a provider's credential file before removing its settings.
 func (c *ConfigReader) RemoveProvider(name string) error {
+	unlock, err := lockConfig(c.Path)
+	if err != nil {
+		return fmt.Errorf("locking config: %w", err)
+	}
+	defer unlock()
+
 	cfg, err := readConfig(c.Path)
 	if err != nil {
 		return fmt.Errorf("reading config: %w", err)
@@ -356,6 +388,12 @@ func (c *ConfigReader) GetProviderKey(providerName string) (*string, error) {
 
 // SetProviderKey persists credentials for a given provider, or removes them if the key is nil.
 func (c *ConfigReader) SetProviderKey(providerName string, key *string) error {
+	unlock, err := lockConfig(c.Path)
+	if err != nil {
+		return fmt.Errorf("locking config: %w", err)
+	}
+	defer unlock()
+
 	cfg, err := readConfig(c.Path)
 	if err != nil {
 		return fmt.Errorf("reading config: %w", err)
