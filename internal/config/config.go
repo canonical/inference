@@ -143,6 +143,43 @@ func writeConfig(path string, config *Config) error {
 	return nil
 }
 
+type credentialSnapshot struct {
+	data   []byte
+	mode   os.FileMode
+	exists bool
+}
+
+func snapshotCredential(path string) (credentialSnapshot, error) {
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return credentialSnapshot{}, nil
+	}
+	if err != nil {
+		return credentialSnapshot{}, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return credentialSnapshot{}, err
+	}
+	return credentialSnapshot{data: data, mode: info.Mode().Perm(), exists: true}, nil
+}
+
+func (s credentialSnapshot) restore(path string) error {
+	if !s.exists {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, s.data, s.mode); err != nil {
+		return err
+	}
+	return os.Chmod(path, s.mode)
+}
+
 func replaceFile(path string, data []byte) (err error) {
 	file, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
 	if err != nil {
@@ -224,15 +261,20 @@ func (c *ConfigReader) AddOpenAIProvider(name string, baseURL string, apiKey *st
 	if err != nil {
 		return fmt.Errorf("adding provider: %w", err)
 	}
+	keyFilePath := getProviderKeyFilePath(c.Path, name)
+	previousKey, err := snapshotCredential(keyFilePath)
+	if err != nil {
+		return fmt.Errorf("reading key file: %w", err)
+	}
 
 	err = cfg.setProviderKey(name, apiKey, c.Path)
 	if err != nil {
-		return fmt.Errorf("setting provider key: %w", err)
+		return errors.Join(fmt.Errorf("setting provider key: %w", err), previousKey.restore(keyFilePath))
 	}
 
 	err = writeConfig(c.Path, cfg)
 	if err != nil {
-		return fmt.Errorf("writing config: %w", err)
+		return errors.Join(fmt.Errorf("writing config: %w", err), previousKey.restore(keyFilePath))
 	}
 
 	return nil
@@ -260,9 +302,18 @@ func (c *ConfigReader) RemoveProvider(name string) error {
 		// no action needed
 	case AuthorizationAPIKey:
 		keyFilePath := getProviderKeyFilePath(c.Path, name)
-		if err := os.Remove(keyFilePath); err != nil {
+		previousKey, err := snapshotCredential(keyFilePath)
+		if err != nil {
+			return fmt.Errorf("reading key file: %w", err)
+		}
+		if err := os.Remove(keyFilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("deleting key file: %w", err)
 		}
+		delete(cfg.Providers, name)
+		if err := writeConfig(c.Path, cfg); err != nil {
+			return errors.Join(fmt.Errorf("writing config: %w", err), previousKey.restore(keyFilePath))
+		}
+		return nil
 	default:
 		return fmt.Errorf("unsupported authorization scheme: %v", provider.AuthScheme)
 	}
@@ -310,10 +361,18 @@ func (c *ConfigReader) SetProviderKey(providerName string, key *string) error {
 		return fmt.Errorf("reading config: %w", err)
 	}
 
-	if err := cfg.setProviderKey(providerName, key, c.Path); err != nil {
-		return err
+	keyFilePath := getProviderKeyFilePath(c.Path, providerName)
+	previousKey, err := snapshotCredential(keyFilePath)
+	if err != nil {
+		return fmt.Errorf("reading key file: %w", err)
 	}
-	return writeConfig(c.Path, cfg)
+	if err := cfg.setProviderKey(providerName, key, c.Path); err != nil {
+		return errors.Join(err, previousKey.restore(keyFilePath))
+	}
+	if err := writeConfig(c.Path, cfg); err != nil {
+		return errors.Join(err, previousKey.restore(keyFilePath))
+	}
+	return nil
 }
 
 func (c *Config) setProviderKey(providerName string, key *string, configPath string) error {
@@ -331,7 +390,7 @@ func (c *Config) setProviderKey(providerName string, key *string, configPath str
 		if provider.AuthScheme != AuthorizationNone {
 			// we are removing an existing key
 			keyFilePath := getProviderKeyFilePath(configPath, providerName)
-			if err := os.Remove(keyFilePath); err != nil {
+			if err := os.Remove(keyFilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf("deleting key file: %w", err)
 			}
 			provider.AuthScheme = AuthorizationNone
