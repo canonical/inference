@@ -7,7 +7,8 @@ Examples:
 - fix: handle providers with no available models
 - docs: explain how to connect to the local proxy
 - refactor: simplify provider discovery
-- chore: update Go dependencies
+- build: version modelctl CLI via ldflag
+- chore: bump YAML dependency to v4.0.0
 - ci: validate pull request titles on every commit
 
 Scopes are not allowed in PR titles.
