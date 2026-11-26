@@ -742,8 +742,8 @@ func TestModelsHandlerOriginErrorMessages(t *testing.T) {
 		{
 			name:    "empty origin",
 			origins: []string{""},
-			message: "The request origin must be loopback.",
-			reason:  "origin is not loopback",
+			message: "Origin is not allowed.",
+			reason:  "origin not allowed: ",
 		},
 		{
 			name:    "multiple origins",
@@ -754,8 +754,8 @@ func TestModelsHandlerOriginErrorMessages(t *testing.T) {
 		{
 			name:    "non-loopback origin",
 			origins: []string{"https://client.example"},
-			message: "The request origin must be loopback.",
-			reason:  "origin is not loopback",
+			message: "Origin is not allowed.",
+			reason:  "origin not allowed: https://client.example",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
