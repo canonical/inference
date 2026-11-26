@@ -8,9 +8,12 @@ import (
 	"strings"
 )
 
-func getProviderKeyFilePath(configPath, providerName string) string {
+func getProviderKeyFilePath(configPath, providerName string) (string, error) {
+	if err := validateProviderName(providerName); err != nil {
+		return "", err
+	}
 	configPath = os.ExpandEnv(configPath)
-	return filepath.Join(filepath.Dir(configPath), ".keys", providerName)
+	return filepath.Join(filepath.Dir(configPath), ".keys", providerName), nil
 }
 
 type credentialSnapshot struct {
@@ -77,7 +80,10 @@ func (c *ConfigReader) GetProviderKey(providerName string) (*string, error) {
 	case AuthorizationNone:
 		return nil, nil
 	case AuthorizationAPIKey:
-		keyFilePath := getProviderKeyFilePath(c.Path, providerName)
+		keyFilePath, err := getProviderKeyFilePath(c.Path, providerName)
+		if err != nil {
+			return nil, err
+		}
 		data, err := os.ReadFile(keyFilePath)
 		if err != nil {
 			return nil, fmt.Errorf("reading key file: %w", err)
@@ -92,18 +98,24 @@ func (c *ConfigReader) GetProviderKey(providerName string) (*string, error) {
 
 // SetProviderKey persists credentials for a given provider, or removes them if the key is nil.
 func (c *ConfigReader) SetProviderKey(providerName string, key *string) error {
+	keyFilePath, err := getProviderKeyFilePath(c.Path, providerName)
+	if err != nil {
+		return err
+	}
 	cfg, unlock, err := readConfigLocked(c.Path)
 	if err != nil {
 		return err
 	}
 	defer unlock()
 
-	keyFilePath := getProviderKeyFilePath(c.Path, providerName)
+	if _, exists := cfg.Providers[providerName]; !exists {
+		return fmt.Errorf("provider %s does not exist", providerName)
+	}
 	previousKey, err := snapshotCredential(keyFilePath)
 	if err != nil {
 		return fmt.Errorf("reading key file: %w", err)
 	}
-	if err := cfg.setProviderKey(providerName, key, c.Path); err != nil {
+	if err := cfg.setProviderKey(providerName, key, keyFilePath); err != nil {
 		return errors.Join(err, previousKey.restore(keyFilePath))
 	}
 	if err := writeConfig(c.Path, cfg); err != nil {
@@ -112,7 +124,7 @@ func (c *ConfigReader) SetProviderKey(providerName string, key *string) error {
 	return nil
 }
 
-func (c *Config) setProviderKey(providerName string, key *string, configPath string) error {
+func (c *Config) setProviderKey(providerName string, key *string, keyFilePath string) error {
 	provider, exists := c.Providers[providerName]
 	if !exists {
 		return fmt.Errorf("provider %s does not exist", providerName)
@@ -120,7 +132,6 @@ func (c *Config) setProviderKey(providerName string, key *string, configPath str
 
 	if key == nil {
 		if provider.AuthScheme != AuthorizationNone {
-			keyFilePath := getProviderKeyFilePath(configPath, providerName)
 			if err := os.Remove(keyFilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf("deleting key file: %w", err)
 			}
@@ -130,12 +141,9 @@ func (c *Config) setProviderKey(providerName string, key *string, configPath str
 		return nil
 	}
 
-	keyFilePath := getProviderKeyFilePath(configPath, providerName)
-
 	if err := os.MkdirAll(filepath.Dir(keyFilePath), 0o700); err != nil {
 		return fmt.Errorf("creating key file directory: %w", err)
 	}
-
 	if err := os.WriteFile(keyFilePath, []byte(*key), 0o600); err != nil {
 		return fmt.Errorf("writing key file: %w", err)
 	}

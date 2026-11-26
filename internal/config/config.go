@@ -163,13 +163,16 @@ func (c *ConfigReader) AddOpenAIProvider(name string, baseURL string, apiKey *st
 	if err != nil {
 		return fmt.Errorf("adding provider: %w", err)
 	}
-	keyFilePath := getProviderKeyFilePath(c.Path, name)
+	keyFilePath, err := getProviderKeyFilePath(c.Path, name)
+	if err != nil {
+		return err
+	}
 	previousKey, err := snapshotCredential(keyFilePath)
 	if err != nil {
 		return fmt.Errorf("reading key file: %w", err)
 	}
 
-	err = cfg.setProviderKey(name, apiKey, c.Path)
+	err = cfg.setProviderKey(name, apiKey, keyFilePath)
 	if err != nil {
 		return errors.Join(fmt.Errorf("setting provider key: %w", err), previousKey.restore(keyFilePath))
 	}
@@ -200,7 +203,10 @@ func (c *ConfigReader) RemoveProvider(name string) error {
 	switch provider.AuthScheme {
 	case AuthorizationNone:
 	case AuthorizationAPIKey:
-		keyFilePath = getProviderKeyFilePath(c.Path, name)
+		keyFilePath, err = getProviderKeyFilePath(c.Path, name)
+		if err != nil {
+			return err
+		}
 		previousKey, err = removeCredential(keyFilePath)
 		if err != nil {
 			return err

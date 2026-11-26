@@ -365,6 +365,62 @@ func TestLockAndReadConfigReleasesLockOnReadError(t *testing.T) {
 	}
 }
 
+func TestKeyOperationsRejectInvalidProviderNames(t *testing.T) {
+	dir := t.TempDir()
+	c := &ConfigReader{Path: filepath.Join(dir, "data", "config.json")}
+	victim := filepath.Join(dir, "victim")
+	if err := os.MkdirAll(filepath.Dir(c.Path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(victim, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := newConfig()
+	cfg.Providers["../../victim"] = Provider{AuthScheme: AuthorizationAPIKey}
+	if err := writeConfig(c.Path, &cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := c.GetProviderKey("../../victim"); err == nil {
+		t.Error("GetProviderKey accepted a traversing name")
+	}
+	if err := c.SetProviderKey("../../victim", nil); err == nil {
+		t.Error("SetProviderKey accepted a traversing name")
+	}
+	if err := c.RemoveProvider("../../victim"); err == nil {
+		t.Error("RemoveProvider accepted a traversing name")
+	}
+	if data, err := os.ReadFile(victim); err != nil || string(data) != "secret" {
+		t.Fatalf("victim file was modified: %q, %v", data, err)
+	}
+}
+
+func TestSetProviderKeyUnknownProviderLeavesKeyFileUntouched(t *testing.T) {
+	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	keyPath, err := getProviderKeyFilePath(c.Path, "unknown")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(keyPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, []byte("stale"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.SetProviderKey("unknown", new("key")); err == nil {
+		t.Fatal("expected error for unknown provider")
+	}
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(keyPath)
+	if string(data) != "stale" || info.Mode().Perm() != 0o640 {
+		t.Fatalf("key file changed: %q, %v", data, info.Mode().Perm())
+	}
+}
+
 func TestRemoveProvider(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
@@ -384,7 +440,10 @@ func TestRemoveProvider(t *testing.T) {
 			if err := writeConfig(c.Path, &cfg); err != nil {
 				t.Fatal(err)
 			}
-			keyPath := getProviderKeyFilePath(c.Path, "provider")
+			keyPath, err := getProviderKeyFilePath(c.Path, "provider")
+			if err != nil {
+				t.Fatal(err)
+			}
 			if tt.keyExists {
 				if err := os.MkdirAll(filepath.Dir(keyPath), 0o700); err != nil {
 					t.Fatal(err)
