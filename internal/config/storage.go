@@ -12,12 +12,11 @@ import (
 func readConfig(path string) (*Config, error) {
 	path = os.ExpandEnv(path)
 
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
 		config := newConfig()
 		return &config, nil
 	}
-
-	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading config %s: %w", path, err)
 	}
