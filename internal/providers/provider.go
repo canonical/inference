@@ -131,19 +131,19 @@ func (s *service) Issues(ctx context.Context) ([]Issue, error) {
 	return issues, err
 }
 
-func (s *service) readSharedProviders(ctx context.Context) (connected, configured []Provider, issues []Issue, err error) {
+func (s *service) readSharedProviders(ctx context.Context) (connected, existing []Provider, issues []Issue, err error) {
 	connectedEntries, issues, err := readConnectedProviders(s.shareProvidersPath)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	configured, err = ConfiguredOpenAIProviders(ctx)
+	existing, err = ExistingOpenAIProviders(ctx)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("reading configured OpenAI providers: %w", err)
 	}
 
-	connected, collisions := identifyNamingCollisions(connectedEntries, configured)
-	return connected, configured, append(issues, collisions...), nil
+	connected, collisions := identifyNamingCollisions(connectedEntries, existing)
+	return connected, existing, append(issues, collisions...), nil
 }
 
 func (s *service) list(ctx context.Context, options listOptions) ([]Provider, error) {
