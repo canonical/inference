@@ -92,31 +92,40 @@ type service struct {
 	syncConfig         bool
 }
 
-type Option func(*service)
-
-// WithConfigSync makes provider discovery add connected providers to the config, which requires write access to it.
-func WithConfigSync() Option {
-	return func(s *service) { s.syncConfig = true }
-}
-
 // A nil configReader treats every provider as enabled.
 func NewService(
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
 	configReader *config.ConfigReader,
-	options ...Option,
 ) Service {
-	s := &service{
+	return newService(catalog, snapdClient, shareProvidersPath, configReader, false)
+}
+
+// NewSyncingService also adds connected providers to the config during discovery, which requires write access to it.
+func NewSyncingService(
+	catalog *snapcatalog.Reader,
+	snapdClient *snapd.Client,
+	shareProvidersPath string,
+	configReader *config.ConfigReader,
+) Service {
+	return newService(catalog, snapdClient, shareProvidersPath, configReader, true)
+}
+
+func newService(
+	catalog *snapcatalog.Reader,
+	snapdClient *snapd.Client,
+	shareProvidersPath string,
+	configReader *config.ConfigReader,
+	syncConfig bool,
+) Service {
+	return &service{
 		catalog:            catalog,
 		snapdClient:        snapdClient,
 		shareProvidersPath: shareProvidersPath,
 		configReader:       configReader,
+		syncConfig:         syncConfig,
 	}
-	for _, option := range options {
-		option(s)
-	}
-	return s
 }
 
 func (s *service) Find(ctx context.Context, name string) (Provider, error) {

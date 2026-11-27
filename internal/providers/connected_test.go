@@ -205,7 +205,7 @@ func TestListSyncsConnectedProvidersIntoConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := NewService(catalog, client, root, configReader, WithConfigSync()).List(context.Background())
+	result, err := NewSyncingService(catalog, client, root, configReader).List(context.Background())
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
