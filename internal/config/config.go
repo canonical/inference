@@ -22,7 +22,8 @@ const (
 	defaultConfigFilePath = "$SNAP_DATA/config.json"
 )
 
-var ErrProviderNotFound = errors.New("provider does not exist")
+var ErrProviderNotFound = errors.New("does not exist")
+var ErrProviderAlreadyExists = errors.New("already exists")
 
 type ConfigReader struct {
 	Path string
@@ -84,7 +85,7 @@ func (c *Config) addProvider(name string, provider Provider) error {
 	}
 
 	if _, exists := c.Providers[name]; exists {
-		return fmt.Errorf("provider %s already exists", name)
+		return fmt.Errorf("provider %s %w", name, ErrProviderAlreadyExists)
 	}
 
 	c.Providers[name] = provider
@@ -105,41 +106,30 @@ func (c *ConfigReader) AddProvider(name string, enabled bool) error {
 }
 
 func (c *ConfigReader) EnsureProviders(names []string) (map[string]Provider, error) {
-	for _, name := range names {
-		if err := validateProviderName(name); err != nil {
-			return nil, err
-		}
-	}
-
 	cfg, unlock, err := readConfigLocked(c.Path)
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
-	if !missingProviders(cfg, names) {
-		return cfg.Providers, nil
-	}
-	if cfg.Providers == nil {
-		cfg.Providers = make(map[string]Provider)
-	}
+
+	changed := false
 	for _, name := range names {
-		if _, exists := cfg.Providers[name]; !exists {
-			cfg.Providers[name] = Provider{Enabled: true}
+		err := cfg.addProvider(name, Provider{Enabled: true})
+		if errors.Is(err, ErrProviderAlreadyExists) {
+			continue
 		}
+		if err != nil {
+			return nil, fmt.Errorf("adding provider %s: %w", name, err)
+		}
+		changed = true
 	}
-	if err := writeConfig(c.Path, cfg); err != nil {
-		return nil, err
+
+	if changed {
+		if err := writeConfig(c.Path, cfg); err != nil {
+			return nil, err
+		}
 	}
 	return cfg.Providers, nil
-}
-
-func missingProviders(cfg *Config, names []string) bool {
-	for _, name := range names {
-		if _, exists := cfg.Providers[name]; !exists {
-			return true
-		}
-	}
-	return false
 }
 
 // SetProviderEnabled treats a provider missing from the config as enabled.
@@ -179,7 +169,7 @@ func (c *ConfigReader) RemoveProvider(name string) error {
 	defer unlock()
 
 	if _, exists := cfg.Providers[name]; !exists {
-		return fmt.Errorf("provider %s: %w", name, ErrProviderNotFound)
+		return fmt.Errorf("provider %s %w", name, ErrProviderNotFound)
 	}
 	delete(cfg.Providers, name)
 	if err := writeConfig(c.Path, cfg); err != nil {
