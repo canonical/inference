@@ -77,7 +77,7 @@ func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
 	}
 	if len(results) == 0 {
 		if cmd.format == "json" {
-			output, err := cmd.outputJSON(newFindResults(nil))
+			output, err := cmd.outputJSON(buildFindResults(nil))
 			if err != nil {
 				return err
 			}
@@ -88,7 +88,7 @@ func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	findResults := newFindResults(results)
+	findResults := buildFindResults(results)
 	var output string
 	if cmd.format == "json" {
 		output, err = cmd.outputJSON(findResults)
@@ -106,7 +106,7 @@ func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func newFindResults(entries []snapcatalog.Entry) []findResultOutput {
+func buildFindResults(entries []snapcatalog.Entry) []findResultOutput {
 	results := make([]findResultOutput, 0, len(entries))
 	for _, entry := range entries {
 		var capabilities []string

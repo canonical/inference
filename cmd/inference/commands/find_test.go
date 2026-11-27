@@ -122,7 +122,7 @@ func TestFindRanking(t *testing.T) {
 func TestFindTableMissingMetadata(t *testing.T) {
 	for _, models := range [][]snapcatalog.Model{nil, {{Name: "embedding", Capabilities: nil}}} {
 		cmd := &findCommand{}
-		got, err := cmd.outputTable(newFindResults([]snapcatalog.Entry{{SnapName: "gemma4", Models: models}}))
+		got, err := cmd.outputTable(buildFindResults([]snapcatalog.Entry{{SnapName: "gemma4", Models: models}}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -136,7 +136,7 @@ func TestFindTableMissingMetadata(t *testing.T) {
 
 func Example_findCommand_outputJSON() {
 	cmd := findCommand{}
-	results := newFindResults([]snapcatalog.Entry{
+	results := buildFindResults([]snapcatalog.Entry{
 		{SnapName: "gemma4", Models: []snapcatalog.Model{
 			{Capabilities: []string{"vision", "text"}},
 			{Capabilities: []string{"text"}},
@@ -194,7 +194,7 @@ func TestFindTableWidth(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := (&findCommand{}).outputTable(newFindResults([]snapcatalog.Entry{test.entry}))
+			got, err := (&findCommand{}).outputTable(buildFindResults([]snapcatalog.Entry{test.entry}))
 			if err != nil {
 				t.Fatal(err)
 			}
