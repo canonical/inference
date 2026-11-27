@@ -94,7 +94,7 @@ func TestConnectedSnapProvidersRejectsInvalidEntries(t *testing.T) {
 		{
 			name: "missing snap name",
 			env:  ptr("OPENAI_BASE_URL=http://localhost:8081/v1\n"),
-			want: "Cannot use shared provider: missing SNAP_NAME key in %[1]s/custom/provider.env",
+			want: "Cannot use shared provider: missing SNAP_NAME in %[1]s/custom/provider.env",
 		},
 		{
 			name: "unreadable env file",

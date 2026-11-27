@@ -80,7 +80,7 @@ func readConnectedProvider(directory string) (connectedProvider, error) {
 
 	name := values["SNAP_NAME"]
 	if name == "" {
-		return connectedProvider{}, fmt.Errorf("missing SNAP_NAME key in %s", envPath)
+		return connectedProvider{}, fmt.Errorf("missing SNAP_NAME in %s", envPath)
 	}
 	baseURL := values["OPENAI_BASE_URL"]
 	if baseURL == "" {
