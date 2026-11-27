@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var errConfigAccessDenied = errors.New("permission denied. Try again using sudo")
+var errStorageAccessDenied = errors.New("permission denied. Try again using sudo")
 
 type setEnabledCommand struct {
 	*common.Context
@@ -45,7 +45,7 @@ func (cmd *setEnabledCommand) run(cobraCmd *cobra.Command, args []string) error 
 	name := args[0]
 	ctx := cobraCmd.Context()
 
-	providerService := providers.NewService(cmd.SnapCatalog, cmd.SnapdClient, cmd.ShareProvidersPath, cmd.Config)
+	providerService := providers.NewService(cmd.SnapCatalog, cmd.SnapdClient, cmd.ShareProvidersPath, cmd.Storage)
 	provider, err := providerService.Find(ctx, name)
 	if err != nil {
 		return common.FriendlySnapdError(err)
@@ -54,12 +54,12 @@ func (cmd *setEnabledCommand) run(cobraCmd *cobra.Command, args []string) error 
 		return fmt.Errorf("provider %q is not installed", name)
 	}
 
-	changed, err := cmd.Config.SetProviderEnabled(name, cmd.enabled)
+	changed, err := cmd.Storage.SetProviderEnabled(name, cmd.enabled)
 	if err != nil {
 		if errors.Is(err, fs.ErrPermission) {
-			return errConfigAccessDenied
+			return errStorageAccessDenied
 		}
-		return fmt.Errorf("updating config: %w", err)
+		return fmt.Errorf("updating storage: %w", err)
 	}
 
 	verb := "Enabled"

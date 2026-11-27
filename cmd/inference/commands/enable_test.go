@@ -13,9 +13,9 @@ import (
 	"testing"
 
 	"github.com/canonical/inference/cmd/inference/common"
-	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +23,7 @@ type enableFixture struct {
 	ctx        *common.Context
 	stdout     func() string
 	stderr     func() string
-	config     *config.ConfigReader
+	storage    *storage.Storage
 	discovered *atomic.Int32
 }
 
@@ -35,7 +35,7 @@ func newEnableFixture(t *testing.T) enableFixture {
 		{"snap":"qwen3","model_name":"Qwen 3","repo_url":"https://example.com/qwen3"}
 	]`)
 	ctx.SnapdClient = newEnableSnapdClient(t, map[string]string{"gemma4": snapd.SnapStatusActive}, true)
-	ctx.Config = &config.ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	ctx.Storage = &storage.Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
 
 	var discovered atomic.Int32
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +51,7 @@ func newEnableFixture(t *testing.T) enableFixture {
 		ctx:        ctx,
 		stdout:     stdout.String,
 		stderr:     stderr.String,
-		config:     ctx.Config,
+		storage:    ctx.Storage,
 		discovered: &discovered,
 	}
 }
@@ -102,12 +102,12 @@ func TestDisableThenEnable(t *testing.T) {
 	if err := execute(Disable(f.ctx), "gemma4"); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	providers, err := f.config.GetProviders()
+	providers, err := f.storage.GetProviders()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if providers["gemma4"].Enabled {
-		t.Fatal("gemma4 should be disabled in the config")
+		t.Fatal("gemma4 should be disabled in the storage")
 	}
 	if got, want := f.stdout(), "Disabled gemma4\n"; got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
@@ -119,12 +119,12 @@ func TestDisableThenEnable(t *testing.T) {
 	if err := execute(Enable(f.ctx), "gemma4"); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	providers, err = f.config.GetProviders()
+	providers, err = f.storage.GetProviders()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !providers["gemma4"].Enabled {
-		t.Fatal("gemma4 should be enabled in the config")
+		t.Fatal("gemma4 should be enabled in the storage")
 	}
 	if f.discovered.Load() != 2 {
 		t.Fatalf("model discovery triggered %d times, want 2", f.discovered.Load())
@@ -144,7 +144,7 @@ func TestEnableAlreadyEnabledSucceeds(t *testing.T) {
 
 func TestDisableAlreadyDisabledSucceeds(t *testing.T) {
 	f := newEnableFixture(t)
-	if _, err := f.config.SetProviderEnabled("gemma4", false); err != nil {
+	if _, err := f.storage.SetProviderEnabled("gemma4", false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -185,12 +185,12 @@ func TestDisableSkipsDiscoveryWhenServiceIsInactive(t *testing.T) {
 	if f.discovered.Load() != 0 {
 		t.Fatalf("model discovery triggered %d times, want 0", f.discovered.Load())
 	}
-	providers, err := f.config.GetProviders()
+	providers, err := f.storage.GetProviders()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if providers["gemma4"].Enabled {
-		t.Fatal("config should still be updated")
+		t.Fatal("storage should still be updated")
 	}
 }
 
@@ -207,12 +207,12 @@ func TestDisableWarnsWhenDiscoveryFails(t *testing.T) {
 	if !strings.Contains(f.stderr(), "warning: triggering model discovery failed") {
 		t.Fatalf("stderr = %q, want model discovery warning", f.stderr())
 	}
-	providers, err := f.config.GetProviders()
+	providers, err := f.storage.GetProviders()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if providers["gemma4"].Enabled {
-		t.Fatal("config should still be updated")
+		t.Fatal("storage should still be updated")
 	}
 }
 
@@ -226,12 +226,12 @@ func TestEnableRequiresOneArgument(t *testing.T) {
 	}
 }
 
-func TestDisableRequiresSudoWhenConfigIsNotWritable(t *testing.T) {
+func TestDisableRequiresSudoWhenStorageIsNotWritable(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can write to read-only directories")
 	}
 	f := newEnableFixture(t)
-	dir := filepath.Dir(f.config.Path)
+	dir := filepath.Dir(f.storage.Path)
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}

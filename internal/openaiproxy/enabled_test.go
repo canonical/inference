@@ -9,10 +9,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/providers"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/storage"
 )
 
 func TestProxyFollowsProviderEnabledSettingOnRefresh(t *testing.T) {
@@ -30,8 +30,8 @@ func TestProxyFollowsProviderEnabledSettingOnRefresh(t *testing.T) {
 	root := t.TempDir()
 	writeProvider(t, root, "mount", "gemma4", upstream.URL+"/v1")
 	client, _ := snapd.NewFakeServer(t, map[string]string{"gemma4": snapd.SnapStatusActive})
-	configReader := &config.ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
-	service := providers.NewService(snapcatalog.WriteFakeCatalog(t, `[]`), client, root, configReader)
+	storage := &storage.Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
+	service := providers.NewService(snapcatalog.WriteFakeCatalog(t, `[]`), client, root, storage)
 	handler := NewModelsHandler(service, upstream.Client(), discardLogger())
 
 	listModels := func() []string {
@@ -65,7 +65,7 @@ func TestProxyFollowsProviderEnabledSettingOnRefresh(t *testing.T) {
 		t.Fatalf("chat status = %d, want 200", code)
 	}
 
-	if _, err := configReader.SetProviderEnabled("gemma4", false); err != nil {
+	if _, err := storage.SetProviderEnabled("gemma4", false); err != nil {
 		t.Fatal(err)
 	}
 	if got := listModels(); len(got) != 0 {
@@ -78,7 +78,7 @@ func TestProxyFollowsProviderEnabledSettingOnRefresh(t *testing.T) {
 		t.Fatalf("upstream received %d chat requests, want 1", chatRequests.Load())
 	}
 
-	if _, err := configReader.SetProviderEnabled("gemma4", true); err != nil {
+	if _, err := storage.SetProviderEnabled("gemma4", true); err != nil {
 		t.Fatal(err)
 	}
 	if got := listModels(); len(got) != 1 {

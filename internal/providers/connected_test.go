@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/storage"
 )
 
 func writeProviderEnv(t *testing.T, root, name, contents string) {
@@ -191,7 +191,7 @@ func TestListFailsWhenConnectedSourceFails(t *testing.T) {
 	}
 }
 
-func TestListSyncsConnectedProvidersIntoConfig(t *testing.T) {
+func TestListSyncsConnectedProvidersIntoStorage(t *testing.T) {
 	catalog := snapcatalog.WriteFakeCatalog(t, `[]`)
 	root := t.TempDir()
 	writeProviderEnv(t, root, "a-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=a\n")
@@ -200,12 +200,13 @@ func TestListSyncsConnectedProvidersIntoConfig(t *testing.T) {
 		"a": snapd.SnapStatusActive,
 		"b": snapd.SnapStatusActive,
 	})
-	configReader := &config.ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
-	if _, err := configReader.SetProviderEnabled("a", false); err != nil {
+	want := map[string]storage.Provider{"a": {Enabled: false}, "b": {Enabled: true}}
+	storage := &storage.Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
+	if _, err := storage.SetProviderEnabled("a", false); err != nil {
 		t.Fatal(err)
 	}
 
-	result, err := NewSyncingService(catalog, client, root, configReader).List(context.Background())
+	result, err := NewSyncingService(catalog, client, root, storage).List(context.Background())
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -217,26 +218,25 @@ func TestListSyncsConnectedProvidersIntoConfig(t *testing.T) {
 	if states["a"] != StateDisabled || states["b"] != StateEnabled {
 		t.Fatalf("got states %v, want a disabled and b enabled", states)
 	}
-	persisted, err := configReader.GetProviders()
+	persisted, err := storage.GetProviders()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]config.Provider{"a": {Enabled: false}, "b": {Enabled: true}}
 	if !reflect.DeepEqual(persisted, want) {
-		t.Fatalf("config providers %+v, want %+v", persisted, want)
+		t.Fatalf("storage providers %+v, want %+v", persisted, want)
 	}
 }
 
-func TestListReadsConfigOnEveryCall(t *testing.T) {
+func TestListReadsStorageOnEveryCall(t *testing.T) {
 	catalog := snapcatalog.WriteFakeCatalog(t, `[]`)
 	root := t.TempDir()
 	writeProviderEnv(t, root, "a-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=a\n")
 	client, _ := snapd.NewFakeServer(t, map[string]string{"a": snapd.SnapStatusActive})
-	configReader := &config.ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
-	service := NewService(catalog, client, root, configReader)
+	storage := &storage.Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
+	service := NewService(catalog, client, root, storage)
 
 	for _, enabled := range []bool{true, false, true} {
-		if _, err := configReader.SetProviderEnabled("a", enabled); err != nil {
+		if _, err := storage.SetProviderEnabled("a", enabled); err != nil {
 			t.Fatal(err)
 		}
 		provider, err := service.Find(context.Background(), "a")
@@ -252,12 +252,12 @@ func TestListReadsConfigOnEveryCall(t *testing.T) {
 func TestListKeepsDisabledProvidersInstalled(t *testing.T) {
 	catalog := snapcatalog.WriteFakeCatalog(t, `[{"snap":"a","model_name":"A","repo_url":"https://example.com/a"}]`)
 	client, _ := snapd.NewFakeServer(t, map[string]string{"a": snapd.SnapStatusActive})
-	configReader := &config.ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
-	if _, err := configReader.SetProviderEnabled("a", false); err != nil {
+	storage := &storage.Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
+	if _, err := storage.SetProviderEnabled("a", false); err != nil {
 		t.Fatal(err)
 	}
 
-	result, err := NewService(catalog, client, "", configReader).ListInstalled(context.Background())
+	result, err := NewService(catalog, client, "", storage).ListInstalled(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,21 +266,21 @@ func TestListKeepsDisabledProvidersInstalled(t *testing.T) {
 	}
 }
 
-func TestListWithoutConfigSyncDoesNotWriteConfig(t *testing.T) {
+func TestListWithoutStorageSyncDoesNotWriteStorage(t *testing.T) {
 	catalog := snapcatalog.WriteFakeCatalog(t, `[]`)
 	root := t.TempDir()
 	writeProviderEnv(t, root, "a-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=a\n")
 	client, _ := snapd.NewFakeServer(t, map[string]string{"a": snapd.SnapStatusActive})
-	configReader := &config.ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	storage := &storage.Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
 
-	result, err := NewService(catalog, client, root, configReader).List(context.Background())
+	result, err := NewService(catalog, client, root, storage).List(context.Background())
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	if len(result) != 1 || result[0].State != StateEnabled {
 		t.Fatalf("got %+v, want one enabled provider", result)
 	}
-	if _, err := os.Stat(configReader.Path); !os.IsNotExist(err) {
-		t.Fatalf("config file should not be created, stat error = %v", err)
+	if _, err := os.Stat(storage.Path); !os.IsNotExist(err) {
+		t.Fatalf("storage file should not be created, stat error = %v", err)
 	}
 }

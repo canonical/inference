@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/canonical/inference/cmd/inference/common"
-	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/storage"
 )
 
 func newSnapdHandlerClient(t *testing.T, handler http.HandlerFunc) *snapd.Client {
@@ -43,7 +43,7 @@ func newInstallRemoveContext(t *testing.T, handler http.HandlerFunc) *common.Con
 		{"snap":"gemma4","model_name":"Gemma 4","repo_url":"https://example.com/gemma4"}
 	]`)
 	ctx.SnapdClient = newSnapdHandlerClient(t, handler)
-	ctx.Config = &config.ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	ctx.Storage = &storage.Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
 	return ctx
 }
 
@@ -76,25 +76,25 @@ func installingSnapd(t *testing.T) http.HandlerFunc {
 	}
 }
 
-func TestInstallAddsProviderToConfig(t *testing.T) {
+func TestInstallAddsProviderToStorage(t *testing.T) {
 	ctx := newInstallRemoveContext(t, installingSnapd(t))
 
 	if err := execute(Install(ctx), "gemma4"); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 
-	got, err := ctx.Config.GetProviders()
+	got, err := ctx.Storage.GetProviders()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (map[string]config.Provider{"gemma4": {Enabled: true}}); !reflect.DeepEqual(got, want) {
+	if want := (map[string]storage.Provider{"gemma4": {Enabled: true}}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
 
 func TestInstallKeepsExistingProviderSetting(t *testing.T) {
 	ctx := newInstallRemoveContext(t, installingSnapd(t))
-	if _, err := ctx.Config.SetProviderEnabled("gemma4", false); err != nil {
+	if _, err := ctx.Storage.SetProviderEnabled("gemma4", false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -102,7 +102,7 @@ func TestInstallKeepsExistingProviderSetting(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 
-	got, err := ctx.Config.GetProviders()
+	got, err := ctx.Storage.GetProviders()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestInstallKeepsExistingProviderSetting(t *testing.T) {
 	}
 }
 
-func TestInstallFailureDoesNotTouchConfig(t *testing.T) {
+func TestInstallFailureDoesNotTouchStorage(t *testing.T) {
 	ctx := newInstallRemoveContext(t, func(w http.ResponseWriter, _ *http.Request) {
 		writeSnapdError(w, "snap-not-found")
 	})
@@ -120,12 +120,12 @@ func TestInstallFailureDoesNotTouchConfig(t *testing.T) {
 		t.Fatal("expected install error")
 	}
 
-	if _, err := os.Stat(ctx.Config.Path); !os.IsNotExist(err) {
-		t.Fatalf("config file should not be created, stat error = %v", err)
+	if _, err := os.Stat(ctx.Storage.Path); !os.IsNotExist(err) {
+		t.Fatalf("storage file should not be created, stat error = %v", err)
 	}
 }
 
-func TestRemoveDeletesProviderFromConfig(t *testing.T) {
+func TestRemoveDeletesProviderFromStorage(t *testing.T) {
 	ctx := newInstallRemoveContext(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/gemma4":
@@ -136,7 +136,7 @@ func TestRemoveDeletesProviderFromConfig(t *testing.T) {
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 	})
-	if _, err := ctx.Config.EnsureProviders([]string{"gemma4", "other"}); err != nil {
+	if _, err := ctx.Storage.EnsureProviders([]string{"gemma4", "other"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -144,16 +144,16 @@ func TestRemoveDeletesProviderFromConfig(t *testing.T) {
 		t.Fatalf("remove: %v", err)
 	}
 
-	got, err := ctx.Config.GetProviders()
+	got, err := ctx.Storage.GetProviders()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (map[string]config.Provider{"other": {Enabled: true}}); !reflect.DeepEqual(got, want) {
+	if want := (map[string]storage.Provider{"other": {Enabled: true}}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
 
-func TestRemoveWithoutConfigEntrySucceeds(t *testing.T) {
+func TestRemoveWithoutStorageEntrySucceeds(t *testing.T) {
 	ctx := newInstallRemoveContext(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/snaps/gemma4":
@@ -170,11 +170,11 @@ func TestRemoveWithoutConfigEntrySucceeds(t *testing.T) {
 	}
 }
 
-func TestRemoveNotInstalledSnapDeletesStaleConfigEntry(t *testing.T) {
+func TestRemoveNotInstalledSnapDeletesStaleStorageEntry(t *testing.T) {
 	ctx := newInstallRemoveContext(t, func(w http.ResponseWriter, _ *http.Request) {
 		writeSnapdError(w, "snap-not-installed")
 	})
-	if _, err := ctx.Config.EnsureProviders([]string{"gemma4"}); err != nil {
+	if _, err := ctx.Storage.EnsureProviders([]string{"gemma4"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -182,16 +182,16 @@ func TestRemoveNotInstalledSnapDeletesStaleConfigEntry(t *testing.T) {
 		t.Fatalf("remove: %v", err)
 	}
 
-	if exists, err := ctx.Config.ProviderExists("gemma4"); err != nil || exists {
+	if exists, err := ctx.Storage.ProviderExists("gemma4"); err != nil || exists {
 		t.Fatalf("ProviderExists = %t, %v; want false, nil", exists, err)
 	}
 }
 
-func TestRemoveFailureKeepsConfigEntry(t *testing.T) {
+func TestRemoveFailureKeepsStorageEntry(t *testing.T) {
 	ctx := newInstallRemoveContext(t, func(w http.ResponseWriter, _ *http.Request) {
 		writeSnapdError(w, "snap-change-conflict")
 	})
-	if _, err := ctx.Config.EnsureProviders([]string{"gemma4"}); err != nil {
+	if _, err := ctx.Storage.EnsureProviders([]string{"gemma4"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -199,7 +199,7 @@ func TestRemoveFailureKeepsConfigEntry(t *testing.T) {
 		t.Fatal("expected remove error")
 	}
 
-	if exists, err := ctx.Config.ProviderExists("gemma4"); err != nil || !exists {
+	if exists, err := ctx.Storage.ProviderExists("gemma4"); err != nil || !exists {
 		t.Fatalf("ProviderExists = %t, %v; want true, nil", exists, err)
 	}
 }

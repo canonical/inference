@@ -1,4 +1,4 @@
-package config
+package storage
 
 import (
 	"encoding/json"
@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestNewConfigReader(t *testing.T) {
+func TestNew(t *testing.T) {
 	snapData := t.TempDir()
 	customPath := filepath.Join(t.TempDir(), "custom.json")
 	t.Setenv("SNAP_DATA", snapData)
@@ -20,24 +20,24 @@ func TestNewConfigReader(t *testing.T) {
 		path string
 		want string
 	}{
-		{name: "default", want: filepath.Join(snapData, "config.json")},
+		{name: "default", want: filepath.Join(snapData, "storage.json")},
 		{name: "custom", path: customPath, want: customPath},
 		{name: "expanded custom", path: "$SNAP_DATA/custom.json", want: filepath.Join(snapData, "custom.json")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(configFilePathEnvVar, tt.path)
-			if got := NewConfigReader().Path; got != tt.want {
+			t.Setenv(filePathEnvVar, tt.path)
+			if got := New().Path; got != tt.want {
 				t.Fatalf("Path = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestConfigReaderGetProvidersReloadsFile(t *testing.T) {
-	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+func TestStorageGetProvidersReloadsFile(t *testing.T) {
+	c := &Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
 	for _, enabled := range []bool{true, false} {
 		want := map[string]Provider{"remote": {Enabled: enabled}}
-		if err := writeConfig(c.Path, &Config{Providers: want}); err != nil {
+		if err := writeDocument(c.Path, &Document{Providers: want}); err != nil {
 			t.Fatalf("write: %v", err)
 		}
 		got, err := c.GetProviders()
@@ -51,18 +51,18 @@ func TestConfigReaderGetProvidersReloadsFile(t *testing.T) {
 }
 
 func TestWriteThenReadRoundTrips(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
-	want := &Config{
+	path := filepath.Join(t.TempDir(), "storage.json")
+	want := &Document{
 		Providers: map[string]Provider{
 			"local":  {Enabled: true},
 			"remote": {Enabled: false},
 		},
 	}
 
-	if err := writeConfig(path, want); err != nil {
+	if err := writeDocument(path, want); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	got, err := readConfig(path)
+	got, err := readDocument(path)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -72,14 +72,14 @@ func TestWriteThenReadRoundTrips(t *testing.T) {
 }
 
 func TestWriteReplacesExistingFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
+	path := filepath.Join(t.TempDir(), "storage.json")
 	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeConfig(path, &Config{Providers: map[string]Provider{"a": {Enabled: true}}}); err != nil {
+	if err := writeDocument(path, &Document{Providers: map[string]Provider{"a": {Enabled: true}}}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	got, err := readConfig(path)
+	got, err := readDocument(path)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -91,15 +91,15 @@ func TestWriteReplacesExistingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(entries) != 1 {
-		t.Fatalf("expected only the config file, found %d entries", len(entries))
+		t.Fatalf("expected only the storage file, found %d entries", len(entries))
 	}
 }
 
-func TestConfigReaderMissingFileReturnsEmptyProviders(t *testing.T) {
-	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "missing.json")}
+func TestStorageMissingFileReturnsEmptyProviders(t *testing.T) {
+	c := &Storage{Path: filepath.Join(t.TempDir(), "missing.json")}
 	providers, err := c.GetProviders()
 	if err != nil {
-		t.Fatalf("expected no error for missing config file, got %v", err)
+		t.Fatalf("expected no error for missing storage file, got %v", err)
 	}
 	if providers == nil || len(providers) != 0 {
 		t.Fatalf("expected non-nil empty providers, got %v", providers)
@@ -122,7 +122,7 @@ func TestSetProviderEnabledValidatesName(t *testing.T) {
 		{name: "provider\x00name", wantErr: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+			c := &Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
 			_, err := c.SetProviderEnabled(tt.name, true)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("SetProviderEnabled error = %v, wantErr %t", err, tt.wantErr)
@@ -133,12 +133,12 @@ func TestSetProviderEnabledValidatesName(t *testing.T) {
 
 func TestWriteCleansUpTemporaryFileOnRenameFailure(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
+	path := filepath.Join(dir, "storage.json")
 	if err := os.Mkdir(path, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := writeConfig(path, &Config{}); err == nil {
+	if err := writeDocument(path, &Document{}); err == nil {
 		t.Fatal("expected error when replacing a directory")
 	}
 
@@ -146,28 +146,28 @@ func TestWriteCleansUpTemporaryFileOnRenameFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].Name() != "config.json" || !entries[0].IsDir() {
+	if len(entries) != 1 || entries[0].Name() != "storage.json" || !entries[0].IsDir() {
 		t.Fatalf("expected only the original directory, got %v", entries)
 	}
 }
 
 func TestReadInvalidJSON(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
+	path := filepath.Join(t.TempDir(), "storage.json")
 	if err := os.WriteFile(path, []byte("not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c := &ConfigReader{Path: path}
+	c := &Storage{Path: path}
 	if _, err := c.GetProviders(); err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
 }
 
-func TestLockAndReadConfigReleasesLockOnReadError(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
+func TestLockAndReadDocumentReleasesLockOnReadError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "storage.json")
 	if err := os.WriteFile(path, []byte("not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := readConfigLocked(path); err == nil {
+	if _, _, err := readDocumentLocked(path); err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
 
@@ -187,15 +187,15 @@ func TestLockAndReadConfigReleasesLockOnReadError(t *testing.T) {
 
 func TestProviderJSONContract(t *testing.T) {
 	const data = `{"providers":{"gemma4":{"enabled":true},"qwen3-8":{"enabled":false}}}`
-	var cfg Config
-	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+	var doc Document
+	if err := json.Unmarshal([]byte(data), &doc); err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]Provider{"gemma4": {Enabled: true}, "qwen3-8": {Enabled: false}}
-	if !reflect.DeepEqual(cfg.Providers, want) {
-		t.Fatalf("got %+v, want %+v", cfg.Providers, want)
+	if !reflect.DeepEqual(doc.Providers, want) {
+		t.Fatalf("got %+v, want %+v", doc.Providers, want)
 	}
-	got, err := json.Marshal(cfg)
+	got, err := json.Marshal(doc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestProviderJSONContract(t *testing.T) {
 }
 
 func TestEnsureProviders(t *testing.T) {
-	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	c := &Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
 	if _, err := c.SetProviderEnabled("existing", false); err != nil {
 		t.Fatal(err)
 	}
@@ -227,8 +227,8 @@ func TestEnsureProviders(t *testing.T) {
 	}
 }
 
-func TestEnsureProvidersDoesNotRewriteCompleteConfig(t *testing.T) {
-	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+func TestEnsureProvidersDoesNotRewriteCompleteStorage(t *testing.T) {
+	c := &Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
 	if _, err := c.EnsureProviders([]string{"gemma4"}); err != nil {
 		t.Fatal(err)
 	}
@@ -246,12 +246,12 @@ func TestEnsureProvidersDoesNotRewriteCompleteConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !os.SameFile(before, after) {
-		t.Fatal("config file was rewritten although no provider was missing")
+		t.Fatal("storage file was rewritten although no provider was missing")
 	}
 }
 
 func TestEnsureProvidersRejectsInvalidNames(t *testing.T) {
-	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	c := &Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
 	if _, err := c.EnsureProviders([]string{"ok", "../bad"}); err == nil {
 		t.Fatal("expected error for invalid name")
 	}
@@ -265,7 +265,7 @@ func TestEnsureProvidersRejectsInvalidNames(t *testing.T) {
 }
 
 func TestSetProviderEnabled(t *testing.T) {
-	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	c := &Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
 
 	for _, step := range []struct {
 		enabled     bool
@@ -294,7 +294,7 @@ func TestSetProviderEnabled(t *testing.T) {
 }
 
 func TestRemoveProvider(t *testing.T) {
-	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	c := &Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
 	if _, err := c.EnsureProviders([]string{"gemma4"}); err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +310,7 @@ func TestRemoveProvider(t *testing.T) {
 }
 
 func TestAddProvider(t *testing.T) {
-	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	c := &Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
 	if err := c.AddProvider("gemma4", false); err != nil {
 		t.Fatal(err)
 	}

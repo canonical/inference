@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/canonical/inference/cmd/inference/common"
-	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/storage"
 )
 
 type disabledFixture struct {
@@ -59,8 +59,8 @@ func newDisabledFixture(t *testing.T) disabledFixture {
 		"qwen3":  snapd.SnapStatusActive,
 	})
 	ctx.ShareProvidersPath = root
-	ctx.Config = &config.ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
-	if _, err := ctx.Config.SetProviderEnabled("qwen3", false); err != nil {
+	ctx.Storage = &storage.Storage{Path: filepath.Join(t.TempDir(), "storage.json")}
+	if _, err := ctx.Storage.SetProviderEnabled("qwen3", false); err != nil {
 		t.Fatal(err)
 	}
 

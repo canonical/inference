@@ -39,8 +39,8 @@ func (cmd *installCommand) install(cobraCmd *cobra.Command, name string) error {
 	if err := common.InstallSnap(cobraCmd.Context(), cmd.ctx, name); err != nil {
 		return err
 	}
-	if _, err := cmd.ctx.Config.EnsureProviders([]string{name}); err != nil {
-		return fmt.Errorf("adding %s to config: %w", name, err)
+	if _, err := cmd.ctx.Storage.EnsureProviders([]string{name}); err != nil {
+		return fmt.Errorf("adding %s to storage: %w", name, err)
 	}
 	return nil
 }

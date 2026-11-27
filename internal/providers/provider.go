@@ -7,9 +7,9 @@ import (
 	"os"
 	"sort"
 
-	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/storage"
 )
 
 type ProviderBackend string
@@ -88,43 +88,43 @@ type service struct {
 	catalog            *snapcatalog.Reader
 	snapdClient        *snapd.Client
 	shareProvidersPath string
-	configReader       *config.ConfigReader
-	syncConfig         bool
+	storage            *storage.Storage
+	syncStorage        bool
 }
 
-// A nil configReader treats every provider as enabled.
+// A nil storage treats every provider as enabled.
 func NewService(
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
-	configReader *config.ConfigReader,
+	storage *storage.Storage,
 ) Service {
-	return newService(catalog, snapdClient, shareProvidersPath, configReader, false)
+	return newService(catalog, snapdClient, shareProvidersPath, storage, false)
 }
 
-// NewSyncingService also adds connected providers to the config during discovery, which requires write access to it.
+// NewSyncingService also adds connected providers to the storage during discovery, which requires write access to it.
 func NewSyncingService(
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
-	configReader *config.ConfigReader,
+	storage *storage.Storage,
 ) Service {
-	return newService(catalog, snapdClient, shareProvidersPath, configReader, true)
+	return newService(catalog, snapdClient, shareProvidersPath, storage, true)
 }
 
 func newService(
 	catalog *snapcatalog.Reader,
 	snapdClient *snapd.Client,
 	shareProvidersPath string,
-	configReader *config.ConfigReader,
-	syncConfig bool,
+	storage *storage.Storage,
+	syncStorage bool,
 ) Service {
 	return &service{
 		catalog:            catalog,
 		snapdClient:        snapdClient,
 		shareProvidersPath: shareProvidersPath,
-		configReader:       configReader,
-		syncConfig:         syncConfig,
+		storage:            storage,
+		syncStorage:        syncStorage,
 	}
 }
 
@@ -174,7 +174,7 @@ func (s *service) list(ctx context.Context, options listOptions) ([]Provider, er
 		return nil, fmt.Errorf("reading configured OpenAI providers: %w", err)
 	}
 
-	configProviders, err := s.configProviders(connectedProviders)
+	storedProviders, err := s.storedProviders(connectedProviders)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +211,7 @@ func (s *service) list(ctx context.Context, options listOptions) ([]Provider, er
 			}
 			provider.State = state
 		}
-		if configProvider, ok := configProviders[provider.Name]; ok && !configProvider.Enabled &&
+		if storedProvider, ok := storedProviders[provider.Name]; ok && !storedProvider.Enabled &&
 			provider.State != StateNotInstalled {
 			provider.State = StateDisabled
 		}
@@ -231,26 +231,26 @@ func (s *service) list(ctx context.Context, options listOptions) ([]Provider, er
 	return result, nil
 }
 
-func (s *service) configProviders(connected []Provider) (map[string]config.Provider, error) {
-	if s.configReader == nil {
+func (s *service) storedProviders(connected []Provider) (map[string]storage.Provider, error) {
+	if s.storage == nil {
 		return nil, nil
 	}
-	if !s.syncConfig {
-		configProviders, err := s.configReader.GetProviders()
+	if !s.syncStorage {
+		storedProviders, err := s.storage.GetProviders()
 		if err != nil {
-			return nil, fmt.Errorf("reading provider config: %w", err)
+			return nil, fmt.Errorf("reading provider storage: %w", err)
 		}
-		return configProviders, nil
+		return storedProviders, nil
 	}
 	names := make([]string, len(connected))
 	for i, provider := range connected {
 		names[i] = provider.Name
 	}
-	configProviders, err := s.configReader.EnsureProviders(names)
+	storedProviders, err := s.storage.EnsureProviders(names)
 	if err != nil {
-		return nil, fmt.Errorf("syncing provider config: %w", err)
+		return nil, fmt.Errorf("syncing provider storage: %w", err)
 	}
-	return configProviders, nil
+	return storedProviders, nil
 }
 
 func snapProviderLifecycleState(ctx context.Context, snapdClient *snapd.Client, name string) (LifecycleState, error) {

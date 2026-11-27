@@ -3,9 +3,9 @@ package common
 import (
 	"io"
 
-	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/storage"
 )
 
 type Context struct {
@@ -14,7 +14,7 @@ type Context struct {
 	SnapdClient        *snapd.Client
 	SnapCatalog        *snapcatalog.Reader
 	ShareProvidersPath string
-	Config             *config.ConfigReader
+	Storage            *storage.Storage
 	Verbose            bool
 	HTTPHost           string
 	HTTPPort           string
