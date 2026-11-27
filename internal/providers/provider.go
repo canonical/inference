@@ -142,7 +142,7 @@ func (s *service) readSharedProviders(ctx context.Context) (connected, configure
 		return nil, nil, nil, fmt.Errorf("reading configured OpenAI providers: %w", err)
 	}
 
-	connected, collisions := rejectConfiguredCollisions(connectedEntries, configured)
+	connected, collisions := identifyNamingCollisions(connectedEntries, configured)
 	return connected, configured, append(issues, collisions...), nil
 }
 

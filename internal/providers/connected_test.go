@@ -223,7 +223,7 @@ func TestRejectConfiguredCollisions(t *testing.T) {
 	}
 	configured := []Provider{{Name: "openai", Backend: BackendProxy}}
 
-	accepted, issues := rejectConfiguredCollisions(connected, configured)
+	accepted, issues := identifyNamingCollisions(connected, configured)
 	if len(accepted) != 1 || accepted[0].Name != "gemma4" {
 		t.Fatalf("got accepted %+v, want only gemma4", accepted)
 	}

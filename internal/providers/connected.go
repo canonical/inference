@@ -120,7 +120,7 @@ func verifyBaseURL(value string) error {
 	return nil
 }
 
-func rejectConfiguredCollisions(connected []connectedProvider, configured []Provider) ([]Provider, []Issue) {
+func identifyNamingCollisions(connected []connectedProvider, configured []Provider) ([]Provider, []Issue) {
 	configuredNames := make(map[string]struct{}, len(configured))
 	for _, provider := range configured {
 		configuredNames[provider.Name] = struct{}{}
