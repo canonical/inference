@@ -81,6 +81,7 @@ type Service interface {
 	List(ctx context.Context) ([]Provider, error)
 	ListInstalled(ctx context.Context) ([]Provider, error)
 	Find(ctx context.Context, name string) (Provider, error)
+	Issues(ctx context.Context) ([]Issue, error)
 }
 
 type service struct {
@@ -125,6 +126,26 @@ func (s *service) List(ctx context.Context) ([]Provider, error) {
 	return s.list(ctx, listOptions{})
 }
 
+func (s *service) Issues(ctx context.Context) ([]Issue, error) {
+	_, _, issues, err := s.readSharedProviders(ctx)
+	return issues, err
+}
+
+func (s *service) readSharedProviders(ctx context.Context) (connected, existing []Provider, issues []Issue, err error) {
+	connectedEntries, issues, err := readConnectedProviders(s.shareProvidersPath)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	existing, err = ExistingOpenAIProviders(ctx)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("reading configured OpenAI providers: %w", err)
+	}
+
+	connected, collisions := identifyNamingCollisions(connectedEntries, existing)
+	return connected, existing, append(issues, collisions...), nil
+}
+
 func (s *service) list(ctx context.Context, options listOptions) ([]Provider, error) {
 	catalogProviders, err := CatalogSnapProviders(s.catalog)
 	if errors.Is(err, snapcatalog.ErrNotConfigured) || errors.Is(err, os.ErrNotExist) {
@@ -133,14 +154,9 @@ func (s *service) list(ctx context.Context, options listOptions) ([]Provider, er
 		return nil, err
 	}
 
-	connectedProviders, err := ConnectedSnapProviders(s.shareProvidersPath)
+	connectedProviders, configuredProviders, _, err := s.readSharedProviders(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	configuredProviders, err := ConfiguredOpenAIProviders(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("reading configured OpenAI providers: %w", err)
 	}
 
 	// Union catalog and connected inference snap providers

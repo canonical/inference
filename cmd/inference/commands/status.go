@@ -53,7 +53,7 @@ func (cmd *statusCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	status, err := cmd.buildStatus(cobraCmd.Context())
+	status, providerIssues, err := cmd.buildStatus(cobraCmd.Context())
 	if err != nil {
 		return err
 	}
@@ -66,11 +66,16 @@ func (cmd *statusCommand) run(cobraCmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprint(cmd.Stdout, output)
+	if _, err = fmt.Fprint(cmd.Stdout, output); err != nil {
+		return err
+	}
+	if len(providerIssues) > 0 {
+		_, err = fmt.Fprintln(cmd.Stderr, "\nHint: cannot use some providers, run \"inference debug providers\" for details.")
+	}
 	return err
 }
 
-func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error) {
+func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, []providers.Issue, error) {
 	snapInstanceName := snapctlenv.SnapInstanceName()
 	if snapInstanceName == "" {
 		// Fall back to snap name when not inside a snap
@@ -78,12 +83,12 @@ func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error)
 	}
 	serviceStatus, err := cmd.SnapdClient.ServiceStatus(ctx, snapInstanceName, common.InferenceService)
 	if err != nil {
-		return statusOutput{}, common.FriendlySnapdError(err)
+		return statusOutput{}, nil, common.FriendlySnapdError(err)
 	}
 
-	health, err := cmd.providerHealth(ctx)
+	health, providerIssues, err := cmd.providerStatus(ctx)
 	if err != nil {
-		return statusOutput{}, err
+		return statusOutput{}, nil, err
 	}
 
 	// TODO look up warnings like GPU not working
@@ -96,26 +101,34 @@ func (cmd *statusCommand) buildStatus(ctx context.Context) (statusOutput, error)
 			},
 		},
 		Health: health,
-	}, nil
+	}, providerIssues, nil
 }
 
-func (cmd *statusCommand) providerHealth(ctx context.Context) (map[string]string, error) {
+func (cmd *statusCommand) providerStatus(ctx context.Context) (map[string]string, []providers.Issue, error) {
 	providerService := providers.NewService(cmd.SnapCatalog, cmd.SnapdClient, cmd.ShareProvidersPath)
 	list, err := providerService.ListInstalled(ctx)
 	if err != nil {
-		return nil, common.FriendlySnapdError(err)
+		return nil, nil, common.FriendlySnapdError(err)
 	}
+	issues, err := providerService.Issues(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return providerHealth(ctx, list), issues, nil
+}
+
+func providerHealth(ctx context.Context, list []providers.Provider) map[string]string {
 
 	// Check health only returns results for providers that are enabled and have an openai base url defined
 	health := providers.CheckHealth(ctx, list)
 	if health == nil {
-		return nil, nil
+		return nil
 	}
 	output := make(map[string]string, len(health))
 	for name, status := range health {
 		output[name] = string(status)
 	}
-	return output, nil
+	return output
 }
 
 func (cmd *statusCommand) proxyOpenAIBaseURL() string {

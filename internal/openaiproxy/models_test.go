@@ -400,7 +400,7 @@ type connectedProviders struct {
 }
 
 func (c connectedProviders) List(context.Context) ([]providers.Provider, error) {
-	list, err := providers.ConnectedSnapProviders(c.root)
+	list, _, err := providers.ConnectedSnapProviders(c.root)
 	for i := range list {
 		list[i].State = providers.StateEnabled
 	}

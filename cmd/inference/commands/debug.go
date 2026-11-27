@@ -1,0 +1,154 @@
+package commands
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/canonical/inference/cmd/inference/common"
+	"github.com/canonical/inference/internal/providers"
+	"github.com/fatih/color"
+	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/renderer"
+	"github.com/olekukonko/tablewriter/tw"
+	"github.com/spf13/cobra"
+)
+
+type debugProvidersCommand struct {
+	*common.Context
+	format string
+}
+
+type debugIssueJSON struct {
+	ID      int    `json:"id"`
+	Details string `json:"details"`
+}
+
+type debugProvidersJSONOutput struct {
+	Issues []debugIssueJSON `json:"issues"`
+}
+
+func Debug(ctx *common.Context) *cobra.Command {
+	cobraCmd := &cobra.Command{
+		Use:               "debug",
+		Short:             "Troubleshoot the inference manager",
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
+		SilenceUsage:      true,
+		RunE:              func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+	}
+	cobraCmd.AddCommand(debugProviders(ctx))
+	return cobraCmd
+}
+
+func debugProviders(ctx *common.Context) *cobra.Command {
+	cmd := debugProvidersCommand{Context: ctx}
+	cobraCmd := &cobra.Command{
+		Use:               "providers",
+		Short:             "Debug provider issues",
+		Long:              "Debug issues related to inference providers",
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
+		SilenceUsage:      true,
+		RunE:              cmd.run,
+	}
+	cobraCmd.Flags().StringVar(&cmd.format, "format", "table", "output format [table|json]")
+	return cobraCmd
+}
+
+func (cmd *debugProvidersCommand) run(cobraCmd *cobra.Command, _ []string) error {
+	if cmd.format != "table" && cmd.format != "json" {
+		return fmt.Errorf("unknown format %q", cmd.format)
+	}
+
+	providerService := providers.NewService(cmd.SnapCatalog, cmd.SnapdClient, cmd.ShareProvidersPath)
+	issues, err := providerService.Issues(cobraCmd.Context())
+	if err != nil {
+		return common.FriendlySnapdError(err)
+	}
+
+	var output string
+	if cmd.format == "json" {
+		output, err = cmd.outputJSON(issues)
+		if err != nil {
+			return err
+		}
+	} else {
+		if len(issues) == 0 {
+			_, err = fmt.Fprintln(cmd.Stderr, "No provider issues found.")
+			return err
+		}
+		output, err = cmd.outputTable(issues)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = fmt.Fprint(cmd.Stdout, output)
+	return err
+}
+
+func (cmd *debugProvidersCommand) outputJSON(issues []providers.Issue) (string, error) {
+	result := debugProvidersJSONOutput{Issues: make([]debugIssueJSON, len(issues))}
+	for i, issue := range issues {
+		result.Issues[i] = debugIssueJSON{ID: i + 1, Details: issue.Details}
+	}
+
+	var output bytes.Buffer
+	encoder := json.NewEncoder(&output)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(result); err != nil {
+		return "", err
+	}
+	return output.String(), nil
+}
+
+func (cmd *debugProvidersCommand) outputTable(issues []providers.Issue) (string, error) {
+	var output bytes.Buffer
+	table := tablewriter.NewTable(
+		&output,
+		tablewriter.WithRenderer(renderer.NewColorized(renderer.ColorizedConfig{
+			Header:  renderer.Tint{FG: renderer.Colors{color.Bold}},
+			Column:  renderer.Tint{FG: renderer.Colors{color.Reset}, BG: renderer.Colors{color.Reset}},
+			Borders: tw.BorderNone,
+			Settings: tw.Settings{
+				Separators:  tw.Separators{ShowHeader: tw.Off, ShowFooter: tw.Off, BetweenRows: tw.Off, BetweenColumns: tw.Off},
+				Lines:       tw.Lines{ShowTop: tw.Off, ShowBottom: tw.Off, ShowHeaderLine: tw.Off, ShowFooterLine: tw.Off},
+				CompactMode: tw.On,
+			},
+		})),
+		tablewriter.WithConfig(tablewriter.Config{
+			Header: tw.CellConfig{
+				Alignment: tw.CellAlignment{Global: tw.AlignLeft},
+				Padding: tw.CellPadding{PerColumn: []tw.Padding{
+					{Overwrite: true, Right: " "},
+					{Overwrite: true, Left: " "},
+				}},
+			},
+			Row: tw.CellConfig{
+				Formatting: tw.CellFormatting{AutoWrap: tw.WrapNone},
+				Alignment:  tw.CellAlignment{Global: tw.AlignLeft},
+				Padding: tw.CellPadding{PerColumn: []tw.Padding{
+					{Overwrite: true, Right: " "},
+					{Overwrite: true, Left: " "},
+				}},
+			},
+		}),
+	)
+	table.Header([]string{"ID", "DETAILS"})
+	for i, issue := range issues {
+		if err := table.Append([]string{strconv.Itoa(i + 1), issue.Details}); err != nil {
+			return "", err
+		}
+	}
+	if err := table.Render(); err != nil {
+		return "", err
+	}
+	lines := strings.Split(output.String(), "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " ")
+	}
+	return strings.Join(lines, "\n"), nil
+}

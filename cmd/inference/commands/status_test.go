@@ -6,7 +6,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/canonical/inference/cmd/inference/common"
@@ -86,6 +88,44 @@ func TestStatusUsesSnapInstanceName(t *testing.T) {
 	want := "services:\n  inference_gpu.d: active\nproxy:\n  openai:\n    base-url: http://127.0.0.1:8400/v1\n"
 	if stdout.String() != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", stdout.String(), want)
+	}
+}
+
+func TestStatusPrintsHintWhenProvidersAreRejected(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "provider-1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	providerDir := filepath.Join(root, "provider-2")
+	if err := os.Mkdir(providerDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(providerDir, "provider.env"), []byte("SNAP_NAME=gemma4\nUNIX_SOCKET=x.sock\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, format := range []string{"yaml", "json"} {
+		t.Run(format, func(t *testing.T) {
+			t.Setenv("SNAP", "")
+			t.Setenv("SNAP_INSTANCE_NAME", "")
+			ctx, stdout, stderr := newTestContext()
+			ctx.SnapdClient = statusSnapdClient(t, common.InferenceSnapName, true)
+			ctx.SnapCatalog = &snapcatalog.Reader{}
+			ctx.ShareProvidersPath = root
+			if err := execute(Status(ctx), "--format="+format); err != nil {
+				t.Fatal(err)
+			}
+
+			for _, unwanted := range []string{"gemma4", "provider-1", "provider-2", "Cannot use", "warnings", "OPENAI_BASE_URL"} {
+				if strings.Contains(stdout.String(), unwanted) {
+					t.Errorf("stdout = %q, want no provider problem details (found %q)", stdout.String(), unwanted)
+				}
+			}
+			wantHint := "\nHint: cannot use some providers, run \"inference debug providers\" for details.\n"
+			if stderr.String() != wantHint {
+				t.Errorf("stderr = %q, want %q", stderr.String(), wantHint)
+			}
+		})
 	}
 }
 
