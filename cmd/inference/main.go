@@ -102,6 +102,8 @@ func root(ctx *common.Context) *cobra.Command {
 		commands.Info(ctx),
 		commands.Install(ctx),
 		commands.Remove(ctx),
+		commands.Enable(ctx),
+		commands.Disable(ctx),
 	)
 	return cmd
 }
