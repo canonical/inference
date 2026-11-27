@@ -24,30 +24,30 @@ jobs:
         uses: canonical/has-signed-canonical-cla@v2
       
   lint:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: '1.26.x'
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: latest
           only-new-issues: true
 
   test:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: '1.26.x'
 
@@ -61,8 +61,8 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
+          - ubuntu-24.04     # must match snap's base for the destructive build
+          - ubuntu-24.04-arm # must match snap's base for the destructive build
     runs-on: ${{ matrix.runner }}
 
     steps:
