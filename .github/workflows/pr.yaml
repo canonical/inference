@@ -61,8 +61,8 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
+          - ubuntu-24.04     # must match snap's base for the destructive build
+          - ubuntu-24.04-arm # must match snap's base for the destructive build
     runs-on: ${{ matrix.runner }}
 
     steps:
