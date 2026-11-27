@@ -22,6 +22,8 @@ const (
 	defaultConfigFilePath = "$SNAP_DATA/config.json"
 )
 
+var ErrProviderNotFound = errors.New("provider does not exist")
+
 type ConfigReader struct {
 	Path string
 }
@@ -102,6 +104,81 @@ func (c *ConfigReader) AddProvider(name string, enabled bool) error {
 	return writeConfig(c.Path, cfg)
 }
 
+func (c *ConfigReader) EnsureProviders(names []string) (map[string]Provider, error) {
+	for _, name := range names {
+		if err := validateProviderName(name); err != nil {
+			return nil, err
+		}
+	}
+
+	cfg, err := readConfig(c.Path)
+	if err != nil {
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+	if !missingProviders(cfg, names) {
+		return cfg.Providers, nil
+	}
+
+	cfg, unlock, err := readConfigLocked(c.Path)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	if !missingProviders(cfg, names) {
+		return cfg.Providers, nil
+	}
+	if cfg.Providers == nil {
+		cfg.Providers = make(map[string]Provider)
+	}
+	for _, name := range names {
+		if _, exists := cfg.Providers[name]; !exists {
+			cfg.Providers[name] = Provider{Enabled: true}
+		}
+	}
+	if err := writeConfig(c.Path, cfg); err != nil {
+		return nil, err
+	}
+	return cfg.Providers, nil
+}
+
+func missingProviders(cfg *Config, names []string) bool {
+	for _, name := range names {
+		if _, exists := cfg.Providers[name]; !exists {
+			return true
+		}
+	}
+	return false
+}
+
+// SetProviderEnabled treats a provider missing from the config as enabled.
+func (c *ConfigReader) SetProviderEnabled(name string, enabled bool) (changed bool, err error) {
+	if err := validateProviderName(name); err != nil {
+		return false, err
+	}
+	cfg, unlock, err := readConfigLocked(c.Path)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+
+	provider, exists := cfg.Providers[name]
+	if !exists {
+		provider.Enabled = true
+	}
+	changed = provider.Enabled != enabled
+	if exists && !changed {
+		return false, nil
+	}
+	if cfg.Providers == nil {
+		cfg.Providers = make(map[string]Provider)
+	}
+	cfg.Providers[name] = Provider{Enabled: enabled}
+	if err := writeConfig(c.Path, cfg); err != nil {
+		return false, err
+	}
+	return changed, nil
+}
+
 func (c *ConfigReader) RemoveProvider(name string) error {
 	cfg, unlock, err := readConfigLocked(c.Path)
 	if err != nil {
@@ -110,7 +187,7 @@ func (c *ConfigReader) RemoveProvider(name string) error {
 	defer unlock()
 
 	if _, exists := cfg.Providers[name]; !exists {
-		return fmt.Errorf("provider %s does not exist", name)
+		return fmt.Errorf("provider %s: %w", name, ErrProviderNotFound)
 	}
 	delete(cfg.Providers, name)
 	if err := writeConfig(c.Path, cfg); err != nil {

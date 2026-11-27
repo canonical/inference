@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -105,7 +106,7 @@ func TestConfigReaderMissingFileReturnsEmptyProviders(t *testing.T) {
 	}
 }
 
-func TestAddProviderValidatesName(t *testing.T) {
+func TestSetProviderEnabledValidatesName(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
 		wantErr bool
@@ -122,9 +123,9 @@ func TestAddProviderValidatesName(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
-			err := c.AddProvider(tt.name, true)
+			_, err := c.SetProviderEnabled(tt.name, true)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("AddProvider error = %v, wantErr %t", err, tt.wantErr)
+				t.Fatalf("SetProviderEnabled error = %v, wantErr %t", err, tt.wantErr)
 			}
 		})
 	}
@@ -203,9 +204,91 @@ func TestProviderJSONContract(t *testing.T) {
 	}
 }
 
+func TestEnsureProviders(t *testing.T) {
+	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	if _, err := c.SetProviderEnabled("existing", false); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := c.EnsureProviders([]string{"existing", "new"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]Provider{"existing": {Enabled: false}, "new": {Enabled: true}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	persisted, err := c.GetProviders()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(persisted, want) {
+		t.Fatalf("persisted %+v, want %+v", persisted, want)
+	}
+}
+
+func TestEnsureProvidersDoesNotWriteWhenComplete(t *testing.T) {
+	dir := t.TempDir()
+	c := &ConfigReader{Path: filepath.Join(dir, "config.json")}
+	if _, err := c.EnsureProviders([]string{"gemma4"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	if _, err := c.EnsureProviders([]string{"gemma4"}); err != nil {
+		t.Fatalf("EnsureProviders on complete config: %v", err)
+	}
+}
+
+func TestEnsureProvidersRejectsInvalidNames(t *testing.T) {
+	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	if _, err := c.EnsureProviders([]string{"ok", "../bad"}); err == nil {
+		t.Fatal("expected error for invalid name")
+	}
+	providers, err := c.GetProviders()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(providers) != 0 {
+		t.Fatalf("expected no providers written, got %+v", providers)
+	}
+}
+
+func TestSetProviderEnabled(t *testing.T) {
+	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+
+	for _, step := range []struct {
+		enabled     bool
+		wantChanged bool
+	}{
+		{enabled: true, wantChanged: false},
+		{enabled: false, wantChanged: true},
+		{enabled: false, wantChanged: false},
+		{enabled: true, wantChanged: true},
+	} {
+		changed, err := c.SetProviderEnabled("gemma4", step.enabled)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if changed != step.wantChanged {
+			t.Fatalf("SetProviderEnabled(%t) changed = %t, want %t", step.enabled, changed, step.wantChanged)
+		}
+		providers, err := c.GetProviders()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if providers["gemma4"].Enabled != step.enabled {
+			t.Fatalf("enabled = %t, want %t", providers["gemma4"].Enabled, step.enabled)
+		}
+	}
+}
+
 func TestRemoveProvider(t *testing.T) {
 	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
-	if err := c.AddProvider("gemma4", true); err != nil {
+	if _, err := c.EnsureProviders([]string{"gemma4"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.RemoveProvider("gemma4"); err != nil {
@@ -214,17 +297,27 @@ func TestRemoveProvider(t *testing.T) {
 	if exists, err := c.ProviderExists("gemma4"); err != nil || exists {
 		t.Fatalf("ProviderExists = %t, %v; want false, nil", exists, err)
 	}
-	if err := c.RemoveProvider("gemma4"); err == nil {
-		t.Fatal("expected error removing missing provider")
+	if err := c.RemoveProvider("gemma4"); !errors.Is(err, ErrProviderNotFound) {
+		t.Fatalf("got %v, want ErrProviderNotFound", err)
 	}
 }
 
-func TestAddProviderRejectsDuplicate(t *testing.T) {
+func TestAddProvider(t *testing.T) {
 	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
-	if err := c.AddProvider("gemma4", true); err != nil {
+	if err := c.AddProvider("gemma4", false); err != nil {
 		t.Fatal(err)
+	}
+	providers, err := c.GetProviders()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (map[string]Provider{"gemma4": {Enabled: false}}); !reflect.DeepEqual(providers, want) {
+		t.Fatalf("got %+v, want %+v", providers, want)
 	}
 	if err := c.AddProvider("gemma4", true); err == nil {
 		t.Fatal("expected error for duplicate provider")
+	}
+	if err := c.AddProvider("../bad", true); err == nil {
+		t.Fatal("expected error for invalid provider name")
 	}
 }
