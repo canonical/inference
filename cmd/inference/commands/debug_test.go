@@ -62,18 +62,19 @@ func TestDebugProvidersJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := "{\n" +
-		"  \"issues\": [\n" +
-		"    {\n" +
-		"      \"id\": 1,\n" +
-		"      \"details\": \"Cannot use shared provider: missing provider.env in " + filepath.Join(root, "provider-1") + "/\"\n" +
-		"    },\n" +
-		"    {\n" +
-		"      \"id\": 2,\n" +
-		"      \"details\": \"Cannot use shared provider: missing OPENAI_BASE_URL in " + filepath.Join(root, "provider-2", "provider.env") + "\"\n" +
-		"    }\n" +
-		"  ]\n" +
-		"}\n"
+	want := `{
+  "issues": [
+    {
+      "id": 1,
+      "details": "Cannot use shared provider: missing provider.env in ` + filepath.Join(root, "provider-1") + `/"
+    },
+    {
+      "id": 2,
+      "details": "Cannot use shared provider: missing OPENAI_BASE_URL in ` + filepath.Join(root, "provider-2", "provider.env") + `"
+    }
+  ]
+}
+`
 	if got := stdout.String(); got != want {
 		t.Errorf("stdout:\n%s\nwant:\n%s", got, want)
 	}
