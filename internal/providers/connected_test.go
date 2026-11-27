@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
 )
@@ -117,7 +118,7 @@ func TestListMergesCatalogAndConnectedProviders(t *testing.T) {
 		"custom":    snapd.SnapStatusInstalled,
 	})
 
-	result, err := NewService(catalog, client, root).List(context.Background())
+	result, err := NewService(catalog, client, root, nil).List(context.Background())
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -159,7 +160,7 @@ func TestListFailsWhenSnapStatusCannotBeRead(t *testing.T) {
 	writeProviderEnv(t, root, "custom-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=custom\n")
 	client := &snapd.Client{Socket: filepath.Join(t.TempDir(), "missing.socket")}
 
-	_, err := NewService(catalog, client, root).ListInstalled(context.Background())
+	_, err := NewService(catalog, client, root, nil).ListInstalled(context.Background())
 	if err == nil {
 		t.Fatal("got nil error, want snapd error")
 	}
@@ -170,7 +171,7 @@ func TestListFailsWhenCatalogFails(t *testing.T) {
 	writeProviderEnv(t, root, "custom-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=custom\n")
 	client, _ := snapd.NewFakeServer(t, map[string]string{"custom": snapd.SnapStatusActive})
 
-	_, err := NewService(snapcatalog.WriteFakeCatalog(t, "not json"), client, root).List(context.Background())
+	_, err := NewService(snapcatalog.WriteFakeCatalog(t, "not json"), client, root, nil).List(context.Background())
 	if err == nil {
 		t.Fatal("got nil error, want catalog error")
 	}
@@ -184,8 +185,102 @@ func TestListFailsWhenConnectedSourceFails(t *testing.T) {
 
 	catalog := snapcatalog.WriteFakeCatalog(t, `[]`)
 	client, _ := snapd.NewFakeServer(t, nil)
-	_, err := NewService(catalog, client, root).List(context.Background())
+	_, err := NewService(catalog, client, root, nil).List(context.Background())
 	if err == nil {
 		t.Fatal("got nil error, want connected source error")
+	}
+}
+
+func TestListSyncsConnectedProvidersIntoConfig(t *testing.T) {
+	catalog := snapcatalog.WriteFakeCatalog(t, `[]`)
+	root := t.TempDir()
+	writeProviderEnv(t, root, "a-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=a\n")
+	writeProviderEnv(t, root, "b-mount", "OPENAI_BASE_URL=http://localhost:8081/v1\nSNAP_NAME=b\n")
+	client, _ := snapd.NewFakeServer(t, map[string]string{
+		"a": snapd.SnapStatusActive,
+		"b": snapd.SnapStatusActive,
+	})
+	configReader := &config.ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	if _, err := configReader.SetProviderEnabled("a", false); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := NewService(catalog, client, root, configReader, WithConfigSync()).List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	states := map[string]LifecycleState{}
+	for _, provider := range result {
+		states[provider.Name] = provider.State
+	}
+	if states["a"] != StateDisabled || states["b"] != StateEnabled {
+		t.Fatalf("got states %v, want a disabled and b enabled", states)
+	}
+	persisted, err := configReader.GetProviders()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]config.Provider{"a": {Enabled: false}, "b": {Enabled: true}}
+	if !reflect.DeepEqual(persisted, want) {
+		t.Fatalf("config providers %+v, want %+v", persisted, want)
+	}
+}
+
+func TestListReadsConfigOnEveryCall(t *testing.T) {
+	catalog := snapcatalog.WriteFakeCatalog(t, `[]`)
+	root := t.TempDir()
+	writeProviderEnv(t, root, "a-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=a\n")
+	client, _ := snapd.NewFakeServer(t, map[string]string{"a": snapd.SnapStatusActive})
+	configReader := &config.ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	service := NewService(catalog, client, root, configReader)
+
+	for _, enabled := range []bool{true, false, true} {
+		if _, err := configReader.SetProviderEnabled("a", enabled); err != nil {
+			t.Fatal(err)
+		}
+		provider, err := service.Find(context.Background(), "a")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := provider.State == StateEnabled; got != enabled {
+			t.Fatalf("enabled = %t, want %t", got, enabled)
+		}
+	}
+}
+
+func TestListKeepsDisabledProvidersInstalled(t *testing.T) {
+	catalog := snapcatalog.WriteFakeCatalog(t, `[{"snap":"a","model_name":"A","repo_url":"https://example.com/a"}]`)
+	client, _ := snapd.NewFakeServer(t, map[string]string{"a": snapd.SnapStatusActive})
+	configReader := &config.ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+	if _, err := configReader.SetProviderEnabled("a", false); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := NewService(catalog, client, "", configReader).ListInstalled(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 1 || result[0].State != StateDisabled {
+		t.Fatalf("got %+v, want one disabled provider", result)
+	}
+}
+
+func TestListWithoutConfigSyncDoesNotWriteConfig(t *testing.T) {
+	catalog := snapcatalog.WriteFakeCatalog(t, `[]`)
+	root := t.TempDir()
+	writeProviderEnv(t, root, "a-mount", "OPENAI_BASE_URL=http://localhost:8080/v1\nSNAP_NAME=a\n")
+	client, _ := snapd.NewFakeServer(t, map[string]string{"a": snapd.SnapStatusActive})
+	configReader := &config.ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
+
+	result, err := NewService(catalog, client, root, configReader).List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(result) != 1 || result[0].State != StateEnabled {
+		t.Fatalf("got %+v, want one enabled provider", result)
+	}
+	if _, err := os.Stat(configReader.Path); !os.IsNotExist(err) {
+		t.Fatalf("config file should not be created, stat error = %v", err)
 	}
 }

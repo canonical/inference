@@ -46,7 +46,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("all providers", func(t *testing.T) {
-		got, err := NewService(catalog, client, "").List(context.Background())
+		got, err := NewService(catalog, client, "", nil).List(context.Background())
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -66,7 +66,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("installed only", func(t *testing.T) {
-		got, err := NewService(catalog, client, "").ListInstalled(context.Background())
+		got, err := NewService(catalog, client, "", nil).ListInstalled(context.Background())
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -90,7 +90,7 @@ func TestList(t *testing.T) {
 			"qwen3":  snapd.SnapStatusInstalled,
 		})
 
-		got, err := NewService(catalog, client, "").Find(context.Background(), "gemma4")
+		got, err := NewService(catalog, client, "", nil).Find(context.Background(), "gemma4")
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -123,7 +123,7 @@ func TestFind(t *testing.T) {
 	})
 
 	t.Run("matching provider", func(t *testing.T) {
-		got, err := NewService(catalog, client, "").Find(context.Background(), "gemma4")
+		got, err := NewService(catalog, client, "", nil).Find(context.Background(), "gemma4")
 		if err != nil {
 			t.Fatalf("Find: %v", err)
 		}
@@ -139,7 +139,7 @@ func TestFind(t *testing.T) {
 	})
 
 	t.Run("nothing matches", func(t *testing.T) {
-		_, err := NewService(catalog, client, "").Find(context.Background(), "oopsie-daisy")
+		_, err := NewService(catalog, client, "", nil).Find(context.Background(), "oopsie-daisy")
 		if err == nil {
 			t.Fatal("expected an error for an unknown provider")
 		}
@@ -149,7 +149,7 @@ func TestFind(t *testing.T) {
 	})
 
 	t.Run("empty provider", func(t *testing.T) {
-		_, err := NewService(catalog, client, "").Find(context.Background(), "")
+		_, err := NewService(catalog, client, "", nil).Find(context.Background(), "")
 		if err == nil {
 			t.Fatal("expected an error for an empty provider")
 		}
@@ -172,7 +172,7 @@ func TestFindReturnsCatalogEngines(t *testing.T) {
 	})
 
 	t.Run("catalog snap that is not installed", func(t *testing.T) {
-		got, err := NewService(catalog, client, root).Find(context.Background(), "gemma4")
+		got, err := NewService(catalog, client, root, nil).Find(context.Background(), "gemma4")
 		if err != nil {
 			t.Fatalf("Find: %v", err)
 		}
@@ -185,7 +185,7 @@ func TestFindReturnsCatalogEngines(t *testing.T) {
 	})
 
 	t.Run("catalog snap that is also connected", func(t *testing.T) {
-		got, err := NewService(catalog, client, root).Find(context.Background(), "smollm2")
+		got, err := NewService(catalog, client, root, nil).Find(context.Background(), "smollm2")
 		if err != nil {
 			t.Fatalf("Find: %v", err)
 		}
@@ -201,7 +201,7 @@ func TestFindReturnsCatalogEngines(t *testing.T) {
 	})
 
 	t.Run("connected snap missing from the catalog", func(t *testing.T) {
-		got, err := NewService(catalog, client, root).Find(context.Background(), "custom")
+		got, err := NewService(catalog, client, root, nil).Find(context.Background(), "custom")
 		if err != nil {
 			t.Fatalf("Find: %v", err)
 		}
@@ -218,7 +218,7 @@ func TestListTreatsMissingCatalogAsEmpty(t *testing.T) {
 		{},
 		{Path: filepath.Join(t.TempDir(), "missing.json")},
 	} {
-		got, err := NewService(catalog, client, "").List(context.Background())
+		got, err := NewService(catalog, client, "", nil).List(context.Background())
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -232,7 +232,7 @@ func TestListReturnsMalformedCatalogError(t *testing.T) {
 	catalog := snapcatalog.WriteFakeCatalog(t, "not json")
 	client, _ := snapd.NewFakeServer(t, nil)
 
-	if _, err := NewService(catalog, client, "").List(context.Background()); err == nil {
+	if _, err := NewService(catalog, client, "", nil).List(context.Background()); err == nil {
 		t.Fatal("expected malformed catalog error")
 	}
 }

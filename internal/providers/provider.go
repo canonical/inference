@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/canonical/inference/internal/config"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
 )
@@ -87,14 +88,35 @@ type service struct {
 	catalog            *snapcatalog.Reader
 	snapdClient        *snapd.Client
 	shareProvidersPath string
+	configReader       *config.ConfigReader
+	syncConfig         bool
 }
 
-func NewService(catalog *snapcatalog.Reader, snapdClient *snapd.Client, shareProvidersPath string) Service {
-	return &service{
+type Option func(*service)
+
+// WithConfigSync makes provider discovery add connected providers to the config, which requires write access to it.
+func WithConfigSync() Option {
+	return func(s *service) { s.syncConfig = true }
+}
+
+// A nil configReader treats every provider as enabled.
+func NewService(
+	catalog *snapcatalog.Reader,
+	snapdClient *snapd.Client,
+	shareProvidersPath string,
+	configReader *config.ConfigReader,
+	options ...Option,
+) Service {
+	s := &service{
 		catalog:            catalog,
 		snapdClient:        snapdClient,
 		shareProvidersPath: shareProvidersPath,
+		configReader:       configReader,
 	}
+	for _, option := range options {
+		option(s)
+	}
+	return s
 }
 
 func (s *service) Find(ctx context.Context, name string) (Provider, error) {
@@ -143,6 +165,11 @@ func (s *service) list(ctx context.Context, options listOptions) ([]Provider, er
 		return nil, fmt.Errorf("reading configured OpenAI providers: %w", err)
 	}
 
+	configProviders, err := s.configProviders(connectedProviders)
+	if err != nil {
+		return nil, err
+	}
+
 	// Union catalog and connected inference snap providers
 	merged := make(map[ProviderIdentity]Provider)
 	for _, provider := range catalogProviders {
@@ -175,6 +202,10 @@ func (s *service) list(ctx context.Context, options listOptions) ([]Provider, er
 			}
 			provider.State = state
 		}
+		if configProvider, ok := configProviders[provider.Name]; ok && !configProvider.Enabled &&
+			provider.State != StateNotInstalled {
+			provider.State = StateDisabled
+		}
 
 		if options.InstalledOnly && !provider.Installed() {
 			continue
@@ -189,6 +220,28 @@ func (s *service) list(ctx context.Context, options listOptions) ([]Provider, er
 		return result[i].Backend < result[j].Backend
 	})
 	return result, nil
+}
+
+func (s *service) configProviders(connected []Provider) (map[string]config.Provider, error) {
+	if s.configReader == nil {
+		return nil, nil
+	}
+	if !s.syncConfig {
+		configProviders, err := s.configReader.GetProviders()
+		if err != nil {
+			return nil, fmt.Errorf("reading provider config: %w", err)
+		}
+		return configProviders, nil
+	}
+	names := make([]string, len(connected))
+	for i, provider := range connected {
+		names[i] = provider.Name
+	}
+	configProviders, err := s.configReader.EnsureProviders(names)
+	if err != nil {
+		return nil, fmt.Errorf("syncing provider config: %w", err)
+	}
+	return configProviders, nil
 }
 
 func snapProviderLifecycleState(ctx context.Context, snapdClient *snapd.Client, name string) (LifecycleState, error) {

@@ -66,7 +66,7 @@ func (s *service) List(ctx context.Context) ([]ProviderModels, error) {
 	availableProviders := make([]providers.Provider, 0, len(allProviders))
 	providerNames := make(map[string]struct{}, len(allProviders))
 	for _, provider := range allProviders {
-		if provider.BaseURL == "" {
+		if provider.BaseURL == "" || provider.State == providers.StateDisabled {
 			continue
 		}
 		if provider.Backend == providers.BackendSnap && provider.State != providers.StateEnabled {
