@@ -220,8 +220,8 @@ func TestFindNoMatches(t *testing.T) {
 		wantStdout string
 		wantStderr string
 	}{
-		{name: "empty store results", result: `[]`, wantStderr: "No inference snaps matched the query \"unknown\"\n"},
-		{name: "no catalogue matches", result: `[{"name":"box-linux"}]`, wantStderr: "No inference snaps matched the query \"unknown\"\n"},
+		{name: "empty store results", result: `[]`, wantStderr: "No provider matched the query \"unknown\"\n"},
+		{name: "no catalogue matches", result: `[{"name":"box-linux"}]`, wantStderr: "No provider matched the query \"unknown\"\n"},
 		{name: "json empty array", result: `[]`, format: "json", wantStdout: "{\n  \"results\": []\n}\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -255,9 +255,8 @@ func TestFindNoMatches(t *testing.T) {
 			if got := stdout.String(); got != test.wantStdout {
 				t.Fatalf("unexpected stdout %q", got)
 			}
-			want := "No provider matched the query \"unknown\"\n"
-			if got := stderr.String(); got != want {
-				t.Fatalf("unexpected stderr: want %q, got %q", want, got)
+			if got := stderr.String(); got != test.wantStderr {
+				t.Fatalf("unexpected stderr: want %q, got %q", test.wantStderr, got)
 			}
 		})
 	}

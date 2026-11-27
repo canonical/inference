@@ -33,7 +33,7 @@ type findOutput struct {
 
 func Find(ctx *common.Context) *cobra.Command {
 	cmd := findCommand{Context: ctx}
-	return &cobra.Command{
+	cobraCmd := &cobra.Command{
 		Use:     "find [keyword]...",
 		Aliases: []string{"catalog"},
 		Short:   "Find inference providers",
@@ -52,6 +52,8 @@ The results currently only include supported inference snaps.`,
 		SilenceUsage:      true,
 		RunE:              cmd.run,
 	}
+	cobraCmd.Flags().StringVar(&cmd.format, "format", "table", "output format [table|json]")
+	return cobraCmd
 }
 
 func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
