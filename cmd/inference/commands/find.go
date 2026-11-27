@@ -52,8 +52,6 @@ The results currently only include supported inference snaps.`,
 		SilenceUsage:      true,
 		RunE:              cmd.run,
 	}
-	cobraCmd.Flags().StringVar(&cmd.format, "format", "table", "output format [table|json]")
-	return cobraCmd
 }
 
 func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
@@ -85,6 +83,14 @@ func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
 		}
 	}
 	if len(results) == 0 {
+		if cmd.format == "json" {
+			output, err := cmd.outputJSON(buildFindResults(nil))
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprint(cmd.Stdout, output)
+			return err
+		}
 		_, err := fmt.Fprintf(cmd.Stderr, "No provider matched the query %q\n", query)
 		return err
 	}
@@ -100,7 +106,9 @@ func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
 		return err
 	}
 	_, _ = fmt.Fprint(cmd.Stdout, output)
-	_, _ = fmt.Fprintln(cmd.Stderr, "\nHint: Run \"inference info <provider>\" for details.")
+	if cmd.format != "json" {
+		_, _ = fmt.Fprintln(cmd.Stderr, "\nHint: Run \"inference info <provider>\" for details.")
+	}
 
 	return nil
 }
@@ -164,7 +172,7 @@ func findMatchCounts(result snapd.FindResult, words []string) [4]int {
 	return counts
 }
 
-func (cmd *findCommand) outputTable(entries []snapcatalog.Entry) (string, error) {
+func (cmd *findCommand) outputTable(results []findResultOutput) (string, error) {
 	headers := []string{"PROVIDER", "CAPABILITIES"}
 	nameMaxLen := len(headers[0])
 	capabilitiesMaxLen := len(headers[1])
