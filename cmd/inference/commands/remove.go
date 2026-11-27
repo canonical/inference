@@ -1,7 +1,11 @@
 package commands
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/canonical/inference/cmd/inference/common"
+	"github.com/canonical/inference/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -34,5 +38,11 @@ func (cmd *removeCommand) remove(cobraCmd *cobra.Command, name string) error {
 	if err := common.ValidateSnapName(cmd.ctx.SnapCatalog, name); err != nil {
 		return err
 	}
-	return common.RemoveSnap(cobraCmd.Context(), cmd.ctx, name)
+	if err := common.RemoveSnap(cobraCmd.Context(), cmd.ctx, name); err != nil {
+		return err
+	}
+	if err := cmd.ctx.Config.RemoveProvider(name); err != nil && !errors.Is(err, config.ErrProviderNotFound) {
+		return fmt.Errorf("removing %s from config: %w", name, err)
+	}
+	return nil
 }

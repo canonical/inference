@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"fmt"
+
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/spf13/cobra"
 )
@@ -34,5 +36,11 @@ func (cmd *installCommand) install(cobraCmd *cobra.Command, name string) error {
 	if err := common.ValidateSnapName(cmd.ctx.SnapCatalog, name); err != nil {
 		return err
 	}
-	return common.InstallSnap(cobraCmd.Context(), cmd.ctx, name)
+	if err := common.InstallSnap(cobraCmd.Context(), cmd.ctx, name); err != nil {
+		return err
+	}
+	if _, err := cmd.ctx.Config.EnsureProviders([]string{name}); err != nil {
+		return fmt.Errorf("adding %s to config: %w", name, err)
+	}
+	return nil
 }
