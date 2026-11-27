@@ -47,8 +47,8 @@ func debugProviders(ctx *common.Context) *cobra.Command {
 	cmd := debugProvidersCommand{Context: ctx}
 	cobraCmd := &cobra.Command{
 		Use:               "providers",
-		Short:             "List problems with shared providers",
-		Long:              "List the shared providers that cannot be used, and the reason why.",
+		Short:             "Debug provider issues",
+		Long:              "Debug issues related to inference providers",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
