@@ -10,6 +10,7 @@ import (
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -35,6 +36,7 @@ func main() {
 		SnapdClient:        snapd.NewClient(),
 		SnapCatalog:        snapcatalog.NewReader(),
 		ShareProvidersPath: shareProvidersPath(),
+		Storage:            storage.New(),
 		HTTPHost:           httpHost(),
 		HTTPPort:           httpPort(),
 	}
@@ -100,6 +102,8 @@ func root(ctx *common.Context) *cobra.Command {
 		commands.Info(ctx),
 		commands.Install(ctx),
 		commands.Remove(ctx),
+		commands.Enable(ctx),
+		commands.Disable(ctx),
 	)
 	return cmd
 }

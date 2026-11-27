@@ -9,6 +9,7 @@ import (
 
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/storage"
 )
 
 type ProviderBackend string
@@ -87,13 +88,43 @@ type service struct {
 	catalog            *snapcatalog.Reader
 	snapdClient        *snapd.Client
 	shareProvidersPath string
+	storage            *storage.Storage
+	syncStorage        bool
 }
 
-func NewService(catalog *snapcatalog.Reader, snapdClient *snapd.Client, shareProvidersPath string) Service {
+// A nil storage treats every provider as enabled.
+func NewService(
+	catalog *snapcatalog.Reader,
+	snapdClient *snapd.Client,
+	shareProvidersPath string,
+	storage *storage.Storage,
+) Service {
+	return newService(catalog, snapdClient, shareProvidersPath, storage, false)
+}
+
+// NewSyncingService also adds connected providers to the storage during discovery, which requires write access to it.
+func NewSyncingService(
+	catalog *snapcatalog.Reader,
+	snapdClient *snapd.Client,
+	shareProvidersPath string,
+	storage *storage.Storage,
+) Service {
+	return newService(catalog, snapdClient, shareProvidersPath, storage, true)
+}
+
+func newService(
+	catalog *snapcatalog.Reader,
+	snapdClient *snapd.Client,
+	shareProvidersPath string,
+	storage *storage.Storage,
+	syncStorage bool,
+) Service {
 	return &service{
 		catalog:            catalog,
 		snapdClient:        snapdClient,
 		shareProvidersPath: shareProvidersPath,
+		storage:            storage,
+		syncStorage:        syncStorage,
 	}
 }
 
@@ -143,6 +174,11 @@ func (s *service) list(ctx context.Context, options listOptions) ([]Provider, er
 		return nil, fmt.Errorf("reading configured OpenAI providers: %w", err)
 	}
 
+	storedProviders, err := s.storedProviders(connectedProviders)
+	if err != nil {
+		return nil, err
+	}
+
 	// Union catalog and connected inference snap providers
 	merged := make(map[ProviderIdentity]Provider)
 	for _, provider := range catalogProviders {
@@ -175,6 +211,10 @@ func (s *service) list(ctx context.Context, options listOptions) ([]Provider, er
 			}
 			provider.State = state
 		}
+		if storedProvider, ok := storedProviders[provider.Name]; ok && !storedProvider.Enabled &&
+			provider.State != StateNotInstalled {
+			provider.State = StateDisabled
+		}
 
 		if options.InstalledOnly && !provider.Installed() {
 			continue
@@ -189,6 +229,28 @@ func (s *service) list(ctx context.Context, options listOptions) ([]Provider, er
 		return result[i].Backend < result[j].Backend
 	})
 	return result, nil
+}
+
+func (s *service) storedProviders(connected []Provider) (map[string]storage.Provider, error) {
+	if s.storage == nil {
+		return nil, nil
+	}
+	if !s.syncStorage {
+		storedProviders, err := s.storage.GetProviders()
+		if err != nil {
+			return nil, fmt.Errorf("reading provider storage: %w", err)
+		}
+		return storedProviders, nil
+	}
+	names := make([]string, len(connected))
+	for i, provider := range connected {
+		names[i] = provider.Name
+	}
+	storedProviders, err := s.storage.EnsureProviders(names)
+	if err != nil {
+		return nil, fmt.Errorf("syncing provider storage: %w", err)
+	}
+	return storedProviders, nil
 }
 
 func snapProviderLifecycleState(ctx context.Context, snapdClient *snapd.Client, name string) (LifecycleState, error) {

@@ -20,6 +20,7 @@ import (
 	"github.com/canonical/inference/internal/providers"
 	"github.com/canonical/inference/internal/snapcatalog"
 	"github.com/canonical/inference/internal/snapd"
+	"github.com/canonical/inference/internal/storage"
 )
 
 const (
@@ -67,7 +68,7 @@ func main() {
 	go refreshCatalogPeriodically(ctx, catalogRefreshInterval, logger)
 
 	snapdClient := snapd.NewClient()
-	providerService := providers.NewService(catalog, snapdClient, providerRoot)
+	providerService := providers.NewSyncingService(catalog, snapdClient, providerRoot, storage.New())
 
 	handler := openaiproxy.NewModelsHandler(providerService, newUpstreamClient(), logger)
 	if err := handler.Refresh(ctx); err != nil {
