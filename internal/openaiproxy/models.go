@@ -25,12 +25,13 @@ const (
 )
 
 type ModelsHandler struct {
-	models     models.Service
-	client     *http.Client
-	baseLogger *slog.Logger
-	refreshMu  sync.Mutex
-	snapshot   atomic.Pointer[routingSnapshot]
-	requestID  atomic.Uint64
+	allowAllOrigins bool
+	models          models.Service
+	client          *http.Client
+	baseLogger      *slog.Logger
+	refreshMu       sync.Mutex
+	snapshot        atomic.Pointer[routingSnapshot]
+	requestID       atomic.Uint64
 }
 
 type modelsResponse struct {
@@ -67,11 +68,7 @@ type modelRoute struct {
 
 type routingSnapshot []modelRoute
 
-func NewModelsHandler(
-	providerService providers.Service,
-	client *http.Client,
-	baseLogger *slog.Logger,
-) *ModelsHandler {
+func NewModelsHandler(providerService providers.Service, client *http.Client, baseLogger *slog.Logger, allowAllOrigins bool) *ModelsHandler {
 	if client == nil {
 		client = http.DefaultClient
 	}
@@ -79,9 +76,10 @@ func NewModelsHandler(
 		baseLogger = slog.Default()
 	}
 	return &ModelsHandler{
-		models:     models.NewService(providerService, client),
-		client:     client,
-		baseLogger: baseLogger,
+		models:          models.NewService(providerService, client),
+		client:          client,
+		baseLogger:      baseLogger,
+		allowAllOrigins: allowAllOrigins,
 	}
 }
 
@@ -94,7 +92,6 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"path", r.URL.Path,
 	)
 	responseWriter := &loggingResponseWriter{ResponseWriter: w}
-	setCORSHeaders(responseWriter.Header())
 	defer func() {
 		requestLogger.Debug(
 			"handled HTTP request",
@@ -104,8 +101,7 @@ func (h *ModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 	}()
 
-	if isCORSPreflight(r) {
-		responseWriter.WriteHeader(http.StatusNoContent)
+	if h.handleCORS(responseWriter, r, requestLogger) {
 		return
 	}
 
@@ -368,29 +364,6 @@ func (h *ModelsHandler) proxy(
 		)
 	}()
 	proxy.ServeHTTP(w, r)
-}
-
-func isCORSPreflight(r *http.Request) bool {
-	return r.Method == http.MethodOptions &&
-		r.Header.Get("Origin") != "" &&
-		r.Header.Get("Access-Control-Request-Method") != "" &&
-		!isWebSocketUpgrade(r)
-}
-
-func setCORSHeaders(header http.Header) {
-	removeCORSHeaders(header)
-	header.Set("Access-Control-Allow-Origin", "*")
-	header.Set("Access-Control-Allow-Methods", "*")
-	header.Set("Access-Control-Allow-Headers", "*, Authorization")
-	header.Set("Access-Control-Expose-Headers", "*")
-}
-
-func removeCORSHeaders(header http.Header) {
-	for name := range header {
-		if strings.HasPrefix(strings.ToLower(name), "access-control-") {
-			header.Del(name)
-		}
-	}
 }
 
 type loggingResponseWriter struct {

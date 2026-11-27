@@ -20,7 +20,7 @@ import (
 
 func TestModelsHandlerServesDefaultResponse(t *testing.T) {
 	lister := &fakeProviders{}
-	handler := NewModelsHandler(lister, nil, discardLogger())
+	handler := NewModelsHandler(lister, nil, discardLogger(), false)
 
 	for _, path := range []string{"/", "/v1", "/v1/"} {
 		t.Run(path, func(t *testing.T) {
@@ -70,7 +70,7 @@ func TestModelsHandlerRefreshesAndAggregatesProviders(t *testing.T) {
 	root := t.TempDir()
 	writeProvider(t, root, "z-provider", "zeta", first.URL+"/v1")
 	writeProvider(t, root, "a-provider", "alpha", second.URL+"/v1/")
-	handler := NewModelsHandler(connectedProviders{root: root}, first.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(connectedProviders{root: root}, first.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)), false)
 
 	for request := int64(1); request <= 2; request++ {
 		response := httptest.NewRecorder()
@@ -112,7 +112,7 @@ func TestModelsHandlerRetrievesModelFromSnapshot(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler := NewModelsHandler(&fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}}, upstream.Client(), discardLogger())
+	handler := NewModelsHandler(&fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}}, upstream.Client(), discardLogger(), false)
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestModelsHandlerRejectsUnavailableUnqualifiedAndUnknownModelRetrieval(t *t
 	handler := NewModelsHandler(&fakeProviders{list: []providers.Provider{
 		{Name: "first", BaseURL: first.URL + "/v1"},
 		{Name: "second", BaseURL: second.URL + "/v1"},
-	}}, first.Client(), discardLogger())
+	}}, first.Client(), discardLogger(), false)
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models/anything", nil))
@@ -197,7 +197,7 @@ func TestModelsHandlerSkipsUnavailableProvider(t *testing.T) {
 	writeProvider(t, root, "healthy", "healthy", healthy.URL+"/v1")
 	writeProvider(t, root, "broken", "broken", "http://127.0.0.1:1/v1")
 	var logs bytes.Buffer
-	handler := NewModelsHandler(connectedProviders{root: root}, healthy.Client(), slog.New(slog.NewTextHandler(&logs, nil)))
+	handler := NewModelsHandler(connectedProviders{root: root}, healthy.Client(), slog.New(slog.NewTextHandler(&logs, nil)), false)
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -224,7 +224,7 @@ func TestModelsHandlerSkipsProviderWithoutBaseURL(t *testing.T) {
 		{Name: "catalog-only"},
 		{Name: "healthy", BaseURL: healthy.URL + "/v1"},
 	}}
-	handler := NewModelsHandler(lister, healthy.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(lister, healthy.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)), false)
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -237,7 +237,7 @@ func TestModelsHandlerRejectsDuplicateProviderNames(t *testing.T) {
 	handler := NewModelsHandler(&fakeProviders{list: []providers.Provider{
 		{Name: "duplicate", BaseURL: "http://first.example/v1"},
 		{Name: "duplicate", BaseURL: "http://second.example/v1"},
-	}}, http.DefaultClient, discardLogger())
+	}}, http.DefaultClient, discardLogger(), false)
 
 	err := handler.Refresh(context.Background())
 	if err == nil || !strings.Contains(err.Error(), `duplicate provider name "duplicate"`) {
@@ -252,7 +252,7 @@ func TestModelsHandlerRefreshesProviderFiles(t *testing.T) {
 	defer upstream.Close()
 
 	root := t.TempDir()
-	handler := NewModelsHandler(connectedProviders{root: root}, upstream.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(connectedProviders{root: root}, upstream.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)), false)
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -269,7 +269,7 @@ func TestModelsHandlerRefreshesProviderFiles(t *testing.T) {
 }
 
 func TestModelsHandlerReturnsEmptyListWithoutAvailableProviders(t *testing.T) {
-	handler := NewModelsHandler(connectedProviders{root: t.TempDir()}, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(connectedProviders{root: t.TempDir()}, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -299,7 +299,7 @@ func TestModelsHandlerPreservesSnapshotWhenRefreshFails(t *testing.T) {
 	defer upstream.Close()
 
 	lister := &fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}}
-	handler := NewModelsHandler(lister, upstream.Client(), discardLogger())
+	handler := NewModelsHandler(lister, upstream.Client(), discardLogger(), false)
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +320,7 @@ func TestModelsHandlerPreservesSnapshotWhenRefreshFails(t *testing.T) {
 }
 
 func TestModelsHandlerRejectsOtherMethodsAndPaths(t *testing.T) {
-	handler := NewModelsHandler(connectedProviders{root: t.TempDir()}, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(connectedProviders{root: t.TempDir()}, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/models", nil))
@@ -336,37 +336,486 @@ func TestModelsHandlerRejectsOtherMethodsAndPaths(t *testing.T) {
 }
 
 func TestModelsHandlerCORSPreflight(t *testing.T) {
-	handler := NewModelsHandler(connectedProviders{root: t.TempDir()}, http.DefaultClient, discardLogger())
-	request := httptest.NewRequest(http.MethodOptions, "/v1/chat/completions", nil)
-	request.Header.Set("Origin", "https://client.example")
-	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
-	request.Header.Set("Access-Control-Request-Headers", "Authorization, Content-Type")
-	response := httptest.NewRecorder()
+	for _, policy := range []struct {
+		name            string
+		origin          string
+		allowAllOrigins bool
+		allowed         bool
+	}{
+		{name: "loopback", origin: "http://localhost:3000", allowed: true},
+		{name: "external rejected", origin: "https://client.example"},
+		{name: "allow all", origin: "https://client.example", allowAllOrigins: true, allowed: true},
+	} {
+		t.Run(policy.name, func(t *testing.T) {
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				for _, test := range []struct {
+					name    string
+					headers []string
+				}{
+					{name: "no headers"},
+					{name: "empty header list", headers: []string{""}},
+					{name: "authorization", headers: []string{"Authorization"}},
+					{name: "standard", headers: []string{"Authorization, Content-Type"}},
+					{name: "mixed case", headers: []string{"content-type, AUTHORIZATION"}},
+					{name: "OpenAI SDK", headers: []string{"authorization, content-type, x-stainless-lang, x-stainless-package-version, x-stainless-os, x-stainless-arch, x-stainless-runtime, x-stainless-runtime-version, x-stainless-retry-count, x-stainless-timeout, x-stainless-helper-method, openai-organization, openai-project"}},
+					{name: "custom headers", headers: []string{"X-Custom, OpenAI-Beta"}},
+					{name: "multiple header lines", headers: []string{"Authorization, Content-Type", "X-Stainless-Lang, X-Custom"}},
+					{name: "token punctuation", headers: []string{"X-!#$%&'*+-.^_`|~0123456789"}},
+				} {
+					t.Run(method+"/"+test.name, func(t *testing.T) {
+						lister := &fakeProviders{}
+						handler := NewModelsHandler(lister, http.DefaultClient, discardLogger(), policy.allowAllOrigins)
+						request := httptest.NewRequest(http.MethodOptions, "/v1/chat/completions", nil)
+						request.Header.Set("Origin", policy.origin)
+						request.Header.Set("Access-Control-Request-Method", method)
+						request.Header["Access-Control-Request-Headers"] = test.headers
+						response := httptest.NewRecorder()
 
-	handler.ServeHTTP(response, request)
+						handler.ServeHTTP(response, request)
 
-	if response.Code != http.StatusNoContent {
-		t.Fatalf("preflight returned status %d body %s", response.Code, response.Body.String())
+						if lister.calls.Load() != 0 {
+							t.Fatal("preflight refreshed provider inventory")
+						}
+						if !policy.allowed {
+							if response.Code != http.StatusForbidden {
+								t.Fatalf("status = %d, want 403: %s", response.Code, response.Body.String())
+							}
+							assertNoCORS(t, response.Header())
+							return
+						}
+						if response.Code != http.StatusNoContent {
+							t.Fatalf("preflight returned status %d body %s", response.Code, response.Body.String())
+						}
+						allowedOrigin := policy.origin
+						if policy.allowAllOrigins {
+							allowedOrigin = "*"
+						}
+						assertCORS(t, response.Header(), allowedOrigin)
+						wantHeaders := "Authorization, Content-Type"
+						if len(test.headers) > 0 {
+							wantHeaders = strings.Join(test.headers, ", ")
+						}
+						if got := response.Header().Get("Access-Control-Allow-Headers"); got != wantHeaders {
+							t.Errorf("Access-Control-Allow-Headers = %q, want %q", got, wantHeaders)
+						}
+						if got := strings.Join(response.Header().Values("Vary"), ", "); got != "Origin, Sec-Fetch-Site, Access-Control-Request-Headers" {
+							t.Errorf("Vary = %q, want Origin, Sec-Fetch-Site, Access-Control-Request-Headers", got)
+						}
+					})
+				}
+			}
+		})
 	}
-	assertPermissiveCORS(t, response.Header())
 }
 
-func assertPermissiveCORS(t *testing.T, header http.Header) {
-	t.Helper()
-	for _, name := range []string{
-		"Access-Control-Allow-Origin",
-		"Access-Control-Allow-Methods",
-		"Access-Control-Expose-Headers",
+func TestModelsHandlerOriginlessRequests(t *testing.T) {
+	var upstreamCalls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamCalls.Add(1)
+		_, _ = w.Write([]byte(`{"data":[{"id":"native-model"}]}`))
+	}))
+	defer upstream.Close()
+
+	for _, test := range []struct {
+		name            string
+		fetchSite       string
+		origin          string
+		allowAllOrigins bool
+		allowed         bool
+	}{
+		{name: "curl", allowed: true},
+		{name: "same origin", fetchSite: "same-origin", allowed: true},
+		{name: "same site", fetchSite: "same-site", allowed: true},
+		{name: "direct navigation", fetchSite: "none", allowed: true},
+		{name: "cross site", fetchSite: "cross-site"},
+		{name: "loopback origin with cross-site metadata", fetchSite: "cross-site", origin: "http://localhost:3000", allowed: true},
+		{name: "allow all curl", allowAllOrigins: true, allowed: true},
+		{name: "allow all cross site", fetchSite: "cross-site", allowAllOrigins: true, allowed: true},
 	} {
-		if got := header.Values(name); len(got) != 1 || got[0] != "*" {
-			t.Errorf("%s = %q, want one * value", name, got)
+		t.Run(test.name, func(t *testing.T) {
+			upstreamCalls.Store(0)
+			lister := &fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}}
+			var logs strings.Builder
+			handler := NewModelsHandler(lister, upstream.Client(), slog.New(slog.NewTextHandler(&logs, nil)), test.allowAllOrigins)
+			request := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+			if test.fetchSite != "" {
+				request.Header.Set("Sec-Fetch-Site", test.fetchSite)
+			}
+			if test.origin != "" {
+				request.Header.Set("Origin", test.origin)
+			}
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if test.origin == "" {
+				assertNoCORS(t, response.Header())
+			} else {
+				assertCORS(t, response.Header(), test.origin)
+			}
+			if test.allowed {
+				if response.Code != http.StatusOK || lister.calls.Load() != 1 || upstreamCalls.Load() != 1 {
+					t.Fatalf("status = %d, inventory calls = %d, upstream calls = %d; want 200, 1, 1", response.Code, lister.calls.Load(), upstreamCalls.Load())
+				}
+				return
+			}
+			if response.Code != http.StatusForbidden || lister.calls.Load() != 0 || upstreamCalls.Load() != 0 {
+				t.Fatalf("status = %d, inventory calls = %d, upstream calls = %d; want 403, 0, 0", response.Code, lister.calls.Load(), upstreamCalls.Load())
+			}
+			var body errorResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Error.Message != "Cross-site requests without an origin are not allowed." || body.Error.Type != "invalid_request_error" {
+				t.Errorf("unexpected error: %+v", body.Error)
+			}
+			if !strings.Contains(logs.String(), `reason="cross-site request without an origin"`) {
+				t.Errorf("missing rejection reason in logs: %s", logs.String())
+			}
+		})
+	}
+}
+
+func assertCORS(t *testing.T, header http.Header, origin string) {
+	t.Helper()
+	for name, want := range map[string]string{
+		"Access-Control-Allow-Origin":  origin,
+		"Access-Control-Allow-Methods": "GET, POST",
+	} {
+		if got := header.Values(name); len(got) != 1 || got[0] != want {
+			t.Errorf("%s = %q, want one %q value", name, got, want)
 		}
 	}
-	if got := header.Values("Access-Control-Allow-Headers"); len(got) != 1 || got[0] != "*, Authorization" {
-		t.Errorf("Access-Control-Allow-Headers = %q, want one \"*, Authorization\" value", got)
+	if got := header.Get("Access-Control-Expose-Headers"); got != "" {
+		t.Errorf("Access-Control-Expose-Headers = %q, want empty", got)
 	}
 	if got := header.Get("Access-Control-Allow-Credentials"); got != "" {
 		t.Errorf("Access-Control-Allow-Credentials = %q, want empty", got)
+	}
+	if got := header.Get("Vary"); got != "Origin, Sec-Fetch-Site" {
+		t.Errorf("Vary = %q, want Origin, Sec-Fetch-Site", got)
+	}
+}
+
+func TestModelsHandlerOriginPolicy(t *testing.T) {
+	for _, test := range []struct {
+		origin string
+		allow  bool
+	}{
+		{origin: "", allow: true},
+		{origin: "http://localhost", allow: true},
+		{origin: "https://LOCALHOST:443", allow: true},
+		{origin: "http://localhost:3000", allow: true},
+		{origin: "http://127.0.0.1:8080", allow: true},
+		{origin: "https://127.42.0.1:65535", allow: true},
+		{origin: "http://[::1]", allow: true},
+		{origin: "https://[::1]:3000", allow: true},
+		{origin: "https://client.example"},
+		{origin: "http://localhost.evil.example"},
+		{origin: "http://evil-localhost"},
+		{origin: "http://app.localhost"},
+		{origin: "http://192.168.1.1"},
+		{origin: "http://0.0.0.0"},
+		{origin: "http://[::]"},
+		{origin: "http://[::2]"},
+		{origin: "http://[::1%25lo]", allow: true},
+		{origin: "http://[::2%25lo]"},
+		{origin: "null"},
+		{origin: "localhost"},
+		{origin: "//localhost", allow: true},
+		{origin: "ftp://localhost", allow: true},
+		{origin: "ws://127.0.0.1:3000", allow: true},
+		{origin: "wss://[::1]:3000", allow: true},
+		{origin: "custom://localhost", allow: true},
+		{origin: "//client.example"},
+		{origin: "ftp://client.example"},
+		{origin: "ws://192.168.1.1"},
+		{origin: "wss://[::2]"},
+		{origin: "custom://client.example"},
+		{origin: "http://user@localhost", allow: true},
+		{origin: "http://localhost/", allow: true},
+		{origin: "http://localhost/path", allow: true},
+		{origin: "http://localhost?", allow: true},
+		{origin: "http://localhost?query=value", allow: true},
+		{origin: "http://localhost#", allow: true},
+		{origin: "http://localhost#fragment", allow: true},
+		{origin: "http://localhost@client.example"},
+		{origin: "http://client.example/localhost"},
+		{origin: "http://client.example?host=localhost"},
+		{origin: "http://client.example#localhost"},
+		{origin: "http://localhost:", allow: true},
+		{origin: "http://localhost:invalid"},
+		{origin: "http://localhost:65536", allow: true},
+		{origin: "http://localhost:-1"},
+		{origin: "http://[localhost]"},
+		{origin: "http://::1:3000"},
+		{origin: "http://localhost https://client.example"},
+	} {
+		t.Run(test.origin, func(t *testing.T) {
+			var upstreamCalls atomic.Int32
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				upstreamCalls.Add(1)
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				w.Header().Set("Access-Control-Expose-Headers", "*")
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				_, _ = w.Write([]byte(`{"data":[{"id":"native-model"}]}`))
+			}))
+			defer upstream.Close()
+			handler := NewModelsHandler(&fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}}, upstream.Client(), discardLogger(), false)
+
+			if err := handler.Refresh(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			upstreamCalls.Store(0)
+
+			for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodOptions} {
+				path := "/v1/models"
+				if method != http.MethodGet {
+					path = "/v1/chat/completions"
+				}
+				request := httptest.NewRequest(method, path, strings.NewReader(`{"model":"provider/native-model"}`))
+				if test.origin != "" {
+					request.Header.Set("Origin", test.origin)
+				}
+				if method == http.MethodOptions {
+					request.Header.Set("Access-Control-Request-Method", http.MethodPost)
+				}
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, request)
+				wantStatus := http.StatusOK
+				if !test.allow {
+					wantStatus = http.StatusForbidden
+				} else if method == http.MethodOptions && test.origin != "" {
+					wantStatus = http.StatusNoContent
+				}
+				if response.Code != wantStatus {
+					t.Fatalf("%s status = %d, want %d: %s", method, response.Code, wantStatus, response.Body.String())
+				}
+				if test.allow && test.origin != "" {
+					assertCORS(t, response.Header(), test.origin)
+				} else {
+					assertNoCORS(t, response.Header())
+				}
+			}
+			if !test.allow && upstreamCalls.Load() != 0 {
+				t.Errorf("rejected origin reached upstream %d times", upstreamCalls.Load())
+			}
+			if test.allow && upstreamCalls.Load() == 0 {
+				t.Error("allowed requests did not reach upstream")
+			}
+		})
+	}
+}
+
+func TestModelsHandlerRejectsInvalidCORSRequests(t *testing.T) {
+	for name, allowAllOrigins := range map[string]bool{
+		"default":   false,
+		"allow all": true,
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, test := range []struct {
+				name    string
+				origins []string
+				methods []string
+			}{
+				{name: "duplicate origins", origins: []string{"http://localhost", "http://localhost"}, methods: []string{http.MethodGet}},
+				{name: "disallowed method", origins: []string{"http://localhost"}, methods: []string{http.MethodDelete}},
+				{name: "duplicate methods", origins: []string{"http://localhost"}, methods: []string{http.MethodGet, http.MethodPost}},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					lister := &fakeProviders{}
+					handler := NewModelsHandler(lister, http.DefaultClient, discardLogger(), allowAllOrigins)
+
+					request := httptest.NewRequest(http.MethodOptions, "/v1/models", nil)
+					request.Header["Origin"] = test.origins
+					request.Header["Access-Control-Request-Method"] = test.methods
+					response := httptest.NewRecorder()
+					handler.ServeHTTP(response, request)
+					if response.Code != http.StatusForbidden {
+						t.Fatalf("status = %d, want 403: %s", response.Code, response.Body.String())
+					}
+					assertNoCORS(t, response.Header())
+					if lister.calls.Load() != 0 {
+						t.Error("rejected request refreshed provider inventory")
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestModelsHandlerAllowAllOrigins(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		origins []string
+		allow   bool
+	}{
+		{name: "no origin", allow: true},
+		{name: "loopback", origins: []string{"http://localhost:3000"}, allow: true},
+		{name: "external HTTPS", origins: []string{"https://client.example"}, allow: true},
+		{name: "external HTTP", origins: []string{"http://192.168.1.1:8080"}, allow: true},
+		{name: "IPv6", origins: []string{"https://[2001:db8::1]:443"}, allow: true},
+		{name: "opaque", origins: []string{"null"}, allow: true},
+		{name: "extension", origins: []string{"chrome-extension://abcdef"}, allow: true},
+		{name: "empty", origins: []string{""}, allow: true},
+		{name: "multiple", origins: []string{"https://client.example", "http://localhost"}},
+		{name: "combined", origins: []string{"https://client.example http://localhost"}, allow: true},
+		{name: "arbitrary value", origins: []string{"not-an-origin"}, allow: true},
+		{name: "path", origins: []string{"https://client.example/path"}, allow: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var upstreamCalls atomic.Int32
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				upstreamCalls.Add(1)
+				w.Header().Set("Access-Control-Allow-Origin", "https://provider.example")
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				w.Header().Set("Access-Control-Expose-Headers", "*")
+				_, _ = w.Write([]byte(`{"data":[{"id":"native-model"}]}`))
+			}))
+			defer upstream.Close()
+			handler := NewModelsHandler(&fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}}, upstream.Client(), discardLogger(), true)
+			if err := handler.Refresh(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			upstreamCalls.Store(0)
+
+			for _, requestTest := range []struct {
+				method     string
+				path       string
+				wantStatus int
+				webSocket  bool
+			}{
+				{method: http.MethodGet, path: "/v1/models", wantStatus: http.StatusOK},
+				{method: http.MethodGet, path: "/v1/models/provider/native-model", wantStatus: http.StatusOK},
+				{method: http.MethodPost, path: "/v1/chat/completions", wantStatus: http.StatusOK},
+				{method: http.MethodOptions, path: "/v1/chat/completions", wantStatus: http.StatusNoContent},
+				{method: http.MethodGet, path: "/v1/realtime?model=provider/native-model", wantStatus: http.StatusOK, webSocket: true},
+				{method: http.MethodOptions, path: "/v1/realtime?model=provider/native-model", wantStatus: http.StatusOK, webSocket: true},
+				{method: http.MethodGet, path: "/v1/models/missing", wantStatus: http.StatusNotFound},
+				{method: http.MethodGet, path: "/missing", wantStatus: http.StatusNotFound},
+				{method: http.MethodPost, path: "/v1/models", wantStatus: http.StatusMethodNotAllowed},
+			} {
+				request := httptest.NewRequest(requestTest.method, requestTest.path, strings.NewReader(`{"model":"provider/native-model"}`))
+				request.Header["Origin"] = test.origins
+				if requestTest.method == http.MethodOptions {
+					request.Header.Set("Access-Control-Request-Method", http.MethodPost)
+					request.Header.Set("Access-Control-Request-Headers", "Authorization, Content-Type")
+				}
+				if requestTest.webSocket {
+					request.Header.Set("Connection", "Upgrade")
+					request.Header.Set("Upgrade", "websocket")
+				}
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, request)
+				wantStatus := requestTest.wantStatus
+				if !test.allow {
+					wantStatus = http.StatusForbidden
+				} else if request.Header.Get("Origin") == "" && requestTest.method == http.MethodOptions && !requestTest.webSocket {
+					wantStatus = http.StatusOK
+				}
+				if response.Code != wantStatus {
+					t.Fatalf("%s %s status = %d, want %d: %s", requestTest.method, requestTest.path, response.Code, wantStatus, response.Body.String())
+				}
+				if test.allow && len(test.origins) != 0 {
+					assertCORS(t, response.Header(), "*")
+				} else {
+					assertNoCORS(t, response.Header())
+				}
+			}
+			if !test.allow && upstreamCalls.Load() != 0 {
+				t.Fatalf("rejected origin reached upstream %d times", upstreamCalls.Load())
+			}
+			if test.allow && upstreamCalls.Load() == 0 {
+				t.Fatal("allowed requests did not reach upstream")
+			}
+		})
+	}
+}
+
+func TestModelsHandlerOriginErrorMessages(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		origins []string
+		message string
+		reason  string
+	}{
+		{
+			name:    "empty origin",
+			origins: []string{""},
+			message: "Origin is not allowed.",
+			reason:  "origin not allowed: ",
+		},
+		{
+			name:    "multiple origins",
+			origins: []string{"http://localhost", "https://client.example"},
+			message: "Multiple request origins are not allowed.",
+			reason:  "multiple origins are not allowed",
+		},
+		{
+			name:    "non-loopback origin",
+			origins: []string{"https://client.example"},
+			message: "Origin is not allowed.",
+			reason:  "origin not allowed: https://client.example",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var logs strings.Builder
+			handler := NewModelsHandler(nil, http.DefaultClient, slog.New(slog.NewTextHandler(&logs, nil)), false)
+			request := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+			request.Header["Origin"] = test.origins
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403", response.Code)
+			}
+			var body errorResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Error.Message != test.message || body.Error.Type != "invalid_request_error" {
+				t.Errorf("error = %+v, want message %q and type invalid_request_error", body.Error, test.message)
+			}
+			if !strings.Contains(logs.String(), `reason="`+test.reason+`"`) {
+				t.Errorf("logs = %q, want reason %q", logs.String(), test.reason)
+			}
+			assertNoCORS(t, response.Header())
+		})
+	}
+}
+
+func TestModelsHandlerRejectsExternalWebSocketOrigin(t *testing.T) {
+	lister := &fakeProviders{}
+	handler := NewModelsHandler(lister, http.DefaultClient, discardLogger(), false)
+
+	for _, method := range []string{http.MethodGet, http.MethodOptions} {
+		request := httptest.NewRequest(method, "/v1/realtime?model=provider/native-model", nil)
+		request.Header.Set("Origin", "https://client.example")
+		request.Header.Set("Connection", "Upgrade")
+		request.Header.Set("Upgrade", "websocket")
+		if method == http.MethodOptions {
+			request.Header.Set("Access-Control-Request-Method", http.MethodGet)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("%s status = %d, want 403", method, response.Code)
+		}
+		assertNoCORS(t, response.Header())
+	}
+	if lister.calls.Load() != 0 {
+		t.Error("rejected WebSocket request refreshed provider inventory")
+	}
+}
+
+func assertNoCORS(t *testing.T, header http.Header) {
+	t.Helper()
+	for name := range header {
+		if strings.HasPrefix(strings.ToLower(name), "access-control-") {
+			t.Errorf("unexpected CORS header %s = %q", name, header.Values(name))
+		}
+	}
+	if got := header.Get("Vary"); got != "Origin, Sec-Fetch-Site" {
+		t.Errorf("Vary = %q, want Origin, Sec-Fetch-Site", got)
 	}
 }
 

@@ -1,0 +1,98 @@
+package openaiproxy
+
+import (
+	"log/slog"
+	"net/http"
+	"net/netip"
+	"net/url"
+	"strings"
+)
+
+func (h *ModelsHandler) handleCORS(w http.ResponseWriter, r *http.Request, logger *slog.Logger) bool {
+	removeCORSHeaders(w.Header())
+	// Prevent caches from reusing responses across different browser access policies.
+	w.Header().Add("Vary", "Origin, Sec-Fetch-Site")
+
+	origins := r.Header.Values("Origin")
+	if len(origins) == 0 {
+		if !h.allowAllOrigins && r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+			logger.Warn("rejecting request", "reason", "cross-site request without an origin")
+			writeError(w, http.StatusForbidden, "Cross-site requests without an origin are not allowed.", "invalid_request_error")
+			return true
+		}
+		return false
+	}
+	if len(origins) > 1 {
+		logger.Warn("rejecting request", "reason", "multiple origins are not allowed")
+		writeError(w, http.StatusForbidden, "Multiple request origins are not allowed.", "invalid_request_error")
+		return true
+	}
+	requestOrigin := origins[0]
+	if h.allowAllOrigins {
+		requestOrigin = "*"
+	} else if !isLoopbackOrigin(requestOrigin) {
+		logger.Warn("rejecting request", "reason", "origin not allowed: "+requestOrigin)
+		writeError(w, http.StatusForbidden, "Origin is not allowed.", "invalid_request_error")
+		return true
+	}
+
+	if isCORSPreflight(r) {
+		w.Header().Add("Vary", "Access-Control-Request-Headers")
+		if !isAllowedCORSPreflight(r) {
+			logger.Warn("rejecting request", "reason", "preflight method is not allowed")
+			writeError(w, http.StatusForbidden, "The requested CORS method is not allowed.", "invalid_request_error")
+			return true
+		}
+		setCORSHeaders(w.Header(), requestOrigin)
+		if headers := r.Header.Values("Access-Control-Request-Headers"); len(headers) > 0 {
+			w.Header().Set("Access-Control-Allow-Headers", strings.Join(headers, ", "))
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return true
+	}
+	setCORSHeaders(w.Header(), requestOrigin)
+	return false
+}
+
+func isCORSPreflight(r *http.Request) bool {
+	return r.Method == http.MethodOptions &&
+		r.Header.Get("Origin") != "" &&
+		r.Header.Get("Access-Control-Request-Method") != "" &&
+		!isWebSocketUpgrade(r)
+}
+
+func isLoopbackOrigin(origin string) bool {
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host := parsed.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	address, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	return address.IsLoopback()
+}
+
+func isAllowedCORSPreflight(r *http.Request) bool {
+	methods := r.Header.Values("Access-Control-Request-Method")
+	return len(methods) == 1 && (methods[0] == http.MethodGet || methods[0] == http.MethodPost)
+}
+
+func setCORSHeaders(header http.Header, origin string) {
+	removeCORSHeaders(header)
+	header.Set("Access-Control-Allow-Origin", origin)
+	header.Set("Access-Control-Allow-Methods", "GET, POST")
+	header.Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+}
+
+func removeCORSHeaders(header http.Header) {
+	for name := range header {
+		if strings.HasPrefix(strings.ToLower(name), "access-control-") {
+			header.Del(name)
+		}
+	}
+}
