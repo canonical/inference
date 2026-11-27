@@ -15,7 +15,7 @@ func Install(ctx *common.Context) *cobra.Command {
 	}
 	cobraCmd := &cobra.Command{
 		Use:               "install <provider>",
-		Short:             "Install an inference provider",
+		Short:             "Install a provider",
 		Long:              "Install the inference snap with the provided name.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: common.CompleteSnapNames,

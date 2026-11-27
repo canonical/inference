@@ -82,6 +82,38 @@ func TestRootIncludesCommands(t *testing.T) {
 	}
 }
 
+func TestCommandGroups(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	ctx := &common.Context{Stdout: &stdout, Stderr: &stderr}
+	rootCmd := root(ctx)
+
+	commandGroups := map[string]string{
+		"status":    basicsGroupID,
+		"models":    basicsGroupID,
+		"hardware":  basicsGroupID,
+		"find":      providersGroupID,
+		"providers": providersGroupID,
+		"info":      providersGroupID,
+		"install":   providersGroupID,
+		"remove":    providersGroupID,
+	}
+
+	for name, wantGroup := range commandGroups {
+		t.Run(name, func(t *testing.T) {
+			cmd, _, err := rootCmd.Find([]string{name})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cmd.GroupID != wantGroup {
+				t.Errorf("got GroupID %q, want %q", cmd.GroupID, wantGroup)
+			}
+			if !rootCmd.ContainsGroup(wantGroup) {
+				t.Errorf("group %q is not registered", wantGroup)
+			}
+		})
+	}
+}
+
 func TestRootIncludesModelsCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	ctx := &common.Context{Stdout: &stdout, Stderr: &stderr}
@@ -92,5 +124,33 @@ func TestRootIncludesModelsCommand(t *testing.T) {
 	}
 	if cmd == rootCmd || cmd.Name() != "models" {
 		t.Fatal("models subcommand is not registered")
+	}
+}
+
+func TestRootRejectsUnknownCommand(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{name: "unknown command", args: []string{"bogus"}, wantErr: true},
+		{name: "unknown command with help flag", args: []string{"blah", "-h"}, wantErr: true},
+		{name: "no args", args: nil, wantErr: false},
+		{name: "help flag", args: []string{"-h"}, wantErr: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			ctx := &common.Context{Stdout: &stdout, Stderr: &stderr}
+			rootCmd := root(ctx)
+			rootCmd.SetArgs(test.args)
+
+			err := rootCmd.Execute()
+			if test.wantErr && err == nil {
+				t.Fatalf("got nil error, want error for args %v", test.args)
+			}
+			if !test.wantErr && err != nil {
+				t.Fatalf("got error %v, want nil for args %v", err, test.args)
+			}
+		})
 	}
 }

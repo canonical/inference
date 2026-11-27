@@ -73,25 +73,58 @@ func TestListenAddress(t *testing.T) {
 
 func TestServerOptionsFromEnvironment(t *testing.T) {
 	tests := []struct {
-		name    string
-		host    string
-		port    string
-		want    serverOptions
-		wantErr bool
+		name             string
+		host             string
+		port             string
+		logLevel         string
+		enableTimestamps string
+		want             serverOptions
+		wantErr          bool
 	}{
-		{name: "defaults", want: serverOptions{host: defaultHost, port: defaultPort}},
 		{
-			name: "configured",
-			host: "0.0.0.0",
-			port: "9000",
-			want: serverOptions{host: "0.0.0.0", port: 9000},
+			name: "defaults",
+			want: serverOptions{host: defaultHost, port: defaultPort, logLevel: slog.LevelInfo, logTimestamps: false},
 		},
-		{name: "invalid port", port: "invalid", wantErr: true},
+		{
+			name:             "configured",
+			host:             "0.0.0.0",
+			port:             "9000",
+			logLevel:         "DEBUG",
+			enableTimestamps: "true",
+			want:             serverOptions{host: "0.0.0.0", port: 9000, logLevel: slog.LevelDebug, logTimestamps: true},
+		},
+		{
+			name:    "invalid port",
+			port:    "invalid",
+			wantErr: true,
+		},
+		{
+			name:     "invalid log level",
+			logLevel: "invalid",
+			wantErr:  true,
+		},
+		{
+			name:     "log level warn",
+			logLevel: "WARN",
+			want:     serverOptions{host: defaultHost, port: defaultPort, logLevel: slog.LevelWarn, logTimestamps: false},
+		},
+		{
+			name:             "timestamps enabled",
+			enableTimestamps: "true",
+			want:             serverOptions{host: defaultHost, port: defaultPort, logLevel: slog.LevelInfo, logTimestamps: true},
+		},
+		{
+			name:             "timestamps disabled",
+			enableTimestamps: "false",
+			want:             serverOptions{host: defaultHost, port: defaultPort, logLevel: slog.LevelInfo, logTimestamps: false},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(httpHostEnvVar, tt.host)
 			t.Setenv(httpPortEnvVar, tt.port)
+			t.Setenv(logLevelEnvVar, tt.logLevel)
+			t.Setenv(enableTimestampsEnvVar, tt.enableTimestamps)
 			got, err := serverOptionsFromEnvironment()
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("serverOptionsFromEnvironment() error = %v, wantErr %v", err, tt.wantErr)
@@ -265,5 +298,97 @@ func TestHijackedConnectionsCloseDuringShutdown(t *testing.T) {
 	tracker.connState(lateServerConnection, http.StateHijacked)
 	if _, err := lateClientConnection.Write([]byte("probe")); err == nil {
 		t.Fatal("connection hijacked during shutdown remained open")
+	}
+}
+
+func TestNewLogHandlerWithoutTimestamps(t *testing.T) {
+	var buf bytes.Buffer
+	handler := newLogHandler(&buf, slog.LevelInfo, false)
+	logger := slog.New(handler)
+
+	logger.Info("test message", "key", "value")
+	output := buf.String()
+
+	if strings.Contains(output, "time=") {
+		t.Errorf("expected no timestamp in output, got: %s", output)
+	}
+	if !strings.Contains(output, "msg=\"test message\"") {
+		t.Errorf("expected message in output, got: %s", output)
+	}
+	if !strings.Contains(output, "key=value") {
+		t.Errorf("expected key-value pair in output, got: %s", output)
+	}
+}
+
+func TestNewLogHandlerWithTimestamps(t *testing.T) {
+	var buf bytes.Buffer
+	handler := newLogHandler(&buf, slog.LevelInfo, true)
+	logger := slog.New(handler)
+
+	logger.Info("test message", "key", "value")
+	output := buf.String()
+
+	if !strings.Contains(output, "time=") {
+		t.Errorf("expected timestamp in output, got: %s", output)
+	}
+	if !strings.Contains(output, "msg=\"test message\"") {
+		t.Errorf("expected message in output, got: %s", output)
+	}
+	if !strings.Contains(output, "key=value") {
+		t.Errorf("expected key-value pair in output, got: %s", output)
+	}
+}
+
+func TestNewLogHandlerRespectLogLevel(t *testing.T) {
+	tests := []struct {
+		name    string
+		level   slog.Level
+		logFunc func(*slog.Logger)
+		wantLog bool
+	}{
+		{
+			name:    "info level logs info",
+			level:   slog.LevelInfo,
+			logFunc: func(logger *slog.Logger) { logger.Info("info message") },
+			wantLog: true,
+		},
+		{
+			name:    "warn level ignores info",
+			level:   slog.LevelWarn,
+			logFunc: func(logger *slog.Logger) { logger.Info("info message") },
+			wantLog: false,
+		},
+		{
+			name:    "warn level logs warn",
+			level:   slog.LevelWarn,
+			logFunc: func(logger *slog.Logger) { logger.Warn("warn message") },
+			wantLog: true,
+		},
+		{
+			name:    "debug level logs everything",
+			level:   slog.LevelDebug,
+			logFunc: func(logger *slog.Logger) { logger.Debug("debug message") },
+			wantLog: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			handler := newLogHandler(&buf, tt.level, false)
+			logger := slog.New(handler)
+
+			tt.logFunc(logger)
+
+			output := buf.String()
+			hasContent := len(strings.TrimSpace(output)) > 0
+
+			if tt.wantLog && !hasContent {
+				t.Errorf("expected log output, got: %q", output)
+			}
+			if !tt.wantLog && hasContent {
+				t.Errorf("did not expect log output, got: %q", output)
+			}
+		})
 	}
 }

@@ -1,6 +1,7 @@
 package openaiproxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,31 @@ import (
 
 	"github.com/canonical/inference/internal/providers"
 )
+
+func TestModelsHandlerServesDefaultResponse(t *testing.T) {
+	lister := &fakeProviders{}
+	handler := NewModelsHandler(lister, nil, discardLogger())
+
+	for _, path := range []string{"/", "/v1", "/v1/"} {
+		t.Run(path, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("got status %d, want 200: %s", response.Code, response.Body.String())
+			}
+			if got := response.Header().Get("Content-Type"); got != "application/json" {
+				t.Errorf("got Content-Type %q, want application/json", got)
+			}
+			if got, want := response.Body.String(), "{\"documentation-url\":\"https://github.com/canonical/inference\"}\n"; got != want {
+				t.Errorf("got body %q, want %q", got, want)
+			}
+		})
+	}
+	if lister.calls.Load() != 0 {
+		t.Fatalf("provider list called %d times, want 0", lister.calls.Load())
+	}
+}
 
 func TestModelsHandlerRefreshesAndAggregatesProviders(t *testing.T) {
 	var firstRequests atomic.Int32
@@ -44,7 +70,7 @@ func TestModelsHandlerRefreshesAndAggregatesProviders(t *testing.T) {
 	root := t.TempDir()
 	writeProvider(t, root, "z-provider", "zeta", first.URL+"/v1")
 	writeProvider(t, root, "a-provider", "alpha", second.URL+"/v1/")
-	handler := NewModelsHandler(connectedProviderLister(root), first.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(connectedProviders{root: root}, first.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	for request := int64(1); request <= 2; request++ {
 		response := httptest.NewRecorder()
@@ -86,9 +112,7 @@ func TestModelsHandlerRetrievesModelFromSnapshot(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
-	}, upstream.Client(), discardLogger())
+	handler := NewModelsHandler(&fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}}, upstream.Client(), discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -126,12 +150,10 @@ func TestModelsHandlerRejectsUnavailableUnqualifiedAndUnknownModelRetrieval(t *t
 	second := modelServer(t, "shared")
 	defer second.Close()
 
-	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{
-			{Name: "first", BaseURL: first.URL + "/v1"},
-			{Name: "second", BaseURL: second.URL + "/v1"},
-		}, nil
-	}, first.Client(), discardLogger())
+	handler := NewModelsHandler(&fakeProviders{list: []providers.Provider{
+		{Name: "first", BaseURL: first.URL + "/v1"},
+		{Name: "second", BaseURL: second.URL + "/v1"},
+	}}, first.Client(), discardLogger())
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models/anything", nil))
@@ -174,12 +196,21 @@ func TestModelsHandlerSkipsUnavailableProvider(t *testing.T) {
 	root := t.TempDir()
 	writeProvider(t, root, "healthy", "healthy", healthy.URL+"/v1")
 	writeProvider(t, root, "broken", "broken", "http://127.0.0.1:1/v1")
-	handler := NewModelsHandler(connectedProviderLister(root), healthy.Client(), discardLogger())
+	var logs bytes.Buffer
+	handler := NewModelsHandler(connectedProviders{root: root}, healthy.Client(), slog.New(slog.NewTextHandler(&logs, nil)))
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":"healthy/ready"`) {
 		t.Fatalf("got status %d body %s", response.Code, response.Body.String())
+	}
+	for _, want := range []string{
+		"level=ERROR", `msg="discovering provider models"`, "provider=broken", "error=",
+		"request_id=1", "method=GET", "path=/v1/models",
+	} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("missing %q:\n%s", want, logs.String())
+		}
 	}
 }
 
@@ -189,13 +220,11 @@ func TestModelsHandlerSkipsProviderWithoutBaseURL(t *testing.T) {
 	}))
 	defer healthy.Close()
 
-	listProviders := func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{
-			{Name: "catalog-only"},
-			{Name: "healthy", BaseURL: healthy.URL + "/v1"},
-		}, nil
-	}
-	handler := NewModelsHandler(listProviders, healthy.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	lister := &fakeProviders{list: []providers.Provider{
+		{Name: "catalog-only"},
+		{Name: "healthy", BaseURL: healthy.URL + "/v1"},
+	}}
+	handler := NewModelsHandler(lister, healthy.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -205,12 +234,10 @@ func TestModelsHandlerSkipsProviderWithoutBaseURL(t *testing.T) {
 }
 
 func TestModelsHandlerRejectsDuplicateProviderNames(t *testing.T) {
-	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		return []providers.Provider{
-			{Name: "duplicate", BaseURL: "http://first.example/v1"},
-			{Name: "duplicate", BaseURL: "http://second.example/v1"},
-		}, nil
-	}, http.DefaultClient, discardLogger())
+	handler := NewModelsHandler(&fakeProviders{list: []providers.Provider{
+		{Name: "duplicate", BaseURL: "http://first.example/v1"},
+		{Name: "duplicate", BaseURL: "http://second.example/v1"},
+	}}, http.DefaultClient, discardLogger())
 
 	err := handler.Refresh(context.Background())
 	if err == nil || !strings.Contains(err.Error(), `duplicate provider name "duplicate"`) {
@@ -225,7 +252,7 @@ func TestModelsHandlerRefreshesProviderFiles(t *testing.T) {
 	defer upstream.Close()
 
 	root := t.TempDir()
-	handler := NewModelsHandler(connectedProviderLister(root), upstream.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(connectedProviders{root: root}, upstream.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -242,7 +269,7 @@ func TestModelsHandlerRefreshesProviderFiles(t *testing.T) {
 }
 
 func TestModelsHandlerReturnsEmptyListWithoutAvailableProviders(t *testing.T) {
-	handler := NewModelsHandler(connectedProviderLister(t.TempDir()), http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(connectedProviders{root: t.TempDir()}, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
@@ -259,7 +286,6 @@ func TestModelsHandlerReturnsEmptyListWithoutAvailableProviders(t *testing.T) {
 }
 
 func TestModelsHandlerPreservesSnapshotWhenRefreshFails(t *testing.T) {
-	var fail atomic.Bool
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/models":
@@ -272,17 +298,13 @@ func TestModelsHandlerPreservesSnapshotWhenRefreshFails(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler := NewModelsHandler(func(context.Context) ([]providers.Provider, error) {
-		if fail.Load() {
-			return nil, errors.New("provider inventory unavailable")
-		}
-		return []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}, nil
-	}, upstream.Client(), discardLogger())
+	lister := &fakeProviders{list: []providers.Provider{{Name: "provider", BaseURL: upstream.URL + "/v1"}}}
+	handler := NewModelsHandler(lister, upstream.Client(), discardLogger())
 	if err := handler.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
-	fail.Store(true)
+	lister.err = errors.New("provider inventory unavailable")
 	if err := handler.Refresh(context.Background()); err == nil {
 		t.Fatal("refresh succeeded, want error")
 	}
@@ -298,7 +320,7 @@ func TestModelsHandlerPreservesSnapshotWhenRefreshFails(t *testing.T) {
 }
 
 func TestModelsHandlerRejectsOtherMethodsAndPaths(t *testing.T) {
-	handler := NewModelsHandler(connectedProviderLister(t.TempDir()), http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewModelsHandler(connectedProviders{root: t.TempDir()}, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/models", nil))
@@ -314,7 +336,7 @@ func TestModelsHandlerRejectsOtherMethodsAndPaths(t *testing.T) {
 }
 
 func TestModelsHandlerCORSPreflight(t *testing.T) {
-	handler := NewModelsHandler(connectedProviderLister(t.TempDir()), http.DefaultClient, discardLogger())
+	handler := NewModelsHandler(connectedProviders{root: t.TempDir()}, http.DefaultClient, discardLogger())
 	request := httptest.NewRequest(http.MethodOptions, "/v1/chat/completions", nil)
 	request.Header.Set("Origin", "https://client.example")
 	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
@@ -360,12 +382,27 @@ func writeProvider(t *testing.T, root, directory, name, baseURL string) {
 	}
 }
 
-func connectedProviderLister(root string) func(context.Context) ([]providers.Provider, error) {
-	return func(context.Context) ([]providers.Provider, error) {
-		list, err := providers.ConnectedSnapProviders(root)
-		for i := range list {
-			list[i].State = providers.StateEnabled
-		}
-		return list, err
+type fakeProviders struct {
+	providers.Service
+	list  []providers.Provider
+	err   error
+	calls atomic.Int32
+}
+
+func (f *fakeProviders) List(context.Context) ([]providers.Provider, error) {
+	f.calls.Add(1)
+	return f.list, f.err
+}
+
+type connectedProviders struct {
+	providers.Service
+	root string
+}
+
+func (c connectedProviders) List(context.Context) ([]providers.Provider, error) {
+	list, err := providers.ConnectedSnapProviders(c.root)
+	for i := range list {
+		list[i].State = providers.StateEnabled
 	}
+	return list, err
 }

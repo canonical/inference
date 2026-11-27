@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/canonical/inference/internal/providers"
-	"github.com/canonical/inference/internal/snapcatalog"
-	"github.com/canonical/inference/internal/snapd"
 )
 
 const (
@@ -43,29 +41,28 @@ type upstreamModel struct {
 	Created int64  `json:"created"`
 }
 
-func List(
-	ctx context.Context,
-	catalog *snapcatalog.Reader,
-	snapdClient *snapd.Client,
-	shareProvidersPath string,
-) ([]ProviderModels, error) {
-	allProviders, err := providers.ListAll(
-		ctx,
-		catalog,
-		snapdClient,
-		shareProvidersPath,
-	)
+type Service interface {
+	List(ctx context.Context) ([]ProviderModels, error)
+}
+
+type service struct {
+	providers  providers.Service
+	httpClient *http.Client
+}
+
+func NewService(providerService providers.Service, httpClient *http.Client) Service {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	return &service{providers: providerService, httpClient: httpClient}
+}
+
+func (s *service) List(ctx context.Context) ([]ProviderModels, error) {
+	allProviders, err := s.providers.List(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return Discover(ctx, allProviders, http.DefaultClient)
-}
 
-func Discover(
-	ctx context.Context,
-	allProviders []providers.Provider,
-	client *http.Client,
-) ([]ProviderModels, error) {
 	availableProviders := make([]providers.Provider, 0, len(allProviders))
 	providerNames := make(map[string]struct{}, len(allProviders))
 	for _, provider := range allProviders {
@@ -88,16 +85,13 @@ func Discover(
 	if len(availableProviders) == 0 {
 		return []ProviderModels{}, nil
 	}
-	if client == nil {
-		client = http.DefaultClient
-	}
 
 	results := make(chan ProviderModels, len(availableProviders))
 	var requests sync.WaitGroup
 	for _, provider := range availableProviders {
 		requests.Go(func() {
 			models := make([]Model, 0)
-			upstreamModels, err := fetchModels(ctx, client, provider.BaseURL)
+			upstreamModels, err := fetchModels(ctx, s.httpClient, provider.BaseURL)
 			if err == nil {
 				models = normalizeModels(provider, upstreamModels)
 				sort.Slice(models, func(i, j int) bool {

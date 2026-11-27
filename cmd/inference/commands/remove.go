@@ -15,7 +15,7 @@ func Remove(ctx *common.Context) *cobra.Command {
 	}
 	cobraCmd := &cobra.Command{
 		Use:               "remove <provider>",
-		Short:             "Remove an inference provider",
+		Short:             "Remove a provider",
 		Long:              "Remove the inference snap with the provided name.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: common.CompleteSnapNames,

@@ -45,24 +45,6 @@ func TestProviders_TableExactOutput(t *testing.T) {
 	}
 }
 
-func TestProviders_TableHintWhenAllInstalled(t *testing.T) {
-	ctx, stdout, stderr := newTestContext()
-	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `[{"snap":"gemma4","model_name":"Gemma 4"}]`)
-	ctx.SnapdClient, _ = snapd.NewFakeServer(t, map[string]string{
-		"gemma4": snapd.SnapStatusActive,
-	})
-	if err := execute(Providers(ctx)); err != nil {
-		t.Fatalf("Providers: %v", err)
-	}
-	if !bytes.Contains(stdout.Bytes(), []byte("gemma4")) {
-		t.Fatalf("expected provider table on stdout, got:\n%s", stdout.String())
-	}
-	wantHint := "\nHint: Run \"inference find\" to discover other inference snaps.\n"
-	if stderr.String() != wantHint {
-		t.Fatalf("stderr = %q, want %q", stderr.String(), wantHint)
-	}
-}
-
 func TestProviders_JSONExactOutput(t *testing.T) {
 	list := []providers.Provider{
 		{Name: "gemma4", Backend: providers.BackendSnap, State: providers.StateEnabled},
@@ -170,17 +152,17 @@ func TestProviders_NoInstalledProviders(t *testing.T) {
 			if err := execute(Providers(ctx), "--format="+format); err != nil {
 				t.Fatalf("Providers: %v", err)
 			}
-			want := "PROVIDER  BACKEND  ENABLED\n"
-			wantHint := "\nHint: Run \"inference find\" to discover other inference snaps.\n"
+			wantStdout := ""
+			wantStderr := "No inference providers installed.\n"
 			if format == "json" {
-				want = "{\n  \"providers\": []\n}\n"
-				wantHint = ""
+				wantStdout = "{\n  \"providers\": []\n}\n"
+				wantStderr = ""
 			}
-			if got := stdout.String(); got != want {
-				t.Fatalf("got:\n%q\nwant:\n%q", got, want)
+			if got := stdout.String(); got != wantStdout {
+				t.Fatalf("got:\n%q\nwant:\n%q", got, wantStdout)
 			}
-			if got := stderr.String(); got != wantHint {
-				t.Fatalf("stderr = %q, want %q", got, wantHint)
+			if got := stderr.String(); got != wantStderr {
+				t.Fatalf("stderr = %q, want %q", got, wantStderr)
 			}
 		})
 	}

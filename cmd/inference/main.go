@@ -19,7 +19,14 @@ const (
 	httpPortEnvVar            = "HTTP_PORT"
 	defaultHTTPHost           = "127.0.0.1"
 	defaultHTTPPort           = "8400"
+
+	basicsGroupID    = "basics"
+	providersGroupID = "providers"
 )
+
+func init() {
+	cobra.EnableCommandSorting = false
+}
 
 func main() {
 	ctx := &common.Context{
@@ -75,24 +82,32 @@ func httpPort() string {
 func root(ctx *common.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "inference",
-		Short:             "Manage inference snaps",
-		Long:              "inference provides a CLI to discover, install and remove inference snaps.",
+		Long:              "The inference CLI lets you discover and manage local inference on your machine.",
 		SilenceUsage:      true,
-		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 	}
 	cmd.CompletionOptions.HiddenDefaultCmd = true
 	cmd.SetOut(ctx.Stdout)
 	cmd.SetErr(ctx.Stderr)
-	cmd.AddCommand(
+	addCommandGroup(cmd, basicsGroupID, "Basics:",
+		commands.Status(ctx),
+		commands.Models(ctx),
+		commands.Hardware(ctx),
+	)
+	addCommandGroup(cmd, providersGroupID, "Provider Management:",
 		commands.Find(ctx),
+		commands.Providers(ctx),
 		commands.Info(ctx),
 		commands.Install(ctx),
-		commands.Providers(ctx),
 		commands.Remove(ctx),
-		commands.Hardware(ctx),
-		commands.Models(ctx),
-		commands.Status(ctx),
 	)
 	return cmd
+}
+
+func addCommandGroup(root *cobra.Command, id, title string, cmds ...*cobra.Command) {
+	root.AddGroup(&cobra.Group{ID: id, Title: title})
+	for _, cmd := range cmds {
+		cmd.GroupID = id
+		root.AddCommand(cmd)
+	}
 }

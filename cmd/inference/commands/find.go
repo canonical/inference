@@ -33,11 +33,20 @@ type findOutput struct {
 
 func Find(ctx *common.Context) *cobra.Command {
 	cmd := findCommand{Context: ctx}
-	cobraCmd := &cobra.Command{
-		Use:               "find [query]...",
-		Aliases:           []string{"catalog"},
-		Short:             "Search for inference snaps",
-		Long:              "List inference snaps in the catalog or search for a particular one",
+	return &cobra.Command{
+		Use:     "find [keyword]...",
+		Aliases: []string{"catalog"},
+		Short:   "Find inference providers",
+		Long: `Discover inference providers from the catalog.
+
+Run it without an argument to list all providers.
+Set a keyword to filter providers based on their name, title, and description.
+Pass multiple keywords to refine the results.
+
+The results currently only include supported inference snaps.`,
+		Example: `  List all providers: inference find
+  Filter with a keyword: inference find gemma,
+  Filter with multiple keywords: inference find nemotron nano`,
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
@@ -76,15 +85,7 @@ func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
 		}
 	}
 	if len(results) == 0 {
-		if cmd.format == "json" {
-			output, err := cmd.outputJSON(buildFindResults(nil))
-			if err != nil {
-				return err
-			}
-			_, err = fmt.Fprint(cmd.Stdout, output)
-			return err
-		}
-		_, err := fmt.Fprintf(cmd.Stderr, "No inference snaps matched the query %q\n", query)
+		_, err := fmt.Fprintf(cmd.Stderr, "No provider matched the query %q\n", query)
 		return err
 	}
 
@@ -99,9 +100,7 @@ func (cmd *findCommand) run(cobraCmd *cobra.Command, args []string) error {
 		return err
 	}
 	_, _ = fmt.Fprint(cmd.Stdout, output)
-	if cmd.format != "json" {
-		_, _ = fmt.Fprintln(cmd.Stderr, "\nHint: Run \"inference info <name>\" for details.")
-	}
+	_, _ = fmt.Fprintln(cmd.Stderr, "\nHint: Run \"inference info <provider>\" for details.")
 
 	return nil
 }
@@ -165,8 +164,8 @@ func findMatchCounts(result snapd.FindResult, words []string) [4]int {
 	return counts
 }
 
-func (cmd *findCommand) outputTable(results []findResultOutput) (string, error) {
-	headers := []string{"NAME", "CAPABILITIES"}
+func (cmd *findCommand) outputTable(entries []snapcatalog.Entry) (string, error) {
+	headers := []string{"PROVIDER", "CAPABILITIES"}
 	nameMaxLen := len(headers[0])
 	capabilitiesMaxLen := len(headers[1])
 	rows := make([][]string, 0, len(results))

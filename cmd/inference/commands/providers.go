@@ -34,7 +34,7 @@ func Providers(ctx *common.Context) *cobra.Command {
 	cmd := providersCommand{Context: ctx}
 	cobraCmd := &cobra.Command{
 		Use:               "providers",
-		Short:             "List inference providers",
+		Short:             "List providers",
 		Long:              "List inference providers and whether they are enabled.",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
@@ -50,12 +50,8 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	list, err := providers.ListInstalled(
-		cobraCmd.Context(),
-		cmd.SnapCatalog,
-		cmd.SnapdClient,
-		cmd.ShareProvidersPath,
-	)
+	providerService := providers.NewService(cmd.SnapCatalog, cmd.SnapdClient, cmd.ShareProvidersPath)
+	list, err := providerService.ListInstalled(cobraCmd.Context())
 	if err != nil {
 		return common.FriendlySnapdError(err)
 	}
@@ -66,16 +62,19 @@ func (cmd *providersCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		if err != nil {
 			return err
 		}
-		_, _ = fmt.Fprint(cmd.Stdout, output)
 	} else {
-		output, err = cmd.outputTable(list)
-		if err != nil {
+		if len(list) > 0 { // table should only be rendered if there are providers
+			output, err = cmd.outputTable(list)
+			if err != nil {
+				return err
+			}
+		} else {
+			_, err = fmt.Fprintln(cmd.Stderr, "No inference providers installed.")
 			return err
 		}
-		_, _ = fmt.Fprint(cmd.Stdout, output)
-		_, _ = fmt.Fprintln(cmd.Stderr, "\nHint: Run \"inference find\" to discover other inference snaps.")
 	}
 
+	_, err = fmt.Fprint(cmd.Stdout, output)
 	return err
 }
 

@@ -30,7 +30,7 @@ func TestFindFiltersStoreResults(t *testing.T) {
 	}
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/v2/find" || request.URL.Query().Get("q") != "Gemma 4" {
-			t.Errorf("unexpected request %s", request.URL)
+			t.Errorf("unexpected request %s, want path %q with q=%q", request.URL, "/v2/find", "Gemma 4")
 		}
 		if _, err := fmt.Fprint(w, `{"type":"sync","result":[{"name":"box-linux"},{"name":"aaa-related","title":"Gemma 4"},{"name":"gemma4"},{"name":"gemma4"}]}`); err != nil {
 			t.Errorf("writing find response: %v", err)
@@ -44,7 +44,7 @@ func TestFindFiltersStoreResults(t *testing.T) {
 	t.Cleanup(server.Close)
 	ctx.SnapdClient = &snapd.Client{Socket: socket}
 
-	want := fmt.Sprintf("%-13s%s\n", "NAME", "CAPABILITIES") +
+	want := fmt.Sprintf("%-13s%s\n", "PROVIDER", "CAPABILITIES") +
 		fmt.Sprintf("%-13s%s\n", "gemma4", "text, vision") +
 		fmt.Sprintf("%-13s%s\n", "aaa-related", "-")
 	for _, args := range [][]string{{"Gemma 4"}, {"Gemma", "4"}} {
@@ -56,8 +56,9 @@ func TestFindFiltersStoreResults(t *testing.T) {
 		if got := stdout.String(); got != want {
 			t.Fatalf("args %q: got:\n%q\nwant:\n%q", args, got, want)
 		}
-		if got := stderr.String(); got != "\n"+`Hint: Run "inference info <name>" for details.`+"\n" {
-			t.Fatalf("unexpected stderr %q", got)
+		wantStderr := "\n" + `Hint: Run "inference info <provider>" for details.` + "\n"
+		if got := stderr.String(); got != wantStderr {
+			t.Fatalf("unexpected stderr: want %q, got %q", wantStderr, got)
 		}
 	}
 }
@@ -126,8 +127,8 @@ func TestFindTableMissingMetadata(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := fmt.Sprintf("%-8s%s\n", "NAME", "CAPABILITIES") +
-			fmt.Sprintf("%-8s%s\n", "gemma4", "-")
+		want := fmt.Sprintf("%-10s%s\n", "PROVIDER", "CAPABILITIES") +
+			fmt.Sprintf("%-10s%s\n", "gemma4", "-")
 		if got != want {
 			t.Fatalf("got %q, want %q", got, want)
 		}
@@ -254,8 +255,9 @@ func TestFindNoMatches(t *testing.T) {
 			if got := stdout.String(); got != test.wantStdout {
 				t.Fatalf("unexpected stdout %q", got)
 			}
-			if got := stderr.String(); got != test.wantStderr {
-				t.Fatalf("unexpected stderr %q", got)
+			want := "No provider matched the query \"unknown\"\n"
+			if got := stderr.String(); got != want {
+				t.Fatalf("unexpected stderr: want %q, got %q", want, got)
 			}
 		})
 	}
@@ -269,14 +271,15 @@ func TestFindListsCatalogueWithoutQuery(t *testing.T) {
 			if err := execute(Find(ctx), args...); err != nil {
 				t.Fatal(err)
 			}
-			want := fmt.Sprintf("%-8s%s\n", "NAME", "CAPABILITIES") +
-				fmt.Sprintf("%-8s%s\n", "gemma4", "-") +
-				fmt.Sprintf("%-8s%s\n", "qwen3", "-")
+			want := fmt.Sprintf("%-10s%s\n", "PROVIDER", "CAPABILITIES") +
+				fmt.Sprintf("%-10s%s\n", "gemma4", "-") +
+				fmt.Sprintf("%-10s%s\n", "qwen3", "-")
 			if got := stdout.String(); got != want {
 				t.Fatalf("got %q, want %q", got, want)
 			}
-			if got := stderr.String(); got != "\n"+`Hint: Run "inference info <name>" for details.`+"\n" {
-				t.Fatalf("unexpected stderr %q", got)
+			wantStderr := "\n" + `Hint: Run "inference info <provider>" for details.` + "\n"
+			if got := stderr.String(); got != wantStderr {
+				t.Fatalf("unexpected stderr: want %q, got %q", wantStderr, got)
 			}
 		})
 	}
@@ -288,8 +291,9 @@ func TestFindEmptyCatalogueWithoutQuery(t *testing.T) {
 	if err := execute(Find(ctx)); err != nil {
 		t.Fatal(err)
 	}
-	if stdout.Len() != 0 || stderr.String() != "No inference snaps matched the query \"\"\n" {
-		t.Fatalf("unexpected stdout %q, stderr %q", stdout.String(), stderr.String())
+	wantStderr := "No provider matched the query \"\"\n"
+	if stdout.Len() != 0 || stderr.String() != wantStderr {
+		t.Fatalf("unexpected stdout %q, stderr %q (want stderr %q)", stdout.String(), stderr.String(), wantStderr)
 	}
 }
 
@@ -297,8 +301,9 @@ func TestFindCatalogError(t *testing.T) {
 	ctx, stdout, _ := newTestContext()
 	ctx.SnapCatalog = snapcatalog.WriteFakeCatalog(t, `{`)
 	err := execute(Find(ctx), "gemma")
-	if err == nil || !strings.Contains(err.Error(), "decoding published snap catalog") {
-		t.Fatalf("unexpected error %v", err)
+	wantErr := "decoding published snap catalog"
+	if err == nil || !strings.Contains(err.Error(), wantErr) {
+		t.Fatalf("unexpected error: want error containing %q, got %v", wantErr, err)
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("unexpected output %q", stdout.String())

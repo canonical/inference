@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/canonical/inference/cmd/inference/common"
 	"github.com/canonical/inference/internal/models"
+	"github.com/canonical/inference/internal/providers"
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
@@ -34,7 +36,7 @@ func Models(ctx *common.Context) *cobra.Command {
 	cmd := modelsCommand{Context: ctx}
 	cobraCmd := &cobra.Command{
 		Use:               "models",
-		Short:             "List available models",
+		Short:             "List models",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
@@ -49,50 +51,82 @@ func (cmd *modelsCommand) run(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unknown format %q", cmd.format)
 	}
 
-	providerModels, err := models.List(
-		cobraCmd.Context(),
-		cmd.SnapCatalog,
-		cmd.SnapdClient,
-		cmd.ShareProvidersPath,
-	)
-
+	providerService := providers.NewService(cmd.SnapCatalog, cmd.SnapdClient, cmd.ShareProvidersPath)
+	modelService := models.NewService(providerService, http.DefaultClient)
+	providerModels, err := modelService.List(cobraCmd.Context())
 	if err != nil {
 		return err
 	}
 
-	return cmd.printProviderModels(providerModels)
-}
+	models, err := cmd.filterAvailableModels(providerModels)
+	if err != nil {
+		return err
+	}
 
-func (cmd *modelsCommand) printProviderModels(providerModels []models.ProviderModels) error {
-	models := make([]models.Model, 0)
-	someProvidersFailed := false
-	for _, pm := range providerModels {
-		if pm.Err == nil {
-			models = append(models, pm.Models...)
-		} else {
-			someProvidersFailed = true
+	if cmd.format == "json" {
+		if err := cmd.printModelsJSON(models); err != nil {
+			return err
+		}
+	} else {
+		if err := cmd.printModelsTable(models); err != nil {
+			return err
 		}
 	}
 
-	var output string
-	var err error
-
-	if cmd.format == "json" {
-		output, err = cmd.outputJSON(models)
-	} else {
-		output, err = cmd.outputTable(models)
+	if len(providerModels) != len(models) {
+		_, err := fmt.Fprintf(cmd.Stderr, "\nHint: Cannot retrieve models from some providers. Run \"inference status\" for details.\n")
+		if err != nil {
+			return err
+		}
 	}
+
+	return nil
+}
+
+func (cmd *modelsCommand) filterAvailableModels(providerModels []models.ProviderModels) ([]models.Model, error) {
+	models := make([]models.Model, 0)
+	for _, pm := range providerModels {
+		if pm.Err == nil {
+			models = append(models, pm.Models...)
+		}
+	}
+	return models, nil
+}
+
+func (cmd *modelsCommand) printModelsJSON(models []models.Model) error {
+	output, err := cmd.outputJSON(models)
 	if err != nil {
 		return err
 	}
 
 	_, err = fmt.Fprint(cmd.Stdout, output)
-
-	if someProvidersFailed {
-		_, _ = fmt.Fprintf(cmd.Stderr, "\nHint: Unable to retrieve models from some providers. Run \"inference status\" for details.\n")
+	if err != nil {
+		return err
 	}
 
-	return err
+	return nil
+}
+
+func (cmd *modelsCommand) printModelsTable(models []models.Model) error {
+	if len(models) == 0 {
+		_, err := fmt.Fprintln(cmd.Stderr, "No models found.")
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	output, err := cmd.outputTable(models)
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprint(cmd.Stdout, output)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (cmd *modelsCommand) outputJSON(list []models.Model) (string, error) {
