@@ -5,14 +5,14 @@ go 1.26.7
 require (
 	github.com/canonical/go-snapctl v1.0.0-beta.6
 	github.com/canonical/lscompute v1.0.0-beta
-	github.com/fatih/color v1.18.0
+	github.com/fatih/color v1.19.0
 	github.com/joho/godotenv v1.5.1
-	github.com/mattn/go-isatty v0.0.20
+	github.com/mattn/go-isatty v0.0.24
 	github.com/mattn/go-runewidth v0.0.19
-	github.com/olekukonko/tablewriter v1.1.4
+	github.com/olekukonko/tablewriter v1.1.5
 	github.com/spf13/cobra v1.10.2
-	go.yaml.in/yaml/v4 v4.0.0-rc.6
-	golang.org/x/sys v0.47.0
+	go.yaml.in/yaml/v4 v4.0.0
+	golang.org/x/sys v0.50.0
 )
 
 require (
