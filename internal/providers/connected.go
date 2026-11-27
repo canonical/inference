@@ -6,15 +6,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 
 	"github.com/joho/godotenv"
 )
-
-const maxSnapNameLength = 40
-
-var snapNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 type connectedProvider struct {
 	Provider
@@ -87,10 +82,6 @@ func readConnectedProvider(directory string) (connectedProvider, error) {
 	if name == "" {
 		return connectedProvider{}, fmt.Errorf("missing SNAP_NAME key in %s", envPath)
 	}
-	if len(name) > maxSnapNameLength || !snapNamePattern.MatchString(name) {
-		return connectedProvider{}, fmt.Errorf("invalid SNAP_NAME key in %s", envPath)
-	}
-
 	baseURL := values["OPENAI_BASE_URL"]
 	if baseURL == "" {
 		return connectedProvider{}, fmt.Errorf("missing OPENAI_BASE_URL in %s", envPath)

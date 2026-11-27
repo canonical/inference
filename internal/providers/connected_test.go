@@ -97,16 +97,6 @@ func TestConnectedSnapProvidersRejectsInvalidEntries(t *testing.T) {
 			want: "Cannot use shared provider: missing SNAP_NAME key in %[1]s/custom/provider.env",
 		},
 		{
-			name: "invalid snap name",
-			env:  ptr("SNAP_NAME=Not_A_Snap\nOPENAI_BASE_URL=http://localhost:8081/v1\n"),
-			want: "Cannot use shared provider: invalid SNAP_NAME key in %[1]s/custom/provider.env",
-		},
-		{
-			name: "snap name that is too long",
-			env:  ptr("SNAP_NAME=" + strings.Repeat("a", 41) + "\nOPENAI_BASE_URL=http://localhost:8081/v1\n"),
-			want: "Cannot use shared provider: invalid SNAP_NAME key in %[1]s/custom/provider.env",
-		},
-		{
 			name: "unreadable env file",
 			env:  ptr("SNAP_NAME='unterminated\n"),
 			want: "Cannot use shared provider: cannot read %[1]s/custom/provider.env: ",
