@@ -227,19 +227,26 @@ func TestEnsureProviders(t *testing.T) {
 	}
 }
 
-func TestEnsureProvidersDoesNotWriteWhenComplete(t *testing.T) {
-	dir := t.TempDir()
-	c := &ConfigReader{Path: filepath.Join(dir, "config.json")}
+func TestEnsureProvidersDoesNotRewriteCompleteConfig(t *testing.T) {
+	c := &ConfigReader{Path: filepath.Join(t.TempDir(), "config.json")}
 	if _, err := c.EnsureProviders([]string{"gemma4"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(dir, 0o500); err != nil {
+	before, err := os.Stat(c.Path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 
 	if _, err := c.EnsureProviders([]string{"gemma4"}); err != nil {
-		t.Fatalf("EnsureProviders on complete config: %v", err)
+		t.Fatal(err)
+	}
+
+	after, err := os.Stat(c.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("config file was rewritten although no provider was missing")
 	}
 }
 

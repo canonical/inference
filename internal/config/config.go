@@ -111,14 +111,6 @@ func (c *ConfigReader) EnsureProviders(names []string) (map[string]Provider, err
 		}
 	}
 
-	cfg, err := readConfig(c.Path)
-	if err != nil {
-		return nil, fmt.Errorf("reading config: %w", err)
-	}
-	if !missingProviders(cfg, names) {
-		return cfg.Providers, nil
-	}
-
 	cfg, unlock, err := readConfigLocked(c.Path)
 	if err != nil {
 		return nil, err
