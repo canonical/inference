@@ -35,12 +35,12 @@ func ConnectedSnapProviders(root string) ([]Provider, []Issue, error) {
 
 func readConnectedProviders(root string) ([]connectedProvider, []Issue, error) {
 	if root == "" {
-		return []connectedProvider{}, []Issue{}, nil
+		return nil, nil, nil
 	}
 
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
-		return []connectedProvider{}, []Issue{}, nil
+		return nil, nil, nil
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading connected provider directory %q: %w", root, err)
