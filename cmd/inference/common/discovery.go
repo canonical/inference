@@ -41,7 +41,7 @@ func TriggerModelDiscovery(ctx context.Context, cliCtx *Context) error {
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("model discovery returned %s", response.Status)
 	}

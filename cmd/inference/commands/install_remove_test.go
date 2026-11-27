@@ -29,7 +29,7 @@ func newSnapdHandlerClient(t *testing.T, handler http.HandlerFunc) *snapd.Client
 		t.Fatal(err)
 	}
 	server := httptest.NewUnstartedServer(handler)
-	server.Listener.Close()
+	_ = server.Listener.Close()
 	server.Listener = listener
 	server.Start()
 	t.Cleanup(server.Close)
@@ -49,16 +49,16 @@ func newInstallRemoveContext(t *testing.T, handler http.HandlerFunc) *common.Con
 
 func writeAccepted(w http.ResponseWriter, changeID string) {
 	w.WriteHeader(http.StatusAccepted)
-	fmt.Fprintf(w, `{"type":"async","status":"Accepted","status-code":202,"change":%q}`, changeID)
+	_, _ = fmt.Fprintf(w, `{"type":"async","status":"Accepted","status-code":202,"change":%q}`, changeID)
 }
 
 func writeChangeDone(w http.ResponseWriter) {
-	fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
+	_, _ = fmt.Fprint(w, `{"type":"sync","status":"OK","result":{"status":"Done","ready":true}}`)
 }
 
 func writeSnapdError(w http.ResponseWriter, kind string) {
 	w.WriteHeader(http.StatusBadRequest)
-	fmt.Fprintf(w, `{"type":"error","status":"Bad Request","status-code":400,"result":{"message":"failed","kind":%q}}`, kind)
+	_, _ = fmt.Fprintf(w, `{"type":"error","status":"Bad Request","status-code":400,"result":{"message":"failed","kind":%q}}`, kind)
 }
 
 func installingSnapd(t *testing.T) http.HandlerFunc {

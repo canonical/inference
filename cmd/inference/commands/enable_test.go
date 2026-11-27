@@ -65,19 +65,19 @@ func newEnableSnapdClient(t *testing.T, snapStatuses map[string]string, serviceA
 	}
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v2/apps" {
-			fmt.Fprintf(w, `{"type":"sync","status":"OK","result":[{"snap":"inference","name":"d","active":%t}]}`, serviceActive)
+			_, _ = fmt.Fprintf(w, `{"type":"sync","status":"OK","result":[{"snap":"inference","name":"d","active":%t}]}`, serviceActive)
 			return
 		}
 		name := strings.TrimPrefix(r.URL.Path, "/v2/snaps/")
 		status, ok := snapStatuses[name]
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
-			fmt.Fprintf(w, `{"type":"error","status":"Not Found","status-code":404,"result":{"message":"snap not found","kind":"snap-not-found"}}`)
+			_, _ = fmt.Fprintf(w, `{"type":"error","status":"Not Found","status-code":404,"result":{"message":"snap not found","kind":"snap-not-found"}}`)
 			return
 		}
-		fmt.Fprintf(w, `{"type":"sync","status":"OK","result":{"name":%q,"status":%q}}`, name, status)
+		_, _ = fmt.Fprintf(w, `{"type":"sync","status":"OK","result":{"name":%q,"status":%q}}`, name, status)
 	}))
-	server.Listener.Close()
+	_ = server.Listener.Close()
 	server.Listener = listener
 	server.Start()
 	t.Cleanup(server.Close)
